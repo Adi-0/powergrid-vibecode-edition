@@ -139,8 +139,8 @@ const HV230_CIRCUITS: LineSpec[] = [
   { fromSite: 'newark', toSite: 'metcalf', kV: 230, circuits: 3 },
   { fromSite: 'metcalf', toSite: 'mosslanding', kV: 230, circuits: 3 },
   // Central Valley and Sierra
-  { fromSite: 'losbanos', toSite: 'panoche', kV: 230, circuits: 2 },
-  { fromSite: 'panoche', toSite: 'gates', kV: 230, circuits: 2 },
+  { fromSite: 'losbanos', toSite: 'panoche', kV: 230, circuits: 3 },
+  { fromSite: 'panoche', toSite: 'gates', kV: 230, circuits: 3 },
   { fromSite: 'gates', toSite: 'fresno', kV: 230, circuits: 2 },
   { fromSite: 'fresno', toSite: 'bigcreek', kV: 230, circuits: 2 },
   { fromSite: 'bigcreek', toSite: 'helms', kV: 230, circuits: 2 },
@@ -180,7 +180,7 @@ const EHV_TRANSFORMER_SITES: { site: string; banks: number; tap?: number }[] = [
   { site: 'roundmtn', banks: 2 }, { site: 'tablemtn', banks: 3 },
   { site: 'vaca', banks: 2 }, { site: 'tesla', banks: 3 },
   { site: 'metcalf', banks: 3 }, { site: 'mosslanding', banks: 2 },
-  { site: 'losbanos', banks: 2 }, { site: 'gates', banks: 3 },
+  { site: 'losbanos', banks: 3 }, { site: 'gates', banks: 4 },
   { site: 'midway', banks: 4 }, { site: 'diablo', banks: 2 },
   { site: 'whirlwind', banks: 3 }, { site: 'kern', banks: 4 },
   { site: 'vincent', banks: 4 },
@@ -302,19 +302,19 @@ export const GENERATION: GenSpec[] = [
 
   // --- solar ---
   { site: 'gates', kV: 230, kind: 'solar-pv', name: 'Gates solar cluster',
-    capacityMW: 3000, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
+    capacityMW: 3800, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
     note: 'Photovoltaic farms on the west side of the valley. No moving parts, no inertia, and output that tracks the sun exactly.' },
   { site: 'panoche', kV: 230, kind: 'solar-pv', name: 'Panoche solar cluster',
-    capacityMW: 2200, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
+    capacityMW: 2800, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
     note: 'Valley floor photovoltaics.' },
   { site: 'kern', kV: 230, kind: 'solar-pv', name: 'Kern County solar cluster',
-    capacityMW: 4000, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
+    capacityMW: 5200, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
     note: 'The largest concentration of solar in the state, on former oilfield and farmland.' },
   { site: 'midway', kV: 230, kind: 'solar-pv', name: 'Midway solar',
-    capacityMW: 1500, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
+    capacityMW: 1900, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
     note: 'Solar built beside an existing switchyard, which is much cheaper than building new transmission.' },
   { site: 'imperialvalley', kV: 230, kind: 'solar-pv', name: 'Imperial Valley solar',
-    capacityMW: 2000, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
+    capacityMW: 2600, pMinMW: 0, qRange: [-0.33, 0.33], marginalCost: 0,
     note: 'Desert solar, with the best irradiance in the state.' },
 
   // --- batteries ---
@@ -540,16 +540,29 @@ const CAPACITOR_STAGES: { fraction: number; threshold: number | undefined; label
   { fraction: 0.3, threshold: 0.80, label: 'stage 2' },
 ];
 
-/** Split a bank of `mvar` at `busId` into its switching stages. */
+/**
+ * Split a bank of `mvar` at `busId` into its switching stages.
+ *
+ * `fullySwitched` puts the whole bank on breakers, with none of it bolted on
+ * permanently. Use it for capacitance installed to solve a HEAVY-load problem:
+ * a fixed bank sized for the evening peak is still connected at four in the
+ * morning, when there is no load current to consume what it produces, and it
+ * pushes the voltage straight through the top of the equipment's rating. The
+ * corridor-support banks are all of this kind.
+ */
 function stagedCapacitors(
   idPrefix: string,
   busId: string,
   busName: string,
   mvar: number,
-  note: string
+  note: string,
+  fullySwitched = false
 ): ShuntDevice[] {
   const out: ShuntDevice[] = [];
-  CAPACITOR_STAGES.forEach((stage, k) => {
+  const stages = fullySwitched
+    ? CAPACITOR_STAGES.map((st, i) => ({ ...st, threshold: st.threshold ?? 0.001, label: i === 0 ? 'stage 1' : st.label }))
+    : CAPACITOR_STAGES;
+  stages.forEach((stage, k) => {
     const size = Math.round((mvar * stage.fraction) / CAPACITOR_STEP_MVAR) * CAPACITOR_STEP_MVAR;
     if (size < CAPACITOR_STEP_MVAR) return;
     out.push({
@@ -572,7 +585,7 @@ function stagedCapacitors(
  * corridor.
  */
 export const SHUNT_BANKS: { site: string; kV: number; mvar: number; inService: boolean; note: string }[] = [
-  { site: 'roundmtn', kV: 230, mvar: 250, inService: true,
+  { site: 'roundmtn', kV: 230, mvar: 450, inService: true,
     note: 'Round Mountain sits at the end of a long import corridor with no generation of its own, so its voltage has to be held up locally.' },
   { site: 'tablemtn', kV: 230, mvar: 150, inService: true,
     note: 'Northern corridor reactive support.' },
@@ -592,15 +605,15 @@ export const SHUNT_BANKS: { site: string; kV: number; mvar: number; inService: b
   // and installing enough capacitance at each to close the gap. The study that
   // produced them is reproduced by test/california.test.ts, which fails if any
   // bus is driven beyond its reactive capability.
-  { site: 'tablemtn', kV: 230, mvar: 800, inService: true,
+  { site: 'tablemtn', kV: 230, mvar: 1150, inService: true,
     note: 'Holding up the northern corridor. The hydro here runs at a fraction of its rating for most of the day, so it cannot supply the reactive power the corridor needs on its own.' },
-  { site: 'sanmateo', kV: 230, mvar: 350, inService: true,
+  { site: 'sanmateo', kV: 230, mvar: 750, inService: true,
     note: 'Peninsula reactive support. There is no generation on this part of the system at all, so every megavar it uses has to be made here or carried in.' },
-  { site: 'newark', kV: 230, mvar: 550, inService: true,
+  { site: 'newark', kV: 230, mvar: 800, inService: true,
     note: 'East bay industrial load, which is motor-heavy and a long way from generation.' },
-  { site: 'martin', kV: 230, mvar: 500, inService: true,
+  { site: 'martin', kV: 230, mvar: 850, inService: true,
     note: 'San Francisco has almost no generation inside it, so its reactive power has to come from capacitors.' },
-  { site: 'oakland', kV: 230, mvar: 450, inService: true, note: 'East bay reactive support.' },
+  { site: 'oakland', kV: 230, mvar: 750, inService: true, note: 'East bay reactive support.' },
   { site: 'escondido', kV: 230, mvar: 350, inService: true,
     note: 'North San Diego County, near the end of a long chain of circuits.' },
   { site: 'miraloma', kV: 230, mvar: 325, inService: true, note: 'Inland Empire reactive support.' },
@@ -762,7 +775,7 @@ function buildShunts(branches: Branch[], buses: Bus[], loads: Load[]): ShuntDevi
     const busId = makeBusId(s.site, s.kV);
     const bus = byId.get(busId);
     if (!bus) throw new Error(`shunt bank ${i} at ${s.site}: no ${s.kV} kV bus there`);
-    return stagedCapacitors(`C_${s.site.toUpperCase()}_${i}`, busId, bus.name, s.mvar, s.note);
+    return stagedCapacitors(`C_${s.site.toUpperCase()}_${i}`, busId, bus.name, s.mvar, s.note, true);
   });
   return [
     ...named,

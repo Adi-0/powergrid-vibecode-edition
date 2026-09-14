@@ -49,7 +49,7 @@
  * reactive power somewhere cheaper — is a first-order operating objective.
  */
 
-import { NetworkCase } from '../core/network.js';
+import { NetworkCase, ShuntDevice } from '../core/network.js';
 
 export interface ReactiveSwitchingOptions {
   /** Per-unit voltage at or above which a shunt reactor switches IN. */
@@ -81,6 +81,8 @@ export interface ReactiveSwitchingOptions {
    * before it is held where it is.
    */
   maxOperationsPerDevice: number;
+  /** How many rounds the violation-driven correction layer may take. */
+  maxCorrectionRounds: number;
 }
 
 /**
@@ -99,6 +101,7 @@ export const DEFAULT_REACTIVE_SWITCHING: ReactiveSwitchingOptions = {
   reactorReleaseQUtil: 0.25,
   maxRounds: 12,
   maxOperationsPerDevice: 2,
+  maxCorrectionRounds: 14,
 };
 
 export interface SwitchingState {
@@ -112,6 +115,8 @@ export interface SwitchingState {
   lastChanged: { id: string; name: string; to: 'in' | 'out'; busV: number }[];
   /** Rounds of switching it took to settle. */
   rounds: number;
+  /** How many banks the violation-driven correction layer had to move. */
+  correctedBuses: number;
   /** True if the scheme was still changing when it ran out of rounds. */
   hunting: boolean;
   /**
@@ -125,8 +130,8 @@ export function emptySwitchingState(): SwitchingState {
   return {
     reactorsInService: 0, reactorsOutOfService: 0,
     capacitorsInService: 0, capacitorsOutOfService: 0,
-    netShuntMVAr: 0, lastChanged: [], rounds: 0, hunting: false,
-    emergencySwitching: false,
+    netShuntMVAr: 0, lastChanged: [], rounds: 0, correctedBuses: 0,
+    hunting: false, emergencySwitching: false,
   };
 }
 
@@ -218,4 +223,76 @@ export function resetSwitching(net: NetworkCase): void {
     if (sh.switchThreshold === undefined) sh.inService = true;
     else sh.inService = false;
   }
+}
+
+/**
+ * Targeted correction at buses that are actually outside their limits.
+ *
+ * The threshold scheme above is a good general rule and a poor specific one: it
+ * acts on what a device can see locally, which is right, but it settles on the
+ * first stable state rather than the best one. A real Volt/VAr scheme has a
+ * second layer over the top of the local controls that looks at where the
+ * voltage actually ended up and moves the nearest bank.
+ *
+ * This is that layer. For every bus outside its range it switches ONE bank at
+ * that bus in the helping direction — in for a sagging bus, out for a rising
+ * one — and lets the caller re-solve. One step at a time, because reactive
+ * support is strongly coupled between neighbours and moving everything at once
+ * overshoots.
+ */
+export function correctViolations(
+  net: NetworkCase,
+  violations: readonly { busId: string; direction: 'under' | 'over' }[],
+  frozen?: ReadonlySet<string>
+): SwitchingState['lastChanged'] {
+  const changed: SwitchingState['lastChanged'] = [];
+  const byBus = new Map<string, ShuntDevice[]>();
+  for (const sh of net.shunts ?? []) {
+    const list = byBus.get(sh.bus);
+    if (list) list.push(sh);
+    else byBus.set(sh.bus, [sh]);
+  }
+
+  // Buses one branch away. A 500 kV bus usually has nothing on it but a
+  // reactor; what actually holds it up is the capacitance on the 230 kV side
+  // of its own transformers. Reaching one step out is not a cheat — it is how
+  // the support is really arranged.
+  const neighbours = new Map<string, string[]>();
+  for (const br of net.branches) {
+    if (!br.inService) continue;
+    (neighbours.get(br.from) ?? neighbours.set(br.from, []).get(br.from)!).push(br.to);
+    (neighbours.get(br.to) ?? neighbours.set(br.to, []).get(br.to)!).push(br.from);
+  }
+
+  const moved = new Set<string>();
+  for (const v of violations) {
+    const candidates: ShuntDevice[] = [
+      ...(byBus.get(v.busId) ?? []),
+      ...(neighbours.get(v.busId) ?? []).flatMap((n) => byBus.get(n) ?? []),
+    ];
+
+    const helps = (sh: ShuntDevice): boolean => {
+      const raises = sh.kind === 'capacitor';
+      // A sagging bus wants more capacitance in, or a reactor out.
+      if (v.direction === 'under') return raises ? !sh.inService : sh.inService;
+      return raises ? sh.inService : !sh.inService;
+    };
+
+    // Smallest helpful step first, so the correction is gentle: reactive
+    // support couples strongly between neighbours and a large step overshoots
+    // into the opposite violation.
+    const target = candidates
+      .filter((sh) => sh.switchThreshold !== undefined && !frozen?.has(sh.id)
+        && !moved.has(sh.id) && helps(sh))
+      .sort((a, b) => Math.abs(a.qMVAr) - Math.abs(b.qMVAr))[0];
+    if (!target) continue;
+
+    target.inService = !target.inService;
+    moved.add(target.id);
+    changed.push({
+      id: target.id, name: target.name,
+      to: target.inService ? 'in' : 'out', busV: 0,
+    });
+  }
+  return changed;
 }

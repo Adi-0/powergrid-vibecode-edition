@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { californiaCase, SLACK_BUS } from '../src/data/california/network.js';
 import { validateCase } from '../src/core/validate.js';
 import { dispatchDay, applyDispatch, resourceRole } from '../src/sim/dispatch.js';
-import { SUMMER_DAY, WINTER_DAY, DayProfile } from '../src/sim/profiles.js';
+import { SUMMER_DAY, WINTER_DAY, SPRING_DAY, DayProfile } from '../src/sim/profiles.js';
 import { operate } from '../src/sim/operate.js';
 import { solveDCPowerFlow } from '../src/core/dc-powerflow.js';
 
@@ -65,7 +65,9 @@ describe('network structure', () => {
   });
 });
 
-const SEASONS: [string, DayProfile][] = [['summer', SUMMER_DAY], ['winter', WINTER_DAY]];
+const SEASONS: [string, DayProfile][] = [
+  ['summer', SUMMER_DAY], ['winter', WINTER_DAY], ['spring', SPRING_DAY],
+];
 
 describe.each(SEASONS)('%s day', (_label, profile) => {
   const day = dispatchDay(base, profile, SLACK_BUS);

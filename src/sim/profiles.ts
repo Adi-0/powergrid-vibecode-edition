@@ -168,7 +168,39 @@ export function sampleShape(shape: DailyShape, hour: number): number {
   );
 }
 
-export type Season = 'summer' | 'winter';
+/**
+ * Spring demand. The important season, and the one the duck curve was named
+ * for: mild weather means little heating and no air conditioning, so demand is
+ * at its lowest of the year — while the days are already long and the panels
+ * are cool and efficient. Renewable output at its best against demand at its
+ * worst is when a system finds out what oversupply feels like.
+ */
+export const DEMAND_SPRING: DailyShape = {
+  id: 'demand-spring',
+  name: 'Demand — spring weekday',
+  hourly: [
+    0.64, 0.61, 0.59, 0.58, 0.59, 0.63, 0.70, 0.76,
+    0.78, 0.77, 0.75, 0.73, 0.72, 0.72, 0.73, 0.76,
+    0.82, 0.90, 0.98, 1.00, 0.96, 0.88, 0.78, 0.69,
+  ],
+  source: 'Mild-weather weekday: no cooling load, a modest evening lighting peak.',
+};
+
+export const SOLAR_SPRING: DailyShape = {
+  id: 'solar-spring',
+  name: 'Solar output — clear spring day',
+  hourly: [
+    0, 0, 0, 0, 0, 0.01, 0.10, 0.30,
+    0.52, 0.70, 0.83, 0.91, 0.94, 0.93, 0.87, 0.77,
+    0.62, 0.42, 0.20, 0.03, 0, 0, 0, 0,
+  ],
+  source:
+    'The best solar day of the year. Long enough for a high sun angle, cool ' +
+    'enough that the panels are not derating — spring output peaks ABOVE ' +
+    'midsummer output for exactly that reason.',
+};
+
+export type Season = 'summer' | 'winter' | 'spring';
 
 export interface DayProfile {
   season: Season;
@@ -176,19 +208,45 @@ export interface DayProfile {
   solar: DailyShape;
   wind: DailyShape;
   hydro: DailyShape;
+  /**
+   * The day's own peak as a fraction of the system's annual peak.
+   *
+   * The demand SHAPE is normalised to its own maximum, so without this every
+   * day of the year would peak at the same megawatts, which is the opposite of
+   * true. The annual peak happens on a hot summer evening; a spring day never
+   * comes close.
+   */
+  peakScale: number;
+  /** One line explaining what is characteristic about this day. */
+  blurb: string;
 }
 
 export const SUMMER_DAY: DayProfile = {
   season: 'summer', demand: DEMAND_SUMMER, solar: SOLAR_SUMMER,
-  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY,
+  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY, peakScale: 1.0,
+  blurb:
+    'The hardest day of the year. Demand peaks in the early evening just as ' +
+    'the solar goes away, and everything else has to climb to cover it.',
 };
 
 export const WINTER_DAY: DayProfile = {
   season: 'winter', demand: DEMAND_WINTER, solar: SOLAR_WINTER,
-  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY,
+  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY, peakScale: 0.86,
+  blurb:
+    'Two peaks instead of one, morning and evening, because the driver is ' +
+    'lighting and heating rather than cooling. A shorter day of weaker sun.',
+};
+
+export const SPRING_DAY: DayProfile = {
+  season: 'spring', demand: DEMAND_SPRING, solar: SOLAR_SPRING,
+  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY, peakScale: 0.72,
+  blurb:
+    'The lowest demand of the year meeting the best solar of the year. This ' +
+    'is where oversupply, curtailment and near-zero prices actually happen.',
 };
 
 export const DAY_PROFILES: Record<Season, DayProfile> = {
   summer: SUMMER_DAY,
   winter: WINTER_DAY,
+  spring: SPRING_DAY,
 };

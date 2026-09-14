@@ -99,9 +99,16 @@ export const DEFAULT_DISPATCH: DispatchOptions = {
 
 /** Demand at a given hour, from the profile and each load's peak value. */
 export function demandAtHour(net: NetworkCase, profile: DayProfile, hour: number): number {
-  const f = sampleShape(profile.demand, hour);
-  return net.loads.reduce((s, l) => s + l.pMW, 0) * f;
+  return net.loads.reduce((s, l) => s + l.pMW, 0) * demandFactor(profile, hour);
 }
+
+/**
+ * Demand at this hour as a fraction of the system's ANNUAL peak — the shape of
+ * the day multiplied by how big that day's own peak is relative to the worst
+ * day of the year.
+ */
+export const demandFactor = (profile: DayProfile, hour: number): number =>
+  sampleShape(profile.demand, hour) * profile.peakScale;
 
 /** Capacity factor available to a weather-driven or hydro resource this hour. */
 export function availabilityFactor(g: Generator, profile: DayProfile, hour: number): number {
@@ -247,6 +254,10 @@ function dispatchHour(
   let marginalUnit: string | null = null;
   let marginalCost = 0;
 
+  // Import ties can run BACKWARDS: when California is long, power flows out of
+  // the state rather than in. Their negative minimum is what allows that, and
+  // it is why an oversupplied system exports before it curtails.
+  //
   // COMMITMENT. A unit that the stack never reaches is not started at all — it
   // sits at zero, not at its minimum. That distinction is the whole of unit
   // commitment, and getting it wrong makes every plant in the fleet idle at
@@ -258,7 +269,10 @@ function dispatchHour(
   // and it is one of the two things that force renewable curtailment.
   for (const g of dispatchable) {
     const maxAvail = g.pMaxMW * availabilityFactor(g, profile, hour);
-    const minRun = Math.max(0, Math.min(g.pMinMW, maxAvail));
+    // A tie or a pumped-storage plant with a negative minimum may be driven
+    // below zero; everything else is either off or at its minimum.
+    const canExport = g.kind === 'import' || g.pMinMW < 0;
+    const minRun = canExport ? g.pMinMW : Math.max(0, Math.min(g.pMinMW, maxAvail));
     let out: number;
     if (toServe <= 1e-6) {
       out = 0; // never started
@@ -353,7 +367,7 @@ export function applyDispatch(
   dispatch: DispatchResult
 ): NetworkCase {
   const net = cloneCase(base);
-  const f = sampleShape(profile.demand, hour);
+  const f = demandFactor(profile, hour);
   for (const l of net.loads) {
     l.pMW = l.pMW * f;
     l.qMVAr = l.qMVAr * f;

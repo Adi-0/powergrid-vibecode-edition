@@ -23,8 +23,9 @@ import { NetworkCase } from '../core/network.js';
 import { solvePowerFlow, PowerFlowOptions, PowerFlowResult } from '../core/powerflow.js';
 import { analyse, SolvedCase } from '../core/results.js';
 import {
-  switchShunts, resetSwitching, SwitchingState, emptySwitchingState,
-  ReactiveSwitchingOptions, DEFAULT_REACTIVE_SWITCHING, BusReactiveSignal,
+  switchShunts, resetSwitching, correctViolations, SwitchingState,
+  emptySwitchingState, ReactiveSwitchingOptions, DEFAULT_REACTIVE_SWITCHING,
+  BusReactiveSignal,
 } from './reactive-ops.js';
 
 /**
@@ -32,6 +33,25 @@ import {
  * generator is holding that voltage — how much of its reactive capability the
  * machine is using to do it.
  */
+/**
+ * Buses whose machines are working hardest to hold their voltage, worst first.
+ * Used when the limited solve fails outright and there is no violation list —
+ * relieving these is the best guess at where the shortage actually is.
+ */
+function reactiveStress(
+  net: NetworkCase, pf: PowerFlowResult
+): { busId: string; direction: 'under' | 'over' }[] {
+  const out: { busId: string; direction: 'under' | 'over'; stress: number }[] = [];
+  for (const [busId, sig] of reactiveSignals(net, pf)) {
+    const up = sig.qUtilUp ?? 0;
+    const down = sig.qUtilDown ?? 0;
+    if (up > down) out.push({ busId, direction: 'under', stress: up });
+    else if (down > 0) out.push({ busId, direction: 'over', stress: down });
+  }
+  out.sort((a, b) => b.stress - a.stress);
+  return out.map(({ busId, direction }) => ({ busId, direction }));
+}
+
 function reactiveSignals(net: NetworkCase, pf: PowerFlowResult): Map<string, BusReactiveSignal> {
   const qMax = new Map<string, number>();
   const qMin = new Map<string, number>();
@@ -118,37 +138,53 @@ export function operate(
     enforceQLimits: true,
     startFrom: { vm: pf.vm, va: pf.va },
   });
-  if (limited.converged) {
+  // A converged solve is not automatically a good one: it can converge with
+  // buses well outside their range. Only a converged solve with nothing in
+  // violation is finished here; anything else goes to the correction layer.
+  if (limited.converged && analyse(net, limited).system.voltageViolations.length === 0) {
     return { solved: analyse(net, limited), switching: state, reactiveLimitsEnforced: true };
   }
 
-  // It did not converge with the machines held to their real limits. That means
-  // the normal switching scheme has left the system reactive-short somewhere.
-  //
-  // An operator faced with this does not shrug: they close every capacitor bank
-  // that will help and leave every reactor open. So does this. The pass below
-  // is that emergency action, run once, with the engage thresholds dropped so
-  // that banks come in on much less provocation.
+  // Either the limited solve failed, or it succeeded with buses outside their
+  // range. Both mean the local threshold controls have settled somewhere the
+  // system should not be left, so a second layer goes to work: look at where
+  // the voltage actually ended up, and move the nearest bank at each offending
+  // bus. One step per bus per round, because reactive support is strongly
+  // coupled between neighbours and moving everything at once overshoots.
   if (!options.holdSwitching) {
-    const emergency: Partial<ReactiveSwitchingOptions> = {
-      ...swOpt,
-      capacitorEngageQUtil: 0.30,
-      capacitorEngageV: 1.020,
-      reactorEngageQUtil: 0.95,
-      reactorEngageV: 1.060,
-    };
-    for (let round = 0; round < 3; round++) {
-      const { changed, state: s } = switchShunts(net, reactiveSignals(net, pf), emergency);
-      state = s;
-      state.emergencySwitching = true;
+    const frozen = new Set<string>();
+    const ops = new Map<string, number>();
+
+    for (let round = 0; round < swOpt.maxCorrectionRounds; round++) {
+      const view = analyse(net, limited.converged ? limited : pf);
+      const violations = view.buses
+        .filter((b) => b.voltageViolation !== null)
+        .map((b) => ({ busId: b.busId, direction: b.voltageViolation as 'under' | 'over' }));
+      if (violations.length === 0 && limited.converged) break;
+
+      // When the limited solve failed outright there is no violation list to
+      // work from, so fall back to relieving every bus whose machines are
+      // furthest into their reactive capability.
+      const targets = violations.length > 0 ? violations
+        : reactiveStress(net, pf).slice(0, 6);
+      const changed = correctViolations(net, targets, frozen);
       if (changed.length === 0) break;
+      for (const c of changed) {
+        const n = (ops.get(c.id) ?? 0) + 1;
+        ops.set(c.id, n);
+        if (n >= swOpt.maxOperationsPerDevice) frozen.add(c.id);
+      }
+      state.rounds += 1;
+      state.correctedBuses += changed.length;
+
       pf = solvePowerFlow(net, {
         ...pfBase, enforceQLimits: false, startFrom: { vm: pf.vm, va: pf.va },
       });
+      limited = solvePowerFlow(net, {
+        ...pfBase, enforceQLimits: true, startFrom: { vm: pf.vm, va: pf.va },
+      });
     }
-    limited = solvePowerFlow(net, {
-      ...pfBase, enforceQLimits: true, startFrom: { vm: pf.vm, va: pf.va },
-    });
+
     if (limited.converged) {
       return { solved: analyse(net, limited), switching: state, reactiveLimitsEnforced: true };
     }

@@ -11,7 +11,7 @@ drops, a plant into its energy conversion chain, a generator into a rotating
 field and three windings — all the way down to the governing equations, with
 live numbers in them.
 
-**Status:** phase 1 of 8 complete. See [PROGRESS.md](PROGRESS.md).
+**Status:** phases 1–3 of 8 complete. See [PROGRESS.md](PROGRESS.md).
 
 ## The two rules
 
@@ -45,6 +45,7 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 ## Documentation
 
 - [PROGRESS.md](PROGRESS.md) — state of the build
+- [docs/style.md](docs/style.md) — the visual language, and why each rule exists
 - [docs/model.md](docs/model.md) — every parameter and where it came from
 - [docs/simplifications.md](docs/simplifications.md) — what the model leaves out
 - [docs/decisions/](docs/decisions/) — what was chosen, what was rejected, why
@@ -53,5 +54,6 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 
 ```
 npm install
-npm test
+npm test        # 117 tests
+npm run dev     # the app
 ```

@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phase 1 complete.
+**Last updated:** phases 1–3 complete.
 
 ---
 
@@ -11,8 +11,8 @@ An isometric, zoomable, explorable model of the California power grid.
 | # | Phase | State |
 |---|---|---|
 | 1 | Solver core and synthetic network | **complete** |
-| 2 | System view — isometric rendering, real flows, pan and zoom | not started |
-| 3 | Time scrubber, line tripping, region view, first level transition | not started |
+| 2 | System view — isometric rendering, real flows, pan and zoom | **complete** |
+| 3 | Time scrubber, line tripping, seasons, inspector, glossary | **complete** |
 | 4 | Substation → distribution feeder → service | not started |
 | 5 | Math panel with full worked derivations | not started |
 | 6 | Plant and machine branch | not started |
@@ -85,12 +85,61 @@ rather than a solver problem).
 
 ---
 
-## Next: phase 2 — the system view
+## Phases 2 and 3 — complete
 
-Isometric rendering of the solved state. The rendering problems the brief
-identifies — quad-based lines for constant screen-space width, hidden-line
-removal with ground-coloured faces, screen-space label layout, level-of-detail
-streaming — are the substance of this phase, not incidental to it.
+### What exists
+
+**Rendering** (`src/render/`)
+
+- `style.ts` — the visual language as constants: the weight scale, the one
+  signal colour, the isometric angle, the zoom levels. Documented in
+  `docs/style.md`.
+- `line-batch.ts` — instanced quad lines at constant screen-space width, with a
+  capsule signed-distance fragment shader giving antialiasing, round caps and
+  pixel-space dash patterns in one pass
+- `iso.ts` — the orthographic isometric camera, pan, zoom-about-cursor, and the
+  exact ground-plane basis that lets a symbol drawn flat on the ground project
+  to an exact shape on screen
+- `symbols.ts` — one-line diagram symbology, standard where a standard exists
+- `labels.ts` — screen-space labels with a collision-avoiding layout pass and
+  leader lines
+- `world.ts` — the vertical layering of voltage classes, and the exaggeration
+  that makes it visible
+- `scene-system.ts` — the system view, assembled in painter's order
+
+**Interface** (`src/app/`)
+
+- `state.ts` — one snapshot, re-solved on every change; no second copy of any number
+- `viewport.ts` — the render loop, picking, and the level-transition fly-to
+- `legend.ts` — generated from the renderer's own constants
+- `inspector.ts` — every quantity with its symbol, unit, and per-unit-with-base
+- `scrubber.ts` — the time control, with the duck curve plotted from the live dispatch
+- `honesty.ts` — the model-honesty register and the searchable glossary
+- `tooltip.ts` — the `term()` helper that makes the no-unglossed-jargon rule enforceable
+
+**Data**
+
+- `glossary.ts` — 48 entries, each with the standard term, the standard symbol,
+  a plain-language definition and a sense of scale
+
+### What it does
+
+| Check | Result |
+|---|---|
+| Hours converging, three seasons, reactive limits enforced | 72 / 72 |
+| Branch overloads / voltage violations in the base case | 0 / 0 |
+| Price range across the three days | $14 – $46 /MWh |
+| Spring midday net load (17.8 GW demand) | 1.5 GW |
+| Terms used in the interface with no glossary entry | 0 |
+| Tests | 117 passing |
+
+---
+
+## Next: phase 4 — substation, feeder, service
+
+The path to the wall outlet. The brief says this branch matters most, and it is
+the one that makes the whole claim land: the chain has to terminate at something
+the reader already touches every day.
 
 ---
 
