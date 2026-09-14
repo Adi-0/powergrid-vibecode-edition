@@ -27,6 +27,9 @@ import {
   emptySwitchingState, ReactiveSwitchingOptions, DEFAULT_REACTIVE_SWITCHING,
   BusReactiveSignal,
 } from './reactive-ops.js';
+import {
+  TapChanger, TapAdjustment, stepTaps, applyTaps, californiaTapChangers,
+} from './tap-control.js';
 
 /**
  * What the switching scheme can see at each bus: the voltage, and — where a
@@ -87,6 +90,10 @@ export interface OperateResult {
   switching: SwitchingState;
   /** True if the final solve had generator reactive limits enforced. */
   reactiveLimitsEnforced: boolean;
+  /** Where every tap changer settled, and how it got there. */
+  taps: TapChanger[];
+  /** Tap moves made while settling, for the UI to narrate. */
+  tapMoves: TapAdjustment[];
   /** Set when the limit-enforced solve did not converge and was abandoned. */
   warning?: string;
 }
@@ -98,10 +105,17 @@ export function operate(
     switching?: Partial<ReactiveSwitchingOptions>;
     /** Skip the switching loop and solve the configuration exactly as given. */
     holdSwitching?: boolean;
+    /** Tap changers to let settle. Defaults to the California ones. */
+    taps?: TapChanger[];
+    /** Hold every tap where it is, for showing what a fixed ratio would do. */
+    holdTaps?: boolean;
   } = {}
 ): OperateResult {
   const swOpt = { ...DEFAULT_REACTIVE_SWITCHING, ...options.switching };
   const pfBase: Partial<PowerFlowOptions> = { tol: 1e-9, init: 'dc', ...options.pf };
+  const taps = options.taps ?? californiaTapChangers();
+  const tapMoves: TapAdjustment[] = [];
+  applyTaps(net, taps);
 
   let state: SwitchingState = emptySwitchingState();
   let pf: PowerFlowResult;
@@ -130,6 +144,22 @@ export function operate(
     }
   }
 
+  // Let the tap changers settle. They are slow mechanical devices watching a
+  // voltage, so this is a loop rather than a formula: move one step, re-solve,
+  // look again. It terminates because each changer only moves while it is
+  // outside its bandwidth and can only move a bounded number of steps.
+  if (!options.holdTaps) {
+    for (let round = 0; round < 40; round++) {
+      const moves = stepTaps(net, pf, taps);
+      const real = moves.filter((m) => m.reason !== 'at-limit');
+      if (real.length === 0) break;
+      tapMoves.push(...real);
+      pf = solvePowerFlow(net, {
+        ...pfBase, enforceQLimits: false, startFrom: { vm: pf.vm, va: pf.va },
+      });
+    }
+  }
+
   // The honest answer enforces generator reactive limits. Start it from the
   // unlimited solution just obtained: it is a few iterations away, and starting
   // from scratch would throw that away.
@@ -142,7 +172,10 @@ export function operate(
   // buses well outside their range. Only a converged solve with nothing in
   // violation is finished here; anything else goes to the correction layer.
   if (limited.converged && analyse(net, limited).system.voltageViolations.length === 0) {
-    return { solved: analyse(net, limited), switching: state, reactiveLimitsEnforced: true };
+    return {
+      solved: analyse(net, limited), switching: state,
+      reactiveLimitsEnforced: true, taps, tapMoves,
+    };
   }
 
   // Either the limited solve failed, or it succeeded with buses outside their
@@ -186,7 +219,10 @@ export function operate(
     }
 
     if (limited.converged) {
-      return { solved: analyse(net, limited), switching: state, reactiveLimitsEnforced: true };
+      return {
+        solved: analyse(net, limited), switching: state,
+        reactiveLimitsEnforced: true, taps, tapMoves,
+      };
     }
   }
 
@@ -194,6 +230,8 @@ export function operate(
     solved: analyse(net, pf),
     switching: state,
     reactiveLimitsEnforced: false,
+    taps,
+    tapMoves,
     warning:
       'The solution shown ignores generator reactive limits. With them enforced ' +
       'the power flow does not converge, even after every available capacitor ' +

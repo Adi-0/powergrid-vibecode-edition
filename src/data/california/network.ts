@@ -19,6 +19,7 @@ import {
   makeBus, makeBusId, makeLines, makeTransformers, SYSTEM_BASE_MVA,
   TRANSFORMER_CLASSES, LineSpec,
 } from './build.js';
+import { buildFeeder, feederBusId, FEEDER_KV } from './feeder.js';
 
 // ---------------------------------------------------------------------------
 // Buses
@@ -71,6 +72,8 @@ function buildBuses(): Bus[] {
   }
   // The distribution substation low-voltage bus: where transmission ends.
   buses.push(makeBus({ site: 'edenvale', kV: 12.47 }));
+  // Every pole on the modelled feeder, and the panel at the end of it.
+  buses.push(...FEEDER.buses);
   return buses;
 }
 
@@ -191,6 +194,16 @@ const EHV_TRANSFORMER_SITES: { site: string; banks: number; tap?: number }[] = [
   { site: 'imperialvalley', banks: 3 }, { site: 'miguel', banks: 4 },
 ];
 
+/**
+ * The modelled feeder, merged into the same case as everything else.
+ *
+ * It is not a separate study fed from a fixed source voltage. One power flow
+ * solves from the Oregon border to a kitchen outlet, so conservation closes
+ * across the whole chain rather than being asserted level by level — which is
+ * the claim the project is actually making.
+ */
+const FEEDER = buildFeeder();
+
 function buildBranches(): Branch[] {
   const out: Branch[] = [];
   for (const spec of [...EHV_CIRCUITS, ...HV230_CIRCUITS, ...HV115_CIRCUITS]) {
@@ -214,6 +227,22 @@ function buildBranches(): Branch[] {
     site: 'edenvale', hvKV: 115, lvKV: 12.47,
     ...TRANSFORMER_CLASSES.dist115_12, banks: 2, tap: 1.0125,
   }));
+
+  // The feeder itself, and the short run from the substation low-voltage bus
+  // out through the fence to the first pole.
+  out.push({
+    id: 'FDR_GETAWAY',
+    name: 'Cherry Lane 1201 getaway',
+    from: makeBusId('edenvale', FEEDER_KV),
+    to: feederBusId('F00'),
+    // A few tens of metres of underground cable under the fence line. Short
+    // enough that its impedance barely matters, and included so that the
+    // drawing has somewhere for the feeder to physically leave the yard.
+    r: 0.00004, x: 0.00006, b: 0,
+    ratingMVA: 12, ratingEmergencyMVA: 15,
+    kind: 'cable', inService: true, lengthKm: 0.04, conductor: 'linnet',
+  });
+  out.push(...FEEDER.branches);
   return out;
 }
 
@@ -492,8 +521,11 @@ export const LOADS: LoadSpec[] = [
  * teaching anything the first one does not.
  */
 export const EDENVALE_OTHER_FEEDERS: LoadSpec = {
-  site: 'edenvale', kV: 12.47, peakMW: 21.0, powerFactor: 0.97, loadClass: 'mixed',
-  note: 'Three further distribution feeders out of this substation, shown as a single lumped load. The fourth is modelled in full.',
+  site: 'edenvale', kV: 12.47, peakMW: 18.9, powerFactor: 0.97, loadClass: 'mixed',
+  note:
+    'Three further distribution feeders out of this substation, shown as one ' +
+    'lumped load of about 6.3 MW each. The fourth, Cherry Lane 1201, is ' +
+    'modelled pole by pole — which is why it is not counted here.',
 };
 
 /**
@@ -667,14 +699,17 @@ export const reactiveFromPF = (pMW: number, pf: number): number =>
 
 function buildLoads(): Load[] {
   const all = [...LOADS, EDENVALE_OTHER_FEEDERS];
-  return all.map((l, i) => ({
-    id: `LD_${l.site.toUpperCase()}_${i}`,
-    name: `${l.site} load`,
-    bus: makeBusId(l.site, l.kV),
-    pMW: l.peakMW,
-    qMVAr: reactiveFromPF(l.peakMW, l.powerFactor),
-    loadClass: l.loadClass,
-  }));
+  return [
+    ...all.map((l, i) => ({
+      id: `LD_${l.site.toUpperCase()}_${i}`,
+      name: `${l.site} load`,
+      bus: makeBusId(l.site, l.kV),
+      pMW: l.peakMW,
+      qMVAr: reactiveFromPF(l.peakMW, l.powerFactor),
+      loadClass: l.loadClass,
+    })),
+    ...FEEDER.loads,
+  ];
 }
 
 /**
@@ -781,6 +816,7 @@ function buildShunts(branches: Branch[], buses: Bus[], loads: Load[]): ShuntDevi
     ...named,
     ...buildLoadCapacitors(loads, buses),
     ...buildEhvReactors(branches, buses),
+    ...FEEDER.shunts,
   ];
 }
 

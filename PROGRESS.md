@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phases 1–3 complete.
+**Last updated:** phases 1–4 complete.
 
 ---
 
@@ -13,7 +13,7 @@ An isometric, zoomable, explorable model of the California power grid.
 | 1 | Solver core and synthetic network | **complete** |
 | 2 | System view — isometric rendering, real flows, pan and zoom | **complete** |
 | 3 | Time scrubber, line tripping, seasons, inspector, glossary | **complete** |
-| 4 | Substation → distribution feeder → service | not started |
+| 4 | Substation → distribution feeder → service | **complete** |
 | 5 | Math panel with full worked derivations | not started |
 | 6 | Plant and machine branch | not started |
 | 7 | Faults and protection | not started |
@@ -119,7 +119,7 @@ rather than a solver problem).
 
 **Data**
 
-- `glossary.ts` — 48 entries, each with the standard term, the standard symbol,
+- `glossary.ts` — 81 entries, each with the standard term, the standard symbol,
   a plain-language definition and a sense of scale
 
 ### What it does
@@ -131,15 +131,122 @@ rather than a solver problem).
 | Price range across the three days | $14 – $46 /MWh |
 | Spring midday net load (17.8 GW demand) | 1.5 GW |
 | Terms used in the interface with no glossary entry | 0 |
-| Tests | 117 passing |
+| Tests | 170 passing |
 
 ---
 
-## Next: phase 4 — substation, feeder, service
+## Phase 4 — complete
 
-The path to the wall outlet. The brief says this branch matters most, and it is
-the one that makes the whole claim land: the chain has to terminate at something
-the reader already touches every day.
+**The path to the wall outlet.** The brief says this branch matters most, and it
+is the one that makes the whole claim land: the chain has to terminate at
+something the reader already touches every day. It now does.
+
+### The one architectural decision
+
+**There are no levels.** There is one world, in metres, and one camera. The 500
+kV line from Malin, the Eden Vale switchyard, the poles along Cherry Lane and
+the socket in the kitchen all sit at their true coordinates relative to one
+another, and travelling between them is a single continuous zoom of about sixty
+thousand to one — no cut, no reload, no second copy of anything.
+
+What changes with scale is only which drawings are worth rendering. In the
+overlap between two scenes both are drawn, from the same solved case, so the
+reader watches a site symbol dissolve into a fenced yard, or a single 12.47 kV
+branch resolve into a line of poles. The numbers agree across the transition
+because they are the same numbers. Decision **0010**.
+
+### What exists
+
+**Eden Vale substation** (`src/data/california/substation.ts`,
+`src/render/scene-substation.ts`)
+
+Thirty-five pieces of equipment, each carrying **both** a yard coordinate
+(metres east, north, and above grade) and a single-line-diagram coordinate. The
+view interpolates: slide the control and the diagram lying flat stands up into
+the yard it describes. The schematic frame is built from the camera's ground
+basis so the diagram is square on the page — buses horizontal, bays vertical —
+rather than sheared into a parallelogram by the isometric projection.
+
+Every label carries a live number read out of the solve: bank loading, bus
+voltage in kV and per-unit, feeder current, how much of the capacitor bank is
+switched in at this hour. The full ANSI/IEEE C37.2 protection scheme (87T, 87B,
+51, 50, 50N/51N, 79, 21, 67, 49, 63, 27/59) is in the inspector, each device
+explained in a paragraph a beginner can read.
+
+The normally-open bus tie is drawn open, in ink — **not** in the signal colour.
+A normally-open device is not a fault.
+
+**Cherry Lane 1201** (`src/data/california/feeder.ts`,
+`src/render/scene-feeder.ts`, `src/app/profile.ts`)
+
+Three kilometres of street drawn at the height the wires actually hang: poles,
+crossarms where there are three phases and none where there is one, fused
+cutouts where each lateral taps off the main, a recloser, a step voltage
+regulator, a switched capacitor bank and a normally-open tie. The vertical
+exaggeration used at system scale is retired — a distribution pole really is
+about eleven metres tall.
+
+Beside it, the **voltage profile**: per-unit against distance along the wire,
+with the ANSI C84.1 Range A limits drawn, the regulator's step visible as a
+vertical jump and the capacitor's effect as a kink. Every point is a solved bus
+voltage.
+
+**14 Cherry Lane** (`src/data/california/service.ts`,
+`src/render/scene-service.ts`)
+
+The pad-mounted transformer, the buried lateral, the meter, the panel, the
+grounding electrode, one branch circuit and a NEMA 5-15R socket. The power flow
+solves to the transformer's secondary terminals; the last twenty metres are
+worked with ΔV = I·(R·cos φ + X·sin φ) over the loop, from NEC Chapter 9 Table 9,
+and the whole calculation is in the inspector. Decision **0011**.
+
+### Perturbation at the bottom of the tree
+
+Switching on an appliance adds a real load to the real case and re-solves the
+whole state. The car charger at 18:00 on a summer day:
+
+| | off | on |
+|---|---|---|
+| System demand | 33,925.9780 MW | 33,925.9895 MW |
+| System losses | 901.7323 MW | 901.7350 MW |
+| Total generation | 34,827.7103 MW | 34,827.7245 MW |
+| Transformer secondary | 243.97 V | 243.20 V |
+| Voltage at the socket | 121.90 V | 121.20 V |
+| Current in the service | 13.2 A | 61.0 A |
+
+Demand rises by 11.5 kW exactly; losses by 2.7 kW, because it has to be carried
+four hundred kilometres; generation by 14.2 kW, out of the marginal unit. The 50
+kVA transformer goes over its nameplate and says so.
+
+### What it does
+
+| Check | Result |
+|---|---|
+| Buses in the case, Oregon border to kitchen socket | 90 |
+| Branches | 254 |
+| Feeder peak load / customers | 7.1 MW / 1,585 |
+| Voltage at the modelled socket, 18:00 summer | 121.90 V (ANSI C84.1 Range A: 110–126 V) |
+| Substation elements with a live number from the solve | all of them |
+| New model-honesty entries | 5 (18 in total) |
+| New glossary entries | 17 (81 in total) |
+| Tests | 170 passing |
+
+### What was rebuilt after looking at it
+
+The brief requires screenshotting your own renders and critiquing them before
+advancing. Four things were rebuilt on the evidence of a screenshot:
+
+- The **substation single-line diagram** was first laid flat on the isometric
+  ground plane, which sheared it into a parallelogram with buses running as long
+  diagonals across the page. Rebuilt on a screen-aligned frame.
+- The **feeder route** originally ran south-east, which is exactly the
+  projection's depth axis, so three kilometres of street drew as a vertical
+  line. Re-laid along the east axis, with laterals at right angles, so the main
+  and its branches fall on two different isometric axes.
+- **Bus labels** were struck through by the heaviest line in the drawing.
+  Anchored a fixed number of screen pixels past the end of the bar instead.
+- The **service view** showed the house as a full wireframe box that outweighed
+  every wire inside it. Reduced to a footprint and four corner posts.
 
 ---
 
@@ -147,7 +254,7 @@ the reader already touches every day.
 
 ```
 npm install
-npm test          # 69 tests
+npm test          # 170 tests
 npm run typecheck
-npm run dev       # once phase 2 exists
+npm run dev
 ```

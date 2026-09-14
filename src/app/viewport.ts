@@ -52,6 +52,8 @@ export class Viewport {
   private startedAt = performance.now();
   private hoveredId: string | null = null;
 
+  private width = 1;
+  private height = 1;
   private dragging = false;
   private lastPointer = { x: 0, y: 0 };
   private pointerMoved = 0;
@@ -128,10 +130,17 @@ export class Viewport {
 
   // --- sizing -------------------------------------------------------------
 
+  /** Canvas size in CSS pixels. */
+  get size(): { width: number; height: number } {
+    return { width: this.width, height: this.height };
+  }
+
   resize(): void {
     const rect = this.stage.getBoundingClientRect();
     const w = Math.max(1, Math.floor(rect.width));
     const h = Math.max(1, Math.floor(rect.height));
+    this.width = w;
+    this.height = h;
     this.renderer.setSize(w, h, false);
     this.camera.setViewport(w, h);
     this.batch.setResolution(w, h);

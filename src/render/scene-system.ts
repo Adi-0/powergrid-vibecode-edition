@@ -202,6 +202,12 @@ export interface SystemDrawOptions {
   showFlow?: boolean;
   /** Fraction 0..1 of how far the level transition to the region view has gone. */
   regionBlend?: number;
+  /**
+   * How strongly to draw the whole view, 0 to 1. Used by the level
+   * compositor to cross-fade this drawing against the one below it as the
+   * camera descends; at 1 it costs nothing.
+   */
+  opacity?: number;
   /** Debug: draw only this voltage class. */
   onlyKV?: number | null;
   /** Debug: extra width added to every halo, px. */
@@ -495,9 +501,16 @@ export function drawSystem(
   }
 
   // Back to front, then flatten each mark into its halo and its ink.
+  //
+  // The halo is faded along with the ink. That is deliberate: a halo at full
+  // strength behind a half-faded stroke would punch a solid hole in whatever
+  // drawing is showing through, and the cross-fade would look like an erasure
+  // rather than a dissolve.
+  const alpha = options.opacity ?? 1;
   marks.sort((a, b) => b.depth - a.depth);
   const segments: LineSegment[] = [];
   for (const m of marks) {
+    const seg = alpha >= 1 ? m.seg : { ...m.seg, opacity: (m.seg.opacity ?? 1) * alpha };
     if (m.haloPx !== undefined && m.haloPx > 0) {
       segments.push({
         a: m.seg.a, b: m.seg.b,
@@ -506,9 +519,10 @@ export function drawSystem(
         ...(m.seg.dash ? { dash: m.seg.dash } : {}),
         ...(m.seg.dashPhase !== undefined ? { dashPhase: m.seg.dashPhase } : {}),
         ...(m.seg.dashSpeed !== undefined ? { dashSpeed: m.seg.dashSpeed } : {}),
+        ...(alpha < 1 ? { opacity: alpha } : {}),
       });
     }
-    segments.push(m.seg);
+    segments.push(seg);
   }
 
   return { segments, labels, picks };

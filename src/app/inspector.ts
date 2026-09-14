@@ -20,6 +20,14 @@ import { Branch, Bus } from '../core/network.js';
 import { lineParameters, surgeImpedance, loadabilityLimitMW, CONDUCTORS } from '../core/lines.js';
 import { SITES } from '../data/california/sites.js';
 import { SystemGeometry, SiteNode, formatMW } from '../render/scene-system.js';
+import { elementById, protectionFor } from '../data/california/substation.js';
+import { substationLive } from '../render/scene-substation.js';
+import {
+  FEEDER_NODES, FEEDER_LOADS, feederBusId, MODELLED_SERVICE,
+} from '../data/california/feeder.js';
+import {
+  serviceNodeById, SERVICE_RUNS, C84_1, DropStep,
+} from '../data/california/service.js';
 import { Selection, AppSnapshot } from './state.js';
 import { term, quantity, escapeHtml } from './tooltip.js';
 import { voltageClass } from '../render/style.js';
@@ -81,8 +89,166 @@ export class Inspector {
     if (selection.kind === 'site') {
       const node = geometry.sites.get(selection.id);
       if (node) return this.renderSite(node, solved, snap);
+      // Below the region level the selectable things are no longer sites on a
+      // map. They are pieces of equipment, poles and sockets, each of which
+      // knows a different set of things about itself.
+      const element = elementById.get(selection.id);
+      if (element) return this.renderSubstationElement(selection.id, solved);
+      const pole = FEEDER_NODES.find((n) => n.id === selection.id);
+      if (pole) return this.renderFeederNode(selection.id, solved, snap);
+      const svc = serviceNodeById.get(selection.id);
+      if (svc) return this.renderServiceNode(selection.id, snap);
     }
     this.element.style.display = 'none';
+  }
+
+  // -----------------------------------------------------------------------
+  // One piece of equipment in a substation
+  // -----------------------------------------------------------------------
+
+  private renderSubstationElement(id: string, solved: SolvedCase): void {
+    const e = elementById.get(id)!;
+    const live = substationLive(solved).get(id);
+    this.title.textContent = 'Equipment';
+    this.sub.textContent = e.kV > 0 ? `${e.kV} kV` : 'earthed';
+
+    const rows: string[] = [`<h3 class="inspect__name">${escapeHtml(e.name)}</h3>`];
+    rows.push(note(escapeHtml(e.note)));
+
+    const facts: string[] = [];
+    if (live) facts.push(kv('Right now', escapeHtml(live.text), live.alarm === true));
+    if (e.ratio) facts.push(kv('Ratio', escapeHtml(e.ratio)));
+    if (e.closed !== undefined) {
+      facts.push(kv('Position', e.closed ? 'Closed' : 'Normally open'));
+    }
+    if (facts.length) rows.push(section('This device', facts));
+    // A nameplate is a sentence, not a value: it belongs on its own line
+    // rather than jammed into the right-hand column of a two-column list.
+    if (e.rating) {
+      rows.push(
+        `<section class="inspect__section">` +
+        `<h4 class="inspect__heading">Nameplate</h4>` +
+        `<p class="nameplate num">${escapeHtml(e.rating)}</p></section>`
+      );
+    }
+
+    const devices = protectionFor(id);
+    if (devices.length > 0) {
+      rows.push(
+        `<section class="inspect__section">` +
+        `<h4 class="inspect__heading">${term('device-number', 'Protection')}</h4>` +
+        devices.map((d) =>
+          `<div class="protect"><div class="protect__head">` +
+          `<b class="num">${escapeHtml(d.device)}</b> ${escapeHtml(d.name)}</div>` +
+          `<p class="note">${escapeHtml(d.how)}</p>` +
+          `<p class="note protect__speed">${escapeHtml(d.speed)}</p></div>`).join('') +
+        `</section>`
+      );
+    }
+    this.body.innerHTML = rows.join('');
+  }
+
+  // -----------------------------------------------------------------------
+  // One pole on the feeder
+  // -----------------------------------------------------------------------
+
+  private renderFeederNode(id: string, solved: SolvedCase, snap: AppSnapshot): void {
+    const n = FEEDER_NODES.find((x) => x.id === id)!;
+    const bus = solved.busById.get(feederBusId(id));
+    const spot = FEEDER_LOADS.find((l) => l.node === id);
+    const isService = id === MODELLED_SERVICE.toNode;
+
+    this.title.textContent = isService ? 'Service transformer' : 'Pole';
+    this.sub.textContent = isService ? '240 V secondary'
+      : n.phases === 'ABC' ? '12.47 kV, three-phase' : `12.47 kV, phase ${n.phases} only`;
+
+    const rows: string[] = [`<h3 class="inspect__name">${escapeHtml(n.name)}</h3>`];
+    if (n.note) rows.push(note(escapeHtml(n.note)));
+
+    if (bus) {
+      const baseV = isService ? 240 : 12470;
+      rows.push(section('Voltage here', [
+        kv(term('per-unit', 'Per-unit and volts'),
+          bothUnits(bus.vpu, baseV, isService ? 'V' : 'V'),
+          bus.voltageViolation !== null),
+        kv(term('phase-angle', 'Angle'), quantity(
+          bus.angleDeg.toFixed(3), { symbol: 'θ', unit: '°' })),
+        kv('Distance from the substation', quantity(
+          (n.distanceKm ?? 0).toFixed(2), { unit: 'km along the wire' })),
+      ]));
+    }
+
+    if (spot) {
+      rows.push(section('Load at this pole', [
+        kv(term('real-power', 'Real power'), quantity(
+          (spot.peakKW * snap.demandFraction).toFixed(0),
+          { symbol: 'P', unit: 'kW now' })),
+        kv('At the system peak', quantity(spot.peakKW.toFixed(0), { unit: 'kW' })),
+        kv(term('power-factor', 'Power factor'), quantity(
+          spot.powerFactor.toFixed(2), { symbol: 'cos φ' })),
+        kv('Customers', quantity(String(spot.customers), { unit: 'metered' })),
+      ]));
+      rows.push(note(
+        `That is ${(spot.peakKW / spot.customers).toFixed(1)} kW each at the ` +
+        `moment they all peak together — far less than any one of them can ` +
+        `draw on its own, which is what ${term('coincidence', 'coincident demand')} means.`
+      ));
+    }
+    this.body.innerHTML = rows.join('');
+  }
+
+  // -----------------------------------------------------------------------
+  // One thing inside the house
+  // -----------------------------------------------------------------------
+
+  private renderServiceNode(id: string, snap: AppSnapshot): void {
+    const n = serviceNodeById.get(id)!;
+    const svc = snap.service;
+    this.title.textContent = 'Service';
+    this.sub.textContent = n.volts > 0 ? `${n.volts} V nominal` : 'earthed';
+
+    const rows: string[] = [`<h3 class="inspect__name">${escapeHtml(n.name)}</h3>`];
+    rows.push(note(escapeHtml(n.note)));
+    if (n.rating) rows.push(section('Nameplate', [kv('Rating', escapeHtml(n.rating))]));
+
+    // The chain of drops that arrives here, written out as an electrician
+    // would: general form, substituted values, arithmetic, result.
+    const chain: DropStep[] = [...svc.serviceSteps, ...svc.branchSteps];
+    const upto = chainUpTo(id, chain);
+    if (upto.length > 0) {
+      rows.push(
+        `<section class="inspect__section">` +
+        `<h4 class="inspect__heading">${term('voltage-drop', 'How the voltage got here')}</h4>` +
+        `<p class="note">ΔV = I · (R·cos φ + X·sin φ), with R and X for the whole ` +
+        `loop — out on one conductor and back on another, which is why the ` +
+        `length is counted twice.</p>` +
+        `<dl class="kv">` +
+        kv('At the transformer', `<span class="num">${svc.secondaryV.toFixed(2)}</span>` +
+          `<span class="quantity__unit">V</span>`) +
+        upto.map((st) =>
+          kv(`− ${escapeHtml(st.name)}`,
+            `<span class="num">${st.dropV.toFixed(3)}</span>` +
+            `<span class="quantity__unit">V</span>` +
+            `<span class="quantity__unit"> · ${st.currentA.toFixed(1)} A through ` +
+            `${st.rOhm.toFixed(4)} Ω</span>`)).join('') +
+        kv('Here', `<span class="num">${upto[upto.length - 1].toV.toFixed(2)}</span>` +
+          `<span class="quantity__unit">V</span>`) +
+        `</dl></section>`
+      );
+    }
+
+    if (id === 'OUTLET') {
+      rows.push(section('At the socket', [
+        kv('Voltage', quantity(svc.outletV.toFixed(2), { symbol: 'V', unit: 'V' }),
+          !svc.withinRangeA),
+        kv(term('ansi-c84-1', 'Range A, utilisation'), quantity(
+          `${C84_1.utilisationRangeA[0]}–${C84_1.utilisationRangeA[1]}`, { unit: 'V' })),
+        kv('Total drop from the transformer', quantity(
+          svc.totalDropPercent.toFixed(2), { unit: '% of 120 V' })),
+        kv('Drawing now', quantity(svc.branchCurrentA.toFixed(2), { symbol: 'I', unit: 'A' })),
+      ]));
+    }
+    this.body.innerHTML = rows.join('');
   }
 
   // -----------------------------------------------------------------------
@@ -358,4 +524,20 @@ function bothUnits(pu: number, base: number, unit: string): string {
   );
 }
 
-
+/**
+ * Every voltage-drop step between the transformer and a given point.
+ *
+ * The runs are in order, so "up to here" is a prefix of the list — which is
+ * also the order an electrician would work them in.
+ */
+function chainUpTo(nodeId: string, chain: DropStep[]): DropStep[] {
+  const order = SERVICE_RUNS.map((r) => `${r.from}_${r.to}`);
+  const out: DropStep[] = [];
+  for (const runId of order) {
+    const step = chain.find((s) => s.runId === runId);
+    if (!step) continue;
+    out.push(step);
+    if (runId.endsWith(`_${nodeId}`)) return out;
+  }
+  return nodeId === 'PAD' ? [] : out;
+}

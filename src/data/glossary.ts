@@ -660,6 +660,213 @@ export const GLOSSARY: GlossaryEntry[] = [
     standard: 'IEEE Std 1366.',
     see: ['saifi', 'saidi'],
   },
+  // --- distribution, the substation, and the service ------------------------
+  {
+    id: 'single-line-diagram', term: 'Single-line diagram', aliases: ['one-line diagram', 'one-line'],
+    category: 'network',
+    short: 'A drawing of a power system that throws away everything except what is connected to what.',
+    long:
+      'Three phases are drawn as one line — hence the name — and the physical ' +
+      'arrangement is abandoned entirely. What remains is the electrical ' +
+      'topology, which is all the mathematics needs. It is the drawing every ' +
+      'engineer works from, and learning to see a real yard in one is most of ' +
+      'what it means to read a substation.',
+    standard: 'Symbols per IEEE 315 / ANSI Y32.2',
+    see: ['bus', 'device-number'],
+  },
+  {
+    id: 'feeder', term: 'Feeder', aliases: ['distribution feeder', 'primary feeder'],
+    category: 'network',
+    short: 'A circuit leaving a distribution substation to supply a few thousand customers along a street.',
+    long:
+      'Typically 12.47 kV in the United States, running three-phase along a ' +
+      'main road with single-phase laterals branching into the side streets. A ' +
+      'substation usually has four to eight of them.',
+    scale: 'A feeder carries 4–10 MW and serves 1,000–2,000 customers over a few kilometres.',
+    see: ['lateral', 'service-transformer', 'voltage-regulator'],
+  },
+  {
+    id: 'lateral', term: 'Lateral', aliases: ['tap', 'branch line'],
+    category: 'network',
+    short: 'A branch off the main feeder, usually one phase and a neutral, serving one street.',
+    long:
+      'Each lateral is protected by its own fuse where it taps off the main, so ' +
+      'a tree falling on one street does not take the whole feeder down. That ' +
+      'is the entire reason a distribution system is built as a tree of fused ' +
+      'branches rather than one big circuit.',
+    see: ['feeder', 'multigrounded-neutral'],
+  },
+  {
+    id: 'multigrounded-neutral', term: 'Four-wire multigrounded neutral',
+    aliases: ['multigrounded wye', 'four-wire wye'], category: 'network',
+    short: 'Three phase wires plus a neutral that is connected to earth at every single pole.',
+    long:
+      'Earthing the neutral repeatedly holds it close to the potential of the ' +
+      'ground underfoot, and it is what makes a single-phase lateral possible: ' +
+      'one phase wire and the shared neutral are a complete circuit. It is the ' +
+      'standard North American distribution arrangement and it is why a fallen ' +
+      'wire usually trips a fuse instead of lying there live.',
+    see: ['lateral', 'grounding-electrode', 'wye'],
+  },
+  {
+    id: 'voltage-regulator', term: 'Step voltage regulator', aliases: ['line regulator', 'feeder regulator'],
+    category: 'equipment',
+    short: 'An autotransformer with a motor-driven tap changer, sitting on a pole part-way along a feeder.',
+    long:
+      'It watches the voltage downstream of itself and moves one tap at a time ' +
+      'to hold it at a setpoint. Thirty-two steps of 0.625 % give a range of ' +
+      '±10 %. It is the same idea as a transformer tap changer, applied out in ' +
+      'the street rather than in the substation.',
+    standard: 'ANSI/IEEE C57.15',
+    scale: 'One step is 0.625 %, which at 12.47 kV is 78 volts.',
+    see: ['tap-changer', 'voltage-regulation', 'feeder'],
+  },
+  {
+    id: 'recloser', term: 'Recloser', category: 'protection',
+    symbol: '79',
+    short: 'A breaker that tries again, because most faults on an overhead line clear themselves.',
+    long:
+      'A branch blown across the wires, a bird, a flashover in the rain — ' +
+      'de-energising the line for half a second lets the arc go out, and ' +
+      'closing again restores supply with nobody noticing more than a flicker. ' +
+      'If the fault is still there it trips again, and after two or three ' +
+      'attempts it gives up and stays open.',
+    standard: 'ANSI/IEEE C37.2 device 79',
+    see: ['device-number', 'circuit-breaker', 'saifi'],
+  },
+  {
+    id: 'service-transformer', term: 'Service transformer', aliases: ['distribution transformer', 'pad-mount'],
+    category: 'equipment',
+    short: 'The last transformer in the chain: 12.47 kV in, 240/120 V out, shared by a handful of houses.',
+    long:
+      'On a pole, or in a green steel box on a concrete plinth. Its secondary ' +
+      'is one winding with a tap brought out from the middle, which is why a ' +
+      'house gets both 240 V and 120 V from it.',
+    scale: 'Typically 25–100 kVA, serving 4–20 homes.',
+    see: ['service-entrance', 'transformer'],
+  },
+  {
+    id: 'service-entrance', term: 'Service entrance', aliases: ['service drop', 'service lateral'],
+    category: 'network',
+    short: 'The conductors from the last transformer to a building’s meter and main panel.',
+    long:
+      'Overhead it is called a drop; underground it is called a lateral. It ' +
+      'carries two hot legs and a neutral. The meter marks the boundary of ' +
+      'ownership between the utility and the householder.',
+    see: ['service-transformer', 'branch-circuit', 'ansi-c84-1'],
+  },
+  {
+    id: 'branch-circuit', term: 'Branch circuit', category: 'network',
+    short: 'One circuit inside a building, from a breaker in the panel to the sockets it feeds.',
+    long:
+      'A 120 V branch circuit runs from one of the two hot bus bars to the ' +
+      'neutral. A 240 V one spans both bars. The breaker protecting it sets the ' +
+      'conductor size: 15 A on 14 AWG, 20 A on 12 AWG, and so on.',
+    standard: 'NFPA 70 (National Electrical Code), Article 210',
+    see: ['service-entrance', 'ampacity', 'voltage-drop'],
+  },
+  {
+    id: 'ampacity', term: 'Ampacity', symbol: 'I', unit: 'A', category: 'quantity',
+    short: 'The current a conductor can carry continuously without its insulation getting too hot.',
+    long:
+      'It is a thermal limit, not an electrical one: the conductor is perfectly ' +
+      'happy, but at some current the heat it produces cooks whatever is ' +
+      'wrapped around it. That is why ampacity depends on the insulation ' +
+      'rating, on how many conductors share a conduit, and on the ambient ' +
+      'temperature.',
+    standard: 'NFPA 70 Table 310.16',
+    scale: '12 AWG copper is good for 20 A; 4/0 aluminium service conductors for about 180 A.',
+    see: ['thermal-limit', 'branch-circuit'],
+  },
+  {
+    id: 'voltage-drop', term: 'Voltage drop', symbol: 'ΔV', unit: 'V', category: 'quantity',
+    short: 'The voltage lost along a wire, because current flowing through impedance drops voltage.',
+    long:
+      'Worked in the field as ΔV = I·(R·cos φ + X·sin φ)·2ℓ — the 2 because ' +
+      'current goes out on one conductor and comes back on another, and both ' +
+      'of them drop voltage. It is the reason the far end of a feeder is lower ' +
+      'than the near end, and the reason regulators and capacitors exist.',
+    scale: 'Codes of practice keep it under about 3 % on a branch circuit and 5 % overall.',
+    see: ['impedance', 'voltage-regulation', 'ansi-c84-1'],
+  },
+  {
+    id: 'ansi-c84-1', term: 'ANSI C84.1 voltage range', aliases: ['Range A', 'voltage limits'],
+    category: 'operation',
+    short: 'The standard that says how far the voltage at your socket is allowed to stray from 120 V.',
+    long:
+      'Range A is where the system is supposed to sit: 114–126 V at the meter ' +
+      'and 110–126 V at the appliance. Range B is where it may sit briefly and ' +
+      'occasionally. The utilisation limits are wider at the bottom than the ' +
+      'service limits, deliberately, to leave room for the drop along the ' +
+      'building’s own wiring.',
+    standard: 'ANSI C84.1-2020, Table 1',
+    see: ['voltage-drop', 'voltage-regulation'],
+  },
+  {
+    id: 'grounding-electrode', term: 'Grounding electrode', aliases: ['ground rod', 'earth electrode'],
+    category: 'equipment',
+    short: 'A rod driven into the earth, bonded to the system neutral, holding everything near the potential of the ground you stand on.',
+    long:
+      'It does not carry load current and it does not clear faults — the ' +
+      'neutral and the equipment grounding conductor do that. What it does is ' +
+      'give lightning and a fallen primary conductor somewhere to go, and keep ' +
+      'the whole system referenced to the earth rather than floating at ' +
+      'whatever potential it likes.',
+    standard: 'NFPA 70 Article 250; IEEE 80 for substation grids',
+    see: ['ground-grid', 'multigrounded-neutral'],
+  },
+  {
+    id: 'ground-grid', term: 'Ground grid', aliases: ['earth mat', 'step and touch potential'],
+    category: 'equipment',
+    short: 'A mesh of bare copper buried under a substation, so that fault current flowing into the earth cannot kill anyone standing on it.',
+    long:
+      'When thousands of amperes flow into the soil at one point, the ground ' +
+      'surface develops a voltage gradient — a person’s two feet can be at ' +
+      'different potentials (STEP potential), or their hand on a steel structure ' +
+      'at a different potential from their feet (TOUCH potential). The grid ties ' +
+      'the whole yard to one potential, and the gravel on top raises the ' +
+      'resistance between shoe and soil.',
+    standard: 'IEEE Std 80',
+    see: ['grounding-electrode'],
+  },
+  {
+    id: 'differential-protection', term: 'Differential protection', symbol: '87',
+    category: 'protection',
+    short: 'Compares what goes into a piece of equipment with what comes out; any difference means the fault is inside it.',
+    long:
+      'It is the most selective protection there is, because it defines a ' +
+      'ZONE with current transformers at every boundary and needs no ' +
+      'coordination delay at all: current that entered the zone and did not ' +
+      'leave it can only be going somewhere it should not, so there is nothing ' +
+      'to wait for.',
+    standard: 'ANSI/IEEE C37.2 device 87 (87T transformer, 87B bus)',
+    see: ['device-number', 'ct', 'coordination'],
+  },
+  {
+    id: 'coordination', term: 'Protection coordination', aliases: ['selectivity', 'TCC curve'],
+    category: 'protection',
+    short: 'Setting protective devices in series so that the one nearest the fault operates first and the others wait.',
+    long:
+      'Every overcurrent device has a curve of operating time against current, ' +
+      'and coordination means arranging those curves so they never cross: the ' +
+      'fuse on the lateral clears before the recloser on the feeder, which ' +
+      'clears before the breaker in the substation. Get it wrong and a fault on ' +
+      'one street takes out the whole substation.',
+    standard: 'IEEE Std 242 (the Buff Book)',
+    see: ['device-number', 'recloser', 'differential-protection'],
+  },
+  {
+    id: 'coincidence', term: 'Coincident demand', aliases: ['diversity', 'non-coincident peak'],
+    category: 'operation',
+    short: 'The fact that everyone’s peak does not happen at the same moment, so the total is far less than the sum.',
+    long:
+      'A house can draw 20 kW with the oven, the dryer and the car charger all ' +
+      'running. A hundred houses do not draw 2 MW, because they do not all do ' +
+      'it at once — they draw perhaps 400 kW. Every conductor and every ' +
+      'transformer between here and the generator is sized on the coincident ' +
+      'figure, which is why the system is affordable at all.',
+    see: ['coincidence-factor', 'demand-factor', 'load-factor'],
+  },
 ];
 
 const INDEX = new Map<string, GlossaryEntry>();

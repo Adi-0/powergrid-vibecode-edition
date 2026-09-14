@@ -259,28 +259,54 @@ export const ZOOM: {
   system: number; region: number; substation: number; feeder: number;
   service: number; min: number; max: number;
 } = {
-  /** Whole state in view. */
-  system: 1600,
+  /** Whole state in view: about a thousand kilometres across. */
+  system: 1150,
   /** A region: individual circuits and the substations they tie together. */
-  region: 190,
-  /** Inside the fence of one substation. */
-  substation: 0.9,
-  /** Along one distribution feeder. */
-  feeder: 3.2,
-  /** One service: the transformer, the drop, the meter. */
-  service: 0.06,
+  region: 165,
+  /** Along one distribution feeder: a few kilometres of street. */
+  feeder: 2.7,
+  /**
+   * Inside the fence of one substation: a yard 86 by 54 metres.
+   *
+   * Under the isometric projection a ground rectangle W by D projects to
+   * (W+D)·cos45° wide and (W+D)·sin45°·cos(35.26°) tall, so this yard covers
+   * about 860 by 700 pixels here — filling the page without touching the
+   * panels at either side.
+   */
+  substation: 0.115,
+  /**
+   * One service: the transformer, the drop, the meter, the panel, one socket.
+   * About twenty metres of wire and a house footprint around it, which under
+   * the isometric projection covers roughly 860 by 700 pixels here.
+   */
+  service: 0.042,
   /** Hard limits on the camera. */
-  min: 0.02,
+  min: 0.004,
   max: 4200,
 };
 
 export type LevelId = 'system' | 'region' | 'substation' | 'feeder' | 'service';
 
-/** Which level of the zoom tree a given scale corresponds to. */
+/**
+ * Which level of the zoom tree a given scale corresponds to.
+ *
+ * Note the ORDER. The zoom tree in the brief is the electrical hierarchy —
+ * region, then substation, then the feeder leaving it, then a service. Spatial
+ * scale does not agree: a substation yard is ninety metres across and a feeder
+ * is three kilometres, so purely by zoom the feeder sits BETWEEN the region and
+ * the substation.
+ *
+ * Both orderings are real, and the app uses each where it belongs. Scale
+ * decides how much detail to draw, which is what this function is for.
+ * Which level the reader is IN — and therefore what the breadcrumb says and
+ * what the model-honesty panel is filtered to — is decided by what they
+ * descended into, because "inside Eden Vale substation" is a fact about where
+ * they went, not about how far they have zoomed.
+ */
 export function levelForScale(metresPerPixel: number): LevelId {
   if (metresPerPixel > 600) return 'system';
   if (metresPerPixel > 20) return 'region';
-  if (metresPerPixel > 1.6) return 'feeder';
-  if (metresPerPixel > 0.25) return 'substation';
+  if (metresPerPixel > 0.6) return 'feeder';
+  if (metresPerPixel > 0.05) return 'substation';
   return 'service';
 }

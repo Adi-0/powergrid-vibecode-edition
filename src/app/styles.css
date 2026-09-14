@@ -660,3 +660,144 @@ button, select, input {
   color: var(--ink-muted);
   font-size: 10.5px;
 }
+
+/* --------------------------------------------------------------------- */
+/* Breadcrumb as navigation                                                */
+/* --------------------------------------------------------------------- */
+
+/* The breadcrumb is also how a reader travels. Each entry is a button, but a
+   button that looks like a button here would turn the header into a toolbar;
+   it looks like the text it replaces and gains an underline on hover. */
+.crumb {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+}
+.crumb:hover { border-bottom-color: var(--ink-muted); }
+.crumb.is-past { color: var(--ink-muted); }
+.crumb.is-here { color: var(--ink); cursor: default; }
+.crumb.is-here:hover { border-bottom-color: transparent; }
+
+/* --------------------------------------------------------------------- */
+/* Level controls                                                          */
+/* --------------------------------------------------------------------- */
+
+.panel--level {
+  left: var(--pad);
+  top: var(--pad);
+  width: 268px;
+  /* The legend owns the bottom half of this column and must never be
+     covered: it is the one panel the brief requires to be always present. */
+  max-height: min(38%, calc(100% - 2 * var(--pad)));
+  display: flex;
+  flex-direction: column;
+}
+.panel--level .panel__body { overflow-y: auto; }
+
+.level__slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+.level__slider input[type='range'] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: none;
+  cursor: pointer;
+}
+/* A slider drawn as a drafting scale: a rule with a tick on it. No track
+   fill, no rounded thumb, no shadow. */
+.level__slider input[type='range']::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--ink);
+}
+.level__slider input[type='range']::-moz-range-track {
+  height: 1px;
+  background: var(--ink);
+}
+.level__slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 3px;
+  height: 14px;
+  margin-top: -6px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 0;
+}
+.level__slider input[type='range']::-moz-range-thumb {
+  width: 3px;
+  height: 14px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 0;
+}
+.level__readout {
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.level__appliances {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+.level__appliances .btn {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+.level__appliances .btn span { color: var(--ink-faint); }
+.level__appliances .btn[aria-pressed='true'] span { color: var(--ground); }
+
+/* --------------------------------------------------------------------- */
+/* Voltage profile                                                         */
+/* --------------------------------------------------------------------- */
+
+.panel--profile {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: var(--pad);
+  width: min(600px, calc(100% - 2 * var(--pad)));
+}
+.panel--profile .panel__body { padding: 6px 8px 4px; }
+.panel--profile svg { display: block; }
+
+/* Protection functions in the inspector: the device number is the heading,
+   because the number is the thing that is universal and the name is the gloss. */
+.protect + .protect {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: var(--rule);
+}
+.protect__head { font-size: 12px; }
+.protect__head b {
+  font-weight: 600;
+  margin-right: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.protect__speed { color: var(--ink-faint); }
+
+/* A nameplate reads as it is stamped on the equipment: one line of dense
+   abbreviations, set in tabular figures because most of it is numbers. */
+.nameplate {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}

@@ -15,6 +15,9 @@ import { californiaCase, SLACK_BUS } from '../data/california/network.js';
 import { DayProfile, DAY_PROFILES, Season } from '../sim/profiles.js';
 import { dispatchDay, applyDispatch, DispatchResult, demandFactor } from '../sim/dispatch.js';
 import { operate, OperateResult } from '../sim/operate.js';
+import {
+  APPLIANCES, Appliance, solveService, ServiceSolution,
+} from '../data/california/service.js';
 
 export interface Selection {
   kind: 'site' | 'circuit' | 'bus' | 'generator' | 'none';
@@ -39,6 +42,18 @@ export interface AppSnapshot {
   hovered: string | null;
   /** How long the last full re-solve took, milliseconds. */
   lastSolveMs: number;
+  /**
+   * The appliance the reader has switched on at 14 Cherry Lane, if any. It is
+   * a real load in the real case: switching it on re-dispatches and re-solves
+   * the whole state, which is the point.
+   */
+  appliance: Appliance | null;
+  /**
+   * The service worked out from the transformer's solved secondary voltage to
+   * the socket. Every number in it is either solver output or the arithmetic
+   * shown in the math panel.
+   */
+  service: ServiceSolution;
 }
 
 type Listener = (snapshot: AppSnapshot) => void;
@@ -51,6 +66,7 @@ export class AppState {
   private _tripped = new Set<string>();
   private _selection: Selection = { kind: 'none', id: null };
   private _hovered: string | null = null;
+  private _appliance: Appliance | null = null;
   private snapshot: AppSnapshot;
   private readonly listeners = new Set<Listener>();
 
@@ -91,6 +107,18 @@ export class AppState {
       if (this._tripped.has(br.id)) br.inService = false;
     }
 
+    // The one load in the model a reader can switch on by hand. It goes into
+    // the case before the solve, so its effect — however small — is real.
+    if (this._appliance) {
+      const svc = net.loads.find((l) => l.id === 'SVC_LOAD');
+      if (svc) {
+        const a = this._appliance;
+        const pMW = a.watts / 1e6;
+        svc.pMW += pMW;
+        svc.qMVAr += pMW * Math.tan(Math.acos(a.powerFactor));
+      }
+    }
+
     const result = operate(net);
     return {
       net,
@@ -105,6 +133,8 @@ export class AppState {
       selection: this._selection,
       hovered: this._hovered,
       lastSolveMs: performance.now() - t0,
+      appliance: this._appliance,
+      service: serviceFrom(result.solved, this._appliance),
     };
   }
 
@@ -141,6 +171,18 @@ export class AppState {
     this.emit(true);
   }
 
+  /** Switch an appliance on at the modelled house, or switch everything off. */
+  setAppliance(id: string | null): void {
+    const next = id ? APPLIANCES.find((a) => a.id === id) ?? null : null;
+    if ((next?.id ?? null) === (this._appliance?.id ?? null)) return;
+    this._appliance = next;
+    this.emit(true);
+  }
+
+  get appliance(): Appliance | null {
+    return this._appliance;
+  }
+
   restoreAll(): void {
     if (this._tripped.size === 0) return;
     this._tripped = new Set();
@@ -170,4 +212,20 @@ export class AppState {
   get dispatchDayResults(): readonly DispatchResult[] {
     return this.day;
   }
+}
+
+/**
+ * The service, worked from the solved case.
+ *
+ * `secondaryV`, the load and the power factor all come out of the power flow;
+ * everything past the transformer terminals is the arithmetic in
+ * `src/data/california/service.ts`, which the math panel shows in full.
+ */
+function serviceFrom(solved: SolvedCase, appliance: Appliance | null): ServiceSolution {
+  const bus = solved.busById.get('SVC_LV');
+  // 240 V is the base, and the bus is the transformer's secondary terminals.
+  const secondaryV = (bus?.vpu ?? 1) * 240;
+  const pW = (bus?.pLoadMW ?? 0) * 1e6;
+  const qVAr = (bus?.qLoadMVAr ?? 0) * 1e6;
+  return solveService(secondaryV, pW, qVAr, appliance);
 }

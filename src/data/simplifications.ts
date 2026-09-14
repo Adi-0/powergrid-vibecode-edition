@@ -248,6 +248,101 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'about any individual piece of equipment.',
     severity: 'modest',
   },
+  {
+    id: 'service-drop-by-hand',
+    scope: ['service', 'math'],
+    title: 'Past the last transformer, the voltage drop is calculated rather than solved',
+    whatWeDo:
+      'The power flow solves down to the secondary terminals of the ' +
+      'pad-mounted transformer, and stops there. From that solved voltage to ' +
+      'the socket the drop is worked out with the standard formula, ' +
+      'ΔV = I·(R·cos φ + X·sin φ) over the loop, and the whole calculation is ' +
+      'shown on the page.',
+    fullTreatment:
+      'A three-wire 240/120 V service is genuinely single-phase with a ' +
+      'mid-point earthed neutral, and the two 120 V legs carry different ' +
+      'loads. Solving it properly means a separate single-phase model with ' +
+      'the neutral as a conductor of its own, carrying the imbalance.',
+    consequence:
+      'The magnitudes are right to within a few hundredths of a volt at these ' +
+      'currents and lengths. What is missing is the imbalance between the two ' +
+      'legs and therefore the neutral current, which is the thing the ' +
+      'three-wire arrangement exists to manage. The arithmetic shown is ' +
+      'exactly what an electrician would do, so it can be checked by hand.',
+    severity: 'modest',
+  },
+  {
+    id: 'one-house-of-twelve',
+    scope: ['service'],
+    title: 'The modelled house is an equal share of twelve',
+    whatWeDo:
+      'Twelve houses share the pad-mounted transformer, and the solved load at ' +
+      'its secondary is divided equally between them. An appliance the reader ' +
+      'switches on is added to this house alone, not shared.',
+    fullTreatment:
+      'Twelve real houses differ by a factor of three or more, and their peaks ' +
+      'fall at different times. A study would use metered interval data per ' +
+      'service, or a stochastic load model.',
+    consequence:
+      'The current in this service is right in size and moves correctly when ' +
+      'something is switched on. It is not a claim about any particular house, ' +
+      'and it understates how unequal a real group of twelve is.',
+    severity: 'modest',
+  },
+  {
+    id: 'substation-yard-layout',
+    scope: ['substation'],
+    title: 'The yard layout is plausible, not surveyed',
+    whatWeDo:
+      'Equipment sits at coordinates and heights typical of a two-bank 115/12.47 kV ' +
+      'distribution substation: bus at 7.6 m, breakers on plinths, a ground grid ' +
+      'on a 6 m mesh. The single-line topology is exact; the metres are typical.',
+    fullTreatment:
+      'A real yard is laid out to electrical clearance tables, access for a ' +
+      'crane, and the shape of the parcel that was available. No two are alike.',
+    consequence:
+      'Nothing electrical depends on it: the solver never sees a yard ' +
+      'coordinate. It matters only for the claim the drawing makes about what ' +
+      'a station looks like, which is "like this sort of thing" rather than ' +
+      '"like this".',
+    severity: 'cosmetic',
+  },
+  {
+    id: 'three-feeders-lumped',
+    scope: ['substation', 'feeder'],
+    title: 'Three of the four feeders are one lumped load',
+    whatWeDo:
+      'Cherry Lane 1201 is modelled pole by pole. Feeders 1202, 1203 and 1204 ' +
+      'appear in the drawing with their breakers, and in the solve as a single ' +
+      'load on the 12.47 kV bus.',
+    fullTreatment:
+      'Four feeders modelled in full, each with its own laterals, regulators ' +
+      'and capacitors.',
+    consequence:
+      'The station\u2019s total load and its transformer loading are right. ' +
+      'Switching the bus tie or losing a bank behaves correctly. What is not ' +
+      'available is any statement about voltage or reliability on those three ' +
+      'feeders, and their breakers cannot be operated.',
+    severity: 'modest',
+  },
+  {
+    id: 'no-secondary-network',
+    scope: ['service', 'feeder'],
+    title: 'The secondary between the transformer and the houses is not modelled as a network',
+    whatWeDo:
+      'One service is followed in full. The other eleven houses on the same ' +
+      'transformer are represented by their share of the load at its ' +
+      'secondary terminals, with no secondary conductors of their own.',
+    fullTreatment:
+      'A secondary network model has every service drop as a branch, so the ' +
+      'houses interact: one neighbour\u2019s car charger depresses the voltage at ' +
+      'another\u2019s socket through the shared secondary.',
+    consequence:
+      'This service\u2019s own drop is right. The interaction between neighbours ' +
+      'is missing, and it is real — it is why a cluster of car chargers on one ' +
+      'transformer is a different problem from the same load spread out.',
+    severity: 'modest',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>

@@ -2,23 +2,32 @@
  * Entry point. Wires the state, the drawing surface and the panels together.
  *
  * The shape of the thing: `AppState` owns the network and re-solves it whenever
- * anything changes; the `Viewport` draws whatever the scene builder makes of the
- * latest solution; every panel reads from the same snapshot. There is no second
- * copy of any number anywhere.
+ * anything changes; the `Viewport` draws whatever `composeFrame` makes of the
+ * latest solution at the camera's current scale; every panel reads from the
+ * same snapshot. There is no second copy of any number anywhere.
+ *
+ * Levels are not modes. There is one world, in metres, holding everything from
+ * the Oregon border to a socket in a kitchen, and one camera that travels
+ * through it. `src/app/scenes.ts` explains why, and does the compositing.
  */
 
 import './styles.css';
+import { Vector3 } from 'three';
 import { AppState } from './state.js';
 import { Viewport, FrameContent } from './viewport.js';
 import { Legend } from './legend.js';
 import { Inspector } from './inspector.js';
 import { Scrubber } from './scrubber.js';
 import { SidePanel } from './honesty.js';
+import { LevelBar } from './levelbar.js';
+import { VoltageProfile } from './profile.js';
 import { Tooltip, term } from './tooltip.js';
+import { composeFrame, destinations, sceneAlpha, SceneId, Destination } from './scenes.js';
 import {
-  buildSystemGeometry, drawSystem, formatMW, SystemGeometry,
+  buildSystemGeometry, formatMW, SystemGeometry,
 } from '../render/scene-system.js';
-import { LevelId } from '../render/style.js';
+import { buildFeederGeometry, FeederGeometry } from '../render/scene-feeder.js';
+import { LevelId, levelForScale, ZOOM } from '../render/style.js';
 import { ScopeId } from '../data/simplifications.js';
 
 const stage = document.getElementById('stage') as HTMLElement;
@@ -32,26 +41,35 @@ const debug: { onlyKV: number | null; haloPad: number | undefined } =
 
 const state = new AppState();
 let geometry: SystemGeometry = buildSystemGeometry(state.current.solved);
+const feederGeometry: FeederGeometry = buildFeederGeometry();
+
+/** View state: things that change what is drawn but not what is solved. */
+const view = { substationMorph: 0, showProtection: false };
 
 const tooltip = new Tooltip();
 
 const viewport: Viewport = new Viewport(stage, {
   build: (): FrameContent => {
     const snap = state.current;
-    return drawSystem(geometry, snap.solved, viewport.camera, {
+    const r = composeFrame({
+      solved: snap.solved,
+      service: snap.service,
+      systemGeometry: geometry,
+      feederGeometry,
+      camera: viewport.camera,
+      viewport: viewport.size,
       selectedId: snap.selection.id,
       hoveredId: snap.hovered,
+      substationMorph: view.substationMorph,
+      showProtection: view.showProtection,
+      showFlow: true,
       onlyKV: debug.onlyKV,
-      ...(debug.haloPad !== undefined ? { haloPad: debug.haloPad } : {}),
     });
+    return { segments: r.segments, labels: r.labels, picks: r.picks };
   },
   onPick: (id, kind) => state.select(kind ?? 'none', id),
   onHover: (id) => state.hover(id),
-  onCameraChange: (mpp, level) => {
-    legend.update(mpp);
-    renderBreadcrumb(level);
-    side.setScope(level as ScopeId);
-  },
+  onCameraChange: (mpp, level) => onCamera(mpp, level),
 });
 
 // --- panels ---------------------------------------------------------------
@@ -84,6 +102,18 @@ const side = new SidePanel(() => side.close());
 stage.appendChild(side.element);
 tooltip.onOpenGlossary = (id) => side.openGlossary(id);
 
+const levelBar = new LevelBar({
+  onMorph: (t) => { view.substationMorph = t; viewport.invalidate(); },
+  onProtection: (on) => { view.showProtection = on; viewport.invalidate(); },
+  onAppliance: (id) => state.setAppliance(id),
+});
+stage.appendChild(levelBar.element);
+
+const profile = new VoltageProfile({
+  onSelect: (nodeId) => state.select('site', nodeId),
+});
+stage.appendChild(profile.element);
+
 const scrubber = new Scrubber({
   onChange: (hour) => state.setHour(hour),
   onSeasonChange: (season) => state.setSeason(season),
@@ -107,17 +137,124 @@ controls.addEventListener('click', (e) => {
   else if (t.dataset.action === 'frame') frameAll();
 });
 
+// --- travelling between levels --------------------------------------------
+
+const PLACES: Destination[] = destinations(geometry, () => feederGeometry.bounds);
+
+/**
+ * Fly to a named level.
+ *
+ * The flight is deliberately slow — nine hundred milliseconds — because the
+ * transition is the part of the interface that shows what a model IS, by making
+ * one level visibly collapse into its place in the level above. A cut would
+ * save time and destroy the only thing worth watching.
+ */
+function goTo(id: LevelId): void {
+  const dest = PLACES.find((d) => d.id === id);
+  if (!dest) return;
+  if (dest.frame) {
+    const box = dest.frame();
+    // Frame by computing the camera the box wants, then fly to it, so that the
+    // motion is one continuous move rather than a jump followed by a settle.
+    const before = { target: viewport.camera.target.clone(), mpp: viewport.camera.metresPerPixel };
+    viewport.camera.frame(box.min, box.max, 56, { left: 252, bottom: profileInsetPx() });
+    const after = { target: viewport.camera.target.clone(), mpp: viewport.camera.metresPerPixel };
+    viewport.camera.target.copy(before.target);
+    viewport.camera.setZoom(before.mpp);
+    viewport.flyTo(after.target, after.mpp, 900, afterTravel);
+  } else if (dest.at) {
+    const { target, metresPerPixel } = dest.at();
+    // Shift the destination so the drawing lands in the space that is actually
+    // visible rather than behind the panels sitting over the canvas.
+    viewport.flyTo(
+      offsetForPanels(target, metresPerPixel), metresPerPixel, 900, afterTravel
+    );
+  }
+}
+
+/**
+ * Move a camera target sideways and upwards by the panel insets.
+ *
+ * The ground-plane vectors that correspond to one screen pixel come from the
+ * camera itself, so this works at any zoom and under the isometric shear
+ * without a fudge factor.
+ */
+function offsetForPanels(target: Vector3, mpp: number): Vector3 {
+  const before = viewport.camera.metresPerPixel;
+  viewport.camera.setZoom(mpp);
+  const b = viewport.camera.groundBasis();
+  viewport.camera.setZoom(before);
+  const left = 300;                    // the level controls and the legend
+  const right = 0;
+  const bottom = profileInsetPx();
+  const dxPx = -(left - right) / 2;
+  const dyPx = bottom / 2;
+  return target.clone().add(new Vector3(
+    b.rightX * dxPx + b.downX * dyPx, 0, b.rightZ * dxPx + b.downZ * dyPx
+  ));
+}
+
+function afterTravel(): void {
+  onCamera(viewport.camera.metresPerPixel, viewport.level);
+}
+
+/** How much of the bottom of the stage the profile plot is covering. */
+const profileInsetPx = (): number =>
+  profile.element.style.display === 'none' ? 0 : 186;
+
 // --- state plumbing -------------------------------------------------------
 
 state.subscribe((snap) => {
   geometry = buildSystemGeometry(snap.solved);
   renderStats();
   inspector.render(snap, geometry);
+  profile.render(snap.solved, snap.selection.id);
   scrubber.update(state.dispatchDayResults, snap.hour, snap.dispatch);
   (controls.querySelector('[data-action="restore"]') as HTMLElement).style.display =
     snap.tripped.size > 0 ? '' : 'none';
   viewport.invalidate();
 });
+
+/**
+ * Everything that depends on where the camera is.
+ *
+ * `levelForScale` answers "how much detail is legible here", which is what the
+ * legend and the honesty panel need. `dominantScene` answers "what is the
+ * reader actually looking at", which is what the contextual controls need, and
+ * it is decided by which drawing is being rendered most strongly — not by a
+ * mode flag, because there isn't one.
+ */
+function onCamera(mpp: number, level: LevelId): void {
+  legend.update(mpp);
+  renderBreadcrumb(level);
+  side.setScope(level as ScopeId);
+
+  const scene = dominantScene(mpp);
+  levelBar.setScene(scene);
+
+  // The voltage profile belongs to the feeder and to the service at the end of
+  // it — the two places where "how far along the wire" is a meaningful axis.
+  const wantProfile = scene === 'feeder' || scene === 'service';
+  if ((profile.element.style.display === 'none') === wantProfile) {
+    profile.setVisible(wantProfile);
+    if (wantProfile) profile.render(state.current.solved, state.current.selection.id);
+  }
+
+  // Arriving at the substation with the diagram flat is the right place to
+  // start: the reader sees the abstraction first, then watches it stand up.
+  if (scene === 'substation') levelBar.setMorph(view.substationMorph);
+}
+
+function dominantScene(mpp: number): SceneId | null {
+  const candidates: SceneId[] = ['system', 'feeder', 'substation', 'service'];
+  let best: SceneId | null = null;
+  let bestAlpha = 0.35;
+  for (const c of candidates) {
+    const a = sceneAlpha(c, mpp);
+    if (a > bestAlpha) { bestAlpha = a; best = c; }
+  }
+  return best === 'system' ? null : best;
+}
 
 function renderStats(): void {
   const s = state.current;
@@ -143,25 +280,39 @@ function renderStats(): void {
     .join('');
 }
 
+/**
+ * The breadcrumb, which is also the navigation.
+ *
+ * It lists the ELECTRICAL hierarchy, in the order power takes, and every entry
+ * is a place the reader can travel to. That order is not the order of
+ * increasing magnification — the feeder leaving Eden Vale is thirty times
+ * longer than the yard it leaves — and pretending otherwise would teach the
+ * wrong thing about what contains what.
+ */
 function renderBreadcrumb(level: LevelId): void {
-  const names: Record<LevelId, string> = {
-    system: 'System', region: 'Region', substation: 'Substation',
-    feeder: 'Feeder', service: 'Service',
-  };
   const order: LevelId[] = ['system', 'region', 'substation', 'feeder', 'service'];
   const idx = order.indexOf(level);
-  crumbEl.innerHTML = order
-    .map((l, i) =>
-      i === idx ? `<b>${names[l]}</b>`
-        : `<span class="${i < idx ? 'is-past' : ''}">${names[l]}</span>`)
+  crumbEl.innerHTML = PLACES
+    .map((d, i) => {
+      const cls = i === idx ? 'is-here' : i < idx ? 'is-past' : '';
+      return `<button class="crumb ${cls}" data-go="${d.id}" title="${escapeAttr(d.blurb)}">` +
+        `${i === idx ? `<b>${d.name}</b>` : d.name}</button>`;
+    })
     .join('<span class="header__sep">›</span>');
 }
+
+crumbEl.addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest('[data-go]') as HTMLElement | null;
+  if (b?.dataset.go) goTo(b.dataset.go as LevelId);
+});
+
+const escapeAttr = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /** Open on the whole state, leaving room for the legend. */
 function frameAll(): void {
   viewport.camera.frame(geometry.bounds.min, geometry.bounds.max, 56, { left: 252 });
-  legend.update(viewport.camera.metresPerPixel);
-  renderBreadcrumb(viewport.level);
+  onCamera(viewport.camera.metresPerPixel, viewport.level);
   viewport.invalidate();
 }
 
@@ -172,6 +323,7 @@ viewport.start();
 
 // Exposed for debugging and for the screenshot harness.
 (window as unknown as Record<string, unknown>).gridAtlas = {
-  state, viewport, debug, frameAll, side, inspector,
+  state, viewport, debug, frameAll, side, inspector, goTo, view, levelBar,
+  levelForScale, ZOOM,
   get geometry() { return geometry; },
 };

@@ -214,7 +214,74 @@ Interpolated between hours with a **monotone** cubic (Fritsch–Carlson). An
 ordinary spline overshoots below zero just after sunset, which would display a
 solar farm producing negative power.
 
-## 10. What the model produces
+## 10. The substation, the feeder and the service
+
+Below the transmission network the model carries on into one substation, one
+feeder and one house. All of it is in the **same** `NetworkCase`: a single power
+flow solves from the Oregon border to a kitchen socket, so conservation closes
+across the whole chain rather than being asserted level by level.
+
+### Eden Vale substation — `src/data/california/substation.ts`
+
+A two-bank 115/12.47 kV distribution substation, 80 × 52 m.
+
+| Item | Value | Source |
+|---|---|---|
+| Banks | 2 × 28 MVA, 115/12.47 kV, Dyn1, 8.5 % Z | `TRANSFORMER_CLASSES.dist115_12` |
+| On-load tap changer | ±16 steps of 0.625 %, setpoint 1.025 pu, bandwidth ±0.010 | ANSI/IEEE C57.12 typical |
+| 115 kV bus height | 7.6 m | typical rigid-bus construction |
+| Station capacitor | 3.6 MVAr in three 1.2 MVAr steps | sized to the station's reactive demand |
+| Bus tie | normally **open**, so a fault on one half of the 12.47 kV bus does not take the other | standard practice |
+| Ground grid | 4/0 bare copper on a 6 m mesh, rods at the corners | IEEE Std 80 |
+| Protection | 87T, 87B, 51, 50, 50N/51N, 79, 21, 67, 49, 63, 27/59 | ANSI/IEEE C37.2 |
+
+Every element carries **both** a yard coordinate (metres east, north and above
+grade) and a single-line-diagram coordinate, and the view interpolates between
+them. Decision 0010 explains how, and why the schematic frame is built from the
+camera's ground basis rather than laid flat on the ground plane.
+
+Yard coordinates are plausible rather than surveyed and the solver never reads
+one; that is in the honesty register as `substation-yard-layout`.
+
+### Cherry Lane 1201 — `src/data/california/feeder.ts`
+
+| Item | Value |
+|---|---|
+| Nominal | 12.47 kV between phases, 7.2 kV to neutral (four-wire multigrounded wye) |
+| Length, main | 2.95 km, twelve poles |
+| Main conductor | 336.4 kcmil ACSR (linnet) — about 530 A, ≈ 11 MVA at 12.47 kV |
+| Lateral conductor | 1/0 ACSR (raven), single-phase |
+| Laterals | five, each fused where it taps off the main |
+| Spot loads | 16, totalling 6.3 MW at peak across ≈ 1,450 customers |
+| Regulator, at pole 5 | ±10 % in 32 steps of 0.625 %, ANSI/IEEE C57.15 |
+| Capacitor, at pole 8 | 1,200 kVAr in three 400 kVAr cans, switched on local conditions |
+| Tie point | normally open, to the next feeder |
+
+The regulator is a transformer branch with an inserted node, so "before the
+regulator" and "after it" are different buses — which is what puts the vertical
+step on the voltage profile. Line parameters are computed from conductor
+geometry by the same `lineParameters` used for the 500 kV backbone.
+
+At 18:00 in summer the profile runs 1.0152 pu at the substation, down to 1.0004
+at the regulator input, up to 1.0302 at its output, and 1.0264 at the tie point
+2.94 km out — the shape every distribution engineer draws first.
+
+### 14 Cherry Lane — `src/data/california/service.ts`
+
+| Item | Value | Source |
+|---|---|---|
+| Service transformer | 50 kVA, 12.47 kV / 240–120 V, 12 houses | `TRANSFORMER_CLASSES.service` |
+| Service lateral | 4/0 AWG aluminium, 18.8 m, buried | NEC Ch. 9 Table 9 |
+| Main panel | 200 A, 240/120 V | — |
+| Branch circuit | 12 AWG copper, 20 A breaker, 14.9 m to the socket | NEC Ch. 9 Table 9; Art. 210 |
+| Receptacle | NEMA 5-15R, 125 V, 15 A | — |
+| Voltage limits | Range A: 114–126 V at the meter, 110–126 V at the appliance | ANSI C84.1-2020 Table 1 |
+
+The power flow stops at the transformer's secondary terminals; the last twenty
+metres are worked with ΔV = I·(R·cos φ + X·sin φ) over the loop and shown in
+full. Decision 0011 gives the reasoning and the numbers.
+
+## 11. What the model produces
 
 Across 24 hours of both a summer and a winter day, with generator reactive limits
 enforced:

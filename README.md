@@ -11,7 +11,13 @@ drops, a plant into its energy conversion chain, a generator into a rotating
 field and three windings — all the way down to the governing equations, with
 live numbers in them.
 
-**Status:** phases 1–3 of 8 complete. See [PROGRESS.md](PROGRESS.md).
+**Status:** phases 1–4 of 8 complete. See [PROGRESS.md](PROGRESS.md).
+
+The chain now runs end to end: the Oregon intertie, the 500 kV backbone, a
+115/12.47 kV substation you can watch stand up out of its own single-line
+diagram, three kilometres of distribution feeder drawn pole by pole, and a
+socket in a kitchen. One power flow solves all of it, so switching on a kettle
+at 14 Cherry Lane really does move the number at the top of the page.
 
 ## The two rules
 
@@ -36,7 +42,7 @@ Conservation holds everywhere, to solver tolerance, at every level. Cause and
 effect are real: trip a line and flows redistribute per an actual power flow
 solution, never a scripted animation.
 
-The network is a **synthetic 68-bus reconstruction** of California — real place
+The network is a **synthetic reconstruction** of California — 90 buses, from the Oregon border to one wall outlet — real place
 names at real coordinates, plausible circuits between them. It is not a replica
 and never claims to be. What the model does not represent is written down in
 [docs/simplifications.md](docs/simplifications.md), generated from the same data
@@ -54,6 +60,6 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 
 ```
 npm install
-npm test        # 117 tests
+npm test        # 170 tests
 npm run dev     # the app
 ```
