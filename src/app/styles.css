@@ -274,7 +274,7 @@ html, body {
      the brief requires to be always present, and a key the reader has to
      discover is scrollable is not present in any sense that matters. */
   flex: 1 1 auto;
-  min-height: 118px;
+  min-height: 150px;
   display: flex;
   flex-direction: column;
 }
@@ -756,7 +756,7 @@ button, select, input {
      row of them cut off by the key underneath is the worse of the two
      truncations. The legend, which is reference and scrolls, takes the rest. */
   flex: 0 0 auto;
-  max-height: 66%;
+  max-height: 70%;
   min-height: 0;
   display: flex;
   flex-direction: column;

@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** all eight phases complete.
+**Last updated:** all eight phases complete, plus two quality passes.
 
 ---
 
@@ -539,7 +539,40 @@ leaves the app where the path got to.
 | Load factor · fleet capacity factor · coincidence factor | 0.775 · 0.482 · 0.728 |
 | New model-honesty entries | 4 (31 in total) |
 | New glossary entries | 8 (105 in total) |
-| Tests | 648 passing |
+| Tests | 648 passing (663 after the quality passes) |
+
+---
+
+## Quality, in two passes
+
+The eight phases were all built and all tested and the result was still, in the
+reviewer's words, "a bit of a mess". Two review passes follow, each recorded in
+full: [0017](docs/decisions/0017-the-quality-pass.md) and
+[0018](docs/decisions/0018-the-second-quality-pass.md).
+
+The method in both was to instrument the app rather than squint at it. Four
+tools live in `tools/`:
+
+| Tool | What it answers |
+|---|---|
+| `audit.mjs` | Is every view composed? Segments, labels, scale, breadcrumb, panel and active scenes, for all fourteen |
+| `navigate.mjs` | Does getting there work? All forty-two journeys between the seven levels, failing if a destination is reached at a different scale depending on where you started |
+| `guide-walk.mjs` | Does the fourteen-step path land where it says? |
+| `crop.mjs` | Does it hold up at print scale? One view at three times device scale, cropped |
+
+### What the second pass found
+
+| Symptom | Cause |
+|---|---|
+| Zooming in "is buggy" | The per-position floor on how far in it is worth going was clamping commanded FLIGHTS. Half way to one house the only thing under the camera is a feeder, so the journey stopped at the scale of a street. Route-dependent, so it came and went |
+| The same destination arrived at two different sizes | Framing asked what panels were open NOW rather than what the destination will have |
+| The yard filled less than half an empty page, in one corner | The camera framed a ground rectangle. A yard eighty metres across standing twelve metres up is mostly height on the page |
+| The map read as a mess | The label layout knew where the other labels were and nothing about the drawing under them |
+| `13.7 MVA · 8 %` four times in a column | A terminal, its breaker, its disconnect and its bus all carry the same current. The drawing now never writes the same number twice |
+| The legend stopped at a heading and a horizontal cut | Two panels each claiming a fixed fraction of one column, and a legend listing everything the renderer can draw rather than what is on the page |
+| Three kilometres of empty ruled paper at the feeder | Houses waited until seven pixels; at the scale the level is FOR they are four |
+| 500 kV corridors read as barber's poles | Flow marks at a 15 px pitch, four tenths as long and nearly as wide as the conductor |
+| The demand scatter re-rolled every hour | Its extent came from the load on show rather than from the site's annual peak |
 
 ---
 
@@ -547,7 +580,7 @@ leaves the app where the path got to.
 
 ```
 npm install
-npm test          # 648 tests
+npm test          # 663 tests
 npm run typecheck
 npm run dev
 ```

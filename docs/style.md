@@ -102,13 +102,28 @@ drawing that replaced it.
 
 ## Detail arrives as you approach
 
-Nothing is drawn at a scale where it cannot be read. Houses in the
-neighbourhood layer wait until they are seven pixels across. Pole names on the
-feeder wait until the poles are far enough apart to point at — until then only
-the equipment is named. In the substation yard, once the drawing has stood up
-into a yard, only the busbars, the transformer banks and the line terminals
-keep a standing label, because with a volume under every caption the drawing
-disappears under its own text.
+Nothing is drawn at a scale where it cannot be read, and nothing is WITHHELD at
+a scale where it can.
+
+- Houses appear as filled footprints from about two pixels across — the way an
+  engraved town map fills its buildings — and become outlines at nine, where an
+  outline can be read as one. They used to wait until seven, which sounds like
+  this rule but was the wrong reading of it: at the scale where the whole feeder
+  fits the page, the scale this level is FOR, a house is four pixels, so the
+  view most readers live in was three kilometres of empty ruled paper.
+- A city's demand dots appear only once the scatter is about forty pixels
+  across. Further out, four hundred dots land on top of each other under the
+  site's own symbol and draw a smudge that carries no count and no shape. Big
+  cities are legible sooner than small towns, so on the way in they bloom one
+  after another rather than speckling the whole state at once.
+- The feeder names its equipment from about thirteen metres per pixel and its
+  poles from eight. Further out the whole feeder is a hundred-pixel clump, and
+  four two-line captions around a smudge mean the text IS the drawing.
+- The street grid stops before the substation, where a block is wider than the
+  page and reads as a stray construction line across the yard.
+- In the yard, only the busbars, the transformer banks and the line terminals
+  keep a standing label, because with a volume under every caption the drawing
+  disappears under its own text.
 
 The rule is the same in each case: a mark that cannot be read is not
 information, it is noise with a cost.
@@ -121,12 +136,87 @@ hundred years. The feeder gets the street grid it runs along and the footprints
 of the houses it serves. The service gets an axonometric cutaway of the house
 the socket is in.
 
-All of it at the lightest weight in the palette, behind everything, never
+Inside the fence there is more than the equipment: the substation has its
+control house, cable trench, access road and gate; the power station has its
+control building, water plant, road and the gas arriving from off site. None of
+it carries current, which is exactly why the single-line diagram has no symbol
+for any of it — and why a yard drawn only from the one-line comes out as
+equipment standing in an empty field with a quarter of the site conspicuously
+containing nothing.
+
+All of it at the lightest weight in the palette, behind everything, barely
 labelled: at a glance it is texture, and only on a second look is it a
 neighbourhood. The coastline is real Census boundary data; the streets and
 houses are invented and the honesty register says so, but their DIMENSIONS are
 the ordinary ones of American suburban development, so the sense of scale is
 honest even though the particular houses are not.
+
+## Type is placed where the drawing is not
+
+The label layout knows where every other label is, and — since the second
+quality pass — where the drawing is. Each frame is rasterised into cells a
+dozen pixels across and every candidate position is scored by how much ink it
+would be written over; the conventional order (up-right, up-left, down-right…)
+survives as the tie-break, so nothing moves when there is nothing to avoid.
+Ghost line work counts for a third of a conductor, because at feeder scale the
+ground is everywhere and treating a street as an obstacle would leave no clear
+paper to prefer.
+
+What this fixed was not the NUMBER of labels. It was a caption landing in the
+middle of a five-circuit corridor with a hand's width of empty paper beside it.
+
+A label may also state which side of its subject it belongs on. That is what
+turns the service view from scattered annotation into a labelled diagram: the
+equipment named above the chain, the wires between them below. It is a
+preference and not a restriction — a caption with nowhere to go on its own side
+is still placed.
+
+## The drawing never writes the same number twice
+
+A substation single-line names a line terminal, its breaker, its disconnect and
+the bus behind it, and every one of them carries the same current. Four captions
+in a column all reading `13.7 MVA · 8 %` do not reinforce anything; they bury
+the numbers that ARE different. A value line is written by whichever label ranks
+highest and the rest keep their names and drop the repeat — enforced in the
+layout rather than as a list of exceptions in each scene, so the next scene
+somebody writes cannot forget it.
+
+Two related rules, in the same spirit:
+
+- **A pole keeps its name and loses its voltage.** Twenty scattered four-decimal
+  readings are the voltage-profile plot written out badly. The plot is
+  underneath, where the drop along the feeder, the step at the regulator and the
+  lift at the capacitor are visible at once and in order.
+- **At whole-state scale only the gigawatt sites carry a number.** The symbol
+  already says how big a place is; come closer and the threshold drops to
+  nothing.
+
+## The legend is a key to the page, not a catalogue
+
+Always present and always complete — where complete means *everything on the
+page*, not everything the renderer can draw. At the whole state the legend used
+to offer the wire along a street and the drop into a house, neither within four
+orders of magnitude of being visible, and the rows that mattered were below the
+fold.
+
+Each scene declares the voltage classes it draws, beside the code that draws
+them; the compositor reports the union of the scenes it composed; the legend
+shows that. A test checks that the scenes account for every class in the
+palette, so none can quietly become legend-only. The machine marks, the size
+key and the dot key appear on the same terms — reported by the frame, never
+inferred from the level.
+
+## Framing a solid, not its footprint
+
+A ground rectangle is the right description of a map and the wrong one for a
+substation: the yard is eighty metres across and stands twelve metres up, and
+in an isometric projection that height is most of what the drawing occupies.
+Bounding boxes carry their height, and the camera frames what is drawn rather
+than the plot it stands on.
+
+Framing also asks what panels the DESTINATION will have rather than what is open
+now, so the same journey always lands at the same size. `tools/navigate.mjs`
+walks all forty-two journeys between the seven levels and fails if it does not.
 
 ## Depth comes from line weight and occlusion
 
@@ -141,6 +231,13 @@ is the typographic equivalent of the hidden-line removal in the drawing itself.
 Marks in the colour of the paper travel along the core of each conductor at a
 speed proportional to loading, in the direction real power is going. Nothing
 else in the interface animates: no entrance animations, no hover flourishes.
+
+**The marks are beads, not stripes.** At a 15 px pitch with each mark four
+tenths as long as the gap and nearly as wide as the conductor, a 500 kV corridor
+of three parallel circuits came out as three barber's poles and a page of them
+read as hatching. A 26 px pitch, marks under a fifth of it, and a bead never
+more than half the width of the line say exactly the same thing and leave a
+conductor looking like a conductor.
 
 The one other motion is the level transition, which exists to show what changed.
 

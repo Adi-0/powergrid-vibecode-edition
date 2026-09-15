@@ -71,6 +71,19 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 
 ```
 npm install
-npm test        # 648 tests
+npm test        # 663 tests
 npm run dev     # the app
+```
+
+## Checking it
+
+Screenshots are not an instrument. Four tools measure the app instead of
+squinting at it, and each of them has found bugs that a picture of any single
+view could not show:
+
+```
+node tools/audit.mjs      # every view: segments, labels, scale, breadcrumb, panel
+node tools/navigate.mjs   # all 42 journeys between levels arrive at the same size
+node tools/guide-walk.mjs # the fourteen-step path lands where it says
+node tools/crop.mjs substation 1 600 180 560 400 yard   # one detail, at print scale
 ```
