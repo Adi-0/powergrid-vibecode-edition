@@ -28,7 +28,9 @@ import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SIGNAL, SELECTION, LAYOUT, voltageClass } from './style.js';
+import {
+  INK, SIGNAL, SELECTION, LAYOUT, voltageClass, TextDetail,
+} from './style.js';
 import { toWorld } from './world.js';
 import { SYM_TRANSFORMER, SYM_BREAKER, placeSymbol, SymbolPath } from './symbols.js';
 import { PickTarget } from './scene-system.js';
@@ -133,6 +135,8 @@ export interface ServiceDrawOptions {
   selectedId?: string | null;
   hoveredId?: string | null;
   opacity?: number;
+  /** How much type to carry. See TextDetail. */
+  detail?: TextDetail;
 }
 
 export interface ServiceDrawResult {
@@ -157,6 +161,7 @@ export function drawService(
   options: ServiceDrawOptions = {}
 ): ServiceDrawResult {
   const alpha = options.opacity ?? 1;
+  const detail: TextDetail = options.detail ?? 'normal';
   const marks: Mark[] = [];
   const labels: LabelSpec[] = [];
   const picks: PickTarget[] = [];
@@ -254,7 +259,10 @@ export function drawService(
 
     if (step) {
       const idle = step.currentA < 0.005;
-      labels.push({
+      if (detail === 'minimal' && !isSelected) {
+        // The wires keep their names on hover only; at this setting the chain
+        // is the equipment, and what runs between it answers when asked.
+      } else labels.push({
         id: `svc:run:${id}`,
         world: a.clone().lerp(b, 0.5),
         text: `${run.name} — ${conductor?.size ?? ''}`,
@@ -271,6 +279,16 @@ export function drawService(
     picks.push({
       id, kind: 'circuit', world: a.clone(), worldB: b.clone(),
       radiusPx: LAYOUT.pickRadiusPx,
+      hover: {
+        text: `${run.name} — ${conductor?.size ?? ''}`,
+        ...(step
+          ? {
+              value: step.currentA < 0.005 ? 'nothing switched on'
+                : `${step.currentA.toFixed(1)} A · −${step.dropV.toFixed(2)} V`,
+            }
+          : {}),
+        alarm: overloaded,
+      },
     });
   }
 
@@ -331,25 +349,31 @@ export function drawService(
       }, depth + 1);
     }
 
-    labels.push({
-      id: `svc:${n.id}`,
-      world: p,
-      text: n.name,
-      ...(n.id === 'PAD' && padFlow
-        ? {
-            value: `${v!.toFixed(2)} V · ${(padFlow.sMaxMVA * 1000).toFixed(1)} of ` +
-              `${(padFlow.sMaxMVA * 1000 / Math.max(1e-9, Math.abs(padFlow.loading))).toFixed(0)} kVA`,
-          }
-        : v !== undefined ? { value: `${v.toFixed(2)} V` }
-        : n.rating ? { value: n.rating } : {}),
-      side: 'above',
-      priority: servicePriority(n) + (isSelected || isHovered ? 5000 : 0),
-      tone: isSelected ? 'selected' : outOfRange ? 'alarm' : 'normal',
-    });
+    const reading = n.id === 'PAD' && padFlow
+      ? `${v!.toFixed(2)} V · ${(padFlow.sMaxMVA * 1000).toFixed(1)} of ` +
+        `${(padFlow.sMaxMVA * 1000 / Math.max(1e-9, Math.abs(padFlow.loading))).toFixed(0)} kVA`
+      : v !== undefined ? `${v.toFixed(2)} V`
+      : n.rating;
 
     picks.push({
       id: n.id, kind: 'site', world: p.clone(),
       radiusPx: LAYOUT.pickRadiusPx * (n.kind === 'panel' ? 1.6 : 1.1),
+      hover: {
+        text: n.name,
+        ...(reading ? { value: reading } : {}),
+        alarm: outOfRange,
+      },
+    });
+
+    labels.push({
+      id: `svc:${n.id}`,
+      world: p,
+      text: n.name,
+      ...(reading && !(detail === 'minimal' && !isSelected && !isHovered)
+        ? { value: reading } : {}),
+      side: 'above',
+      priority: servicePriority(n) + (isSelected || isHovered ? 5000 : 0),
+      tone: isSelected ? 'selected' : outOfRange ? 'alarm' : 'normal',
     });
   }
 

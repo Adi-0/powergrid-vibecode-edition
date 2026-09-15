@@ -30,7 +30,9 @@ import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SIGNAL, SELECTION, FLOW, LAYOUT, voltageClass } from './style.js';
+import {
+  INK, SIGNAL, SELECTION, FLOW, LAYOUT, voltageClass, TextDetail,
+} from './style.js';
 import { toWorld, layerHeightPx, circuitOffsetPx } from './world.js';
 import {
   SYM_GENERATOR, SYM_LOAD, SYM_BATTERY, MACHINE_MARKS, MachineMark,
@@ -241,6 +243,8 @@ export interface SystemDrawOptions {
   view?: { min: { x: number; z: number }; max: { x: number; z: number } } | null;
   /** Debug: draw only this voltage class. */
   onlyKV?: number | null;
+  /** How much type to carry. See TextDetail. */
+  detail?: TextDetail;
   /** Debug: extra width added to every halo, px. */
   haloPad?: number;
 }
@@ -277,6 +281,19 @@ export interface PickTarget {
   /** For circuits, the other end, so picking can test distance to the segment. */
   worldB?: Vector3;
   radiusPx: number;
+  /**
+   * What to say when the cursor rests on this.
+   *
+   * SUPPLIED BY THE SCENE THAT DREW IT, because the scene is the only thing
+   * that knows both what the object is called and what the solver says it is
+   * doing — and because a lookup table in the app would be a second copy of
+   * that knowledge, wrong by the third time somebody added a device.
+   *
+   * This is what makes it safe for the drawing to carry less type: a name that
+   * is not printed is still one hover away, so quiet is not the same as
+   * hidden.
+   */
+  hover?: { text: string; value?: string; alarm?: boolean };
 }
 
 /** How heavily loaded a branch is, clamped and softened for display. */
@@ -297,6 +314,7 @@ export function drawSystem(
   options: SystemDrawOptions = {}
 ): SystemDrawResult {
   const mpp = camera.metresPerPixel;
+  const detail: TextDetail = options.detail ?? 'normal';
   const basis = camera.groundBasis();
   const screenA = new Vector2();
   const screenB = new Vector2();
@@ -500,6 +518,15 @@ export function drawSystem(
         world: new Vector3(a[0], a[1], a[2]),
         worldB: new Vector3(b[0], b[1], b[2]),
         radiusPx: LAYOUT.pickRadiusPx,
+        hover: {
+          text: c.branch.name,
+          value: isOut ? 'out of service'
+            : flowData
+              ? `${formatMW(Math.abs(flowData.pFromMW))} · ` +
+                `${(Math.abs(flowData.loading) * 100).toFixed(0)} % of rating`
+              : undefined,
+          alarm: over || isOut,
+        },
       });
     }
   }
@@ -573,10 +600,16 @@ export function drawSystem(
     for (const seg of scratch) marks.push({ seg, depth: symbolDepth - 1 });
     scratch.length = 0;
 
+    const readout = siteReadout(node, solved);
     picks.push({
       id: node.site.id, kind: 'site',
       world: node.ground.clone(),
       radiusPx: LAYOUT.pickRadiusPx * (topKV >= 500 ? 1.3 : 1),
+      hover: {
+        text: node.site.name,
+        ...(readout ? { value: readout } : {}),
+        alarm: anyAlarm,
+      },
     });
 
     // --- 6. Labels --------------------------------------------------------
@@ -596,8 +629,9 @@ export function drawSystem(
     // fills the page there is room for every number, and that is exactly the
     // detail-on-approach rule the rest of the drawing follows.
     const throughputMW = Math.max(capacityMW, node.loadMW);
-    const showValue =
-      isSelected || isHovered || mpp < 600 || throughputMW >= 1000;
+    const showValue = detail !== 'minimal' && (
+      detail === 'all' || isSelected || isHovered
+      || mpp < 600 || throughputMW >= 1000);
     const value = showValue ? siteReadout(node, solved) : undefined;
     labels.push({
       id: `site:${node.site.id}`,

@@ -155,6 +155,36 @@ export function voltageClass(kV: number): VoltageClassStyle {
 }
 
 // ---------------------------------------------------------------------------
+// How much type the drawing carries
+// ---------------------------------------------------------------------------
+
+/**
+ * How much the drawing says out loud.
+ *
+ * A reader who knows what they are looking for wants every name and every
+ * number; a reader meeting a power system for the first time wants a drawing
+ * they can take in. The same scenes serve both, and the difference is one
+ * setting rather than two code paths:
+ *
+ *  - `minimal` — the names you need to orient, and nothing else. No values
+ *    anywhere. Everything the drawing knows is still one hover away, which is
+ *    what makes this setting quiet rather than lossy.
+ *  - `normal` — names, and a number where the number is the point. The default.
+ *  - `all` — every name each scene can give and a number under all of them.
+ *
+ * It governs TYPE ONLY. No setting changes a line, a symbol or a solution: the
+ * drawing is the same drawing, differently annotated.
+ */
+export type TextDetail = 'minimal' | 'normal' | 'all';
+
+/** How many labels the layout will place at each setting. */
+export const LABEL_BUDGET: Record<TextDetail, number> = {
+  minimal: 14,
+  normal: 46,
+  all: 130,
+};
+
+// ---------------------------------------------------------------------------
 // Flow
 // ---------------------------------------------------------------------------
 

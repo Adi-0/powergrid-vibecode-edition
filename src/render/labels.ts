@@ -271,6 +271,14 @@ export class LabelLayer {
    * camera moves.
    */
   maxLabels = 46;
+  /**
+   * Gap demanded between two labels, px.
+   *
+   * Loosened when the reader has asked for everything: at that setting the
+   * point is coverage, and packing tighter is the honest response to being
+   * asked for more rather than dropping half of it on a spacing rule.
+   */
+  collisionPadding: number = LAYOUT.labelCollisionPaddingPx;
 
   constructor(parent: HTMLElement) {
     this.element = document.createElement('div');
@@ -368,7 +376,7 @@ export class LabelLayer {
           const x = px.x + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
           const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
           const rect = { x, y, w: size.w, h: size.h };
-          if (placed.some((p) => overlaps(rect, p, LAYOUT.labelCollisionPaddingPx))) continue;
+          if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
           if (blocked.some((b) => overlaps(rect, b, 2))) continue;
           const over = ink ? inkUnder(ink, rect) : 0;
           if (over < bestInk) {

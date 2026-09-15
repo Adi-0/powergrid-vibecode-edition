@@ -27,10 +27,7 @@ export interface FrameContent {
 
 export interface ViewportEvents {
   onPick?: (id: string | null, kind: PickTarget['kind'] | null) => void;
-  onHover?: (
-    id: string | null, kind: PickTarget['kind'] | null,
-    at: { x: number; y: number }
-  ) => void;
+  onHover?: (hit: PickTarget | null, at: { x: number; y: number }) => void;
   onCameraChange?: (metresPerPixel: number, level: LevelId) => void;
   /** Called when a frame is about to be drawn; return the content to draw. */
   build: () => FrameContent;
@@ -204,7 +201,7 @@ export class Viewport {
       if (id !== this.hoveredId) {
         this.hoveredId = id;
         this.stage.classList.toggle('is-over-target', id !== null);
-        this.events.onHover?.(id, hit?.kind ?? null, { x: e.clientX, y: e.clientY });
+        this.events.onHover?.(hit ?? null, { x: e.clientX, y: e.clientY });
       }
     });
 

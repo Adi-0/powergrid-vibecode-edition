@@ -45,7 +45,9 @@ import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SIGNAL, SELECTION, LAYOUT, voltageClass } from './style.js';
+import {
+  INK, SIGNAL, SELECTION, LAYOUT, voltageClass, TextDetail,
+} from './style.js';
 import { toWorld } from './world.js';
 import {
   SYM_TRANSFORMER, SYM_BREAKER, SYM_DISCONNECT, SYM_CAPACITOR, placeSymbol,
@@ -417,6 +419,8 @@ export interface SubstationDrawOptions {
   /** How strongly to draw the whole view, 0 to 1, for the level cross-fade. */
   opacity?: number;
   showFlow?: boolean;
+  /** How much type to carry. See TextDetail. */
+  detail?: TextDetail;
   /**
    * A bus the reader has put a fault on.
    *
@@ -451,6 +455,7 @@ export function drawSubstation(
   const frame = substationFrame(camera, options.morph);
   const t = frame.t;
   const alpha = options.opacity ?? 1;
+  const detail: TextDetail = options.detail ?? 'normal';
   const basis = camera.groundBasis();
   const marks: Mark[] = [];
   const labels: LabelSpec[] = [];
@@ -747,6 +752,12 @@ export function drawSubstation(
       picks.push({
         id: e.id, kind: 'site', world: p.clone(),
         radiusPx: LAYOUT.pickRadiusPx * (e.kind === 'transformer' ? 1.6 : 0.9),
+        hover: {
+          text: e.name,
+          ...(value?.text ?? e.rating
+            ? { value: value?.text ?? e.rating ?? '' } : {}),
+          alarm: value?.alarm === true,
+        },
       });
     }
 
@@ -759,14 +770,18 @@ export function drawSubstation(
     // keep a standing label; the rest answer on hover.
     const majorInYard = e.kind === 'bus' || e.kind === 'transformer'
       || e.kind === 'line-terminal';
-    const named = emphasised || devices.length > 0
-      || (t > 0.6 ? majorInYard : ALWAYS_NAMED.has(e.kind));
+    const named = detail === 'all' || emphasised || devices.length > 0
+      || (detail === 'minimal'
+        ? majorInYard
+        : t > 0.6 ? majorInYard : ALWAYS_NAMED.has(e.kind));
     if (!named) continue;
 
     const second = devices.length > 0
       ? devices.map((d) => d.device).join(' · ')
-      : value?.text
-        ?? (open ? 'normally open' : e.ratio ?? e.rating?.split(',')[0]);
+      : detail === 'minimal' && !emphasised
+        ? undefined
+        : value?.text
+          ?? (open ? 'normally open' : e.ratio ?? e.rating?.split(',')[0]);
     // A bus is named at the END of the bar, never at its middle: a label
     // placed over a busbar has the heaviest line in the drawing struck
     // through it, and no amount of offset fixes that on a horizontal bar.

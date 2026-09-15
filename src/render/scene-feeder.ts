@@ -33,7 +33,9 @@ import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SIGNAL, SELECTION, LAYOUT, voltageClass } from './style.js';
+import {
+  INK, SIGNAL, SELECTION, LAYOUT, voltageClass, TextDetail,
+} from './style.js';
 import { toWorld } from './world.js';
 import {
   SYM_TRANSFORMER, SYM_BREAKER, SYM_CAPACITOR, SYM_LOAD, placeSymbol, SymbolPath,
@@ -225,6 +227,8 @@ export interface FeederDrawOptions {
   faultBusId?: string | null;
   /** Where the motor is, and what it is doing, if the reader has started it. */
   motor?: { busId: string; state: string; label: string } | null;
+  /** How much type to carry. See TextDetail. */
+  detail?: TextDetail;
 }
 
 export interface FeederDrawResult {
@@ -239,6 +243,10 @@ interface Mark { seg: LineSegment; depth: number; haloPx?: number }
 
 const HALO_PAD_PX = 1.4;
 
+/** A node's name, for readouts that join two of them. */
+const nodeName = (id: string): string =>
+  FEEDER_NODES.find((n) => n.id === id)?.name ?? id;
+
 export function drawFeeder(
   geometry: FeederGeometry,
   solved: SolvedCase,
@@ -246,6 +254,7 @@ export function drawFeeder(
   options: FeederDrawOptions = {}
 ): FeederDrawResult {
   const alpha = options.opacity ?? 1;
+  const detail: TextDetail = options.detail ?? 'normal';
   const marks: Mark[] = [];
   let faultAt: Vector3 | undefined;
   const labels: LabelSpec[] = [];
@@ -368,6 +377,13 @@ export function drawFeeder(
       id: s.branchId, kind: 'circuit',
       world: s.a.clone(), worldB: s.b.clone(),
       radiusPx: LAYOUT.pickRadiusPx,
+      hover: {
+        text: `${nodeName(s.from)} \u2192 ${nodeName(s.to)}`,
+        ...(flow
+          ? { value: `${Math.abs(flow.iFromAmps).toFixed(0)} A · ${s.lengthKm.toFixed(2)} km` }
+          : {}),
+        alarm: over || out,
+      },
     });
   }
 
@@ -477,13 +493,29 @@ export function drawFeeder(
       void pDrawn;
     }
 
+    if (!bus) continue;
+
+    // --- what this node says when asked --------------------------------------
+    //
+    // Registered whatever the scale, and whatever the drawing has decided to
+    // print. The pick is what makes a quiet drawing explorable rather than
+    // merely emptier: every pole answers, even when none of them is captioned.
+    const km = node.distanceKm ?? 0;
+    const live = node.id === 'SVC_LV'
+      ? `${(bus.vpu * 240).toFixed(1)} V · ${bus.vpu.toFixed(4)} pu`
+      : `${bus.vpu.toFixed(4)} pu · ${km.toFixed(2)} km`;
+    picks.push({
+      id: node.id, kind: 'site', world: top.clone(),
+      radiusPx: LAYOUT.pickRadiusPx * (kit ? 1.3 : 0.9),
+      hover: {
+        text: node.name,
+        value: kit ? `${live} · ${kit.label}` : live,
+        alarm: violation !== null,
+      },
+    });
+
     // --- labels -------------------------------------------------------------
     //
-    // Detail waits until there is room for it. Far out, the whole feeder is a
-    // smudge a hundred pixels across and naming all twenty poles produces six
-    // captions on long leaders reaching into empty paper — which is what made
-    // the approach to the feeder look broken. Only the pieces of equipment
-    // keep a name until the poles are far enough apart to point at.
     // Two thresholds, both about whether a caption can be read where it is.
     //
     // Far out, the whole feeder is a hundred-pixel clump and naming the
@@ -492,17 +524,15 @@ export function drawFeeder(
     // is exactly the state the approach to the feeder used to be in. Closer,
     // the equipment can be pointed at; closer still, so can the poles.
     const mpp = camera.metresPerPixel;
-    const spacious = mpp < 8;
-    const closeEnoughToName = mpp < 13;
-    if (!bus) continue;
+    const spacious = detail === 'all' || mpp < 8;
+    const closeEnoughToName = detail === 'all' || mpp < 13;
     if (!closeEnoughToName && !isSelected && !isHovered) continue;
     if (!spacious && !kit && !isSelected && !isHovered && node.id !== 'SVC_LV') {
-      picks.push({
-        id: node.id, kind: 'site', world: top.clone(),
-        radiusPx: LAYOUT.pickRadiusPx * 0.9,
-      });
       continue;
     }
+    if (detail === 'minimal' && !kit && !isSelected && !isHovered
+      && node.id !== 'SVC_LV') continue;
+
     // A VOLTAGE UNDER EVERY POLE IS THE PLOT, WRITTEN OUT BADLY.
     //
     // Twenty poles each captioned "1.0287 pu · 1.87 km" is forty lines of type
@@ -516,13 +546,9 @@ export function drawFeeder(
     // equipment that has a setting worth reading, for whatever the reader is
     // pointing at, and for anything outside its limits. An ordinary pole keeps
     // its name and nothing else.
-    const km = node.distanceKm ?? 0;
-    const live = node.id === 'SVC_LV'
-      ? `${(bus.vpu * 240).toFixed(1)} V · ${bus.vpu.toFixed(4)} pu`
-      : `${bus.vpu.toFixed(4)} pu · ${km.toFixed(2)} km`;
-    const wantsNumber =
-      isSelected || isHovered || violation || kit !== undefined
-      || node.id === 'SVC_LV';
+    const wantsNumber = detail !== 'minimal' && (
+      detail === 'all' || isSelected || isHovered || violation
+      || kit !== undefined || node.id === 'SVC_LV');
     labels.push({
       id: `feeder:${node.id}`,
       world: top,
@@ -532,11 +558,6 @@ export function drawFeeder(
         : {}),
       priority: labelPriority(node, kit !== undefined, isSelected || isHovered),
       tone: isSelected ? 'selected' : violation ? 'alarm' : 'normal',
-    });
-
-    picks.push({
-      id: node.id, kind: 'site', world: top.clone(),
-      radiusPx: LAYOUT.pickRadiusPx * (kit ? 1.3 : 0.9),
     });
   }
 

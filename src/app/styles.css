@@ -425,6 +425,24 @@ button, select, input {
 }
 .btn--quiet:hover { color: var(--ink); border-color: var(--ink); }
 
+/* A segmented control: one rule around the group, one between its parts, so it
+   reads as one switch with three positions rather than three buttons. */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.seg__label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.seg__btn { border-right-width: 0; }
+.seg__btn:last-of-type { border-right-width: 1px; }
+.seg__btn[aria-pressed='true'] { background: var(--ink); color: var(--ground); }
+
 /* --------------------------------------------------------------------- */
 /* Time scrubber                                                          */
 /* --------------------------------------------------------------------- */

@@ -199,16 +199,36 @@ Two related rules, in the same spirit:
   already says how big a place is; come closer and the threshold drops to
   nothing.
 
-## The circuits answer when pointed at
+## How much the drawing says out loud is the reader's choice
 
-Sites are named on the drawing; circuits are not, and cannot be — a hundred and
-forty names on one page is a word search. So the thing the drawing is mostly
-made of was the one thing a reader could not find out without clicking, which
-is a large part of what "hard to discover anything" meant.
+A reader who knows what they are looking for wants every name and every number;
+a reader meeting a power system for the first time wants a drawing they can take
+in. The same scenes serve both, and the difference is one setting rather than
+two code paths.
 
-Hovering a circuit reads out its name and what it is carrying, beside the
-cursor, in two short lines. Not a substitute for the inspector, which is one
-click away and says everything: only an answer to "what am I pointing at".
+| Setting | What it prints |
+|---|---|
+| **Least** | The names you need to orient, and nothing else. No values anywhere. |
+| **Normal** | Names, and a number where the number is the point. The default. |
+| **All** | Every name each scene can give, with a number under all of them. |
+
+It governs **type only**. No setting changes a line, a symbol or a solution: it
+is the same drawing, differently annotated. Each scene applies it at its own
+existing gates, because only the scene knows which of its captions is the one
+worth keeping when there is room for one.
+
+What makes *Least* quiet rather than lossy is the rule below.
+
+## Everything answers when pointed at
+
+Every pickable thing carries a two-line readout — its name and one live value —
+supplied by the scene that drew it, because the scene is the only thing that
+knows both what the object is called and what the solver says it is doing.
+
+That is what lets the drawing carry less type without carrying less
+information. It is also the answer to the thing a map can never do: a hundred
+and forty circuits cannot all be named on one page, so without it the thing the
+drawing is mostly made of would be the one thing a reader could not identify.
 
 ## The legend is a key to the page, not a catalogue
 

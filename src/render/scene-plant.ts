@@ -32,7 +32,9 @@ import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SIGNAL, SELECTION, LAYOUT, voltageClass } from './style.js';
+import {
+  INK, SIGNAL, SELECTION, LAYOUT, voltageClass, TextDetail,
+} from './style.js';
 import { toWorld } from './world.js';
 import {
   SYM_GENERATOR, SYM_TRANSFORMER, placeSymbol, SymbolPath,
@@ -154,6 +156,8 @@ export interface PlantDrawOptions {
   selectedId?: string | null;
   hoveredId?: string | null;
   opacity?: number;
+  /** How much type to carry. See TextDetail. */
+  detail?: TextDetail;
 }
 
 export interface PlantDrawResult {
@@ -192,6 +196,7 @@ export function drawPlant(
   );
 
   const alpha = options.opacity ?? 1;
+  const detail: TextDetail = options.detail ?? 'normal';
   const basis = camera.groundBasis();
   const marks: Mark[] = [];
   const labels: LabelSpec[] = [];
@@ -391,6 +396,16 @@ export function drawPlant(
       id: `${fromId}>${toId}`, kind: 'circuit',
       world: a.clone(), worldB: b.clone(),
       radiusPx: LAYOUT.pickRadiusPx,
+      // The streams are the subject of this drawing, and they were the one
+      // thing in it that said nothing when pointed at.
+      ...(flow
+        ? {
+            hover: {
+              text: flow.name,
+              value: `${formatPower(flow.mw)} · ${(flow.fraction * 100).toFixed(1)} % of the fuel`,
+            },
+          }
+        : {}),
     });
   }
 
@@ -431,22 +446,31 @@ export function drawPlant(
     const stream = i.stage ? byStage.get(i.stage) : undefined;
     const emphasised = isSelected || isHovered;
 
+    // Registered before any decision about naming: the quiet settings depend
+    // on everything still answering when it is pointed at.
+    picks.push({
+      id: i.id, kind: 'site', world: p.clone(),
+      radiusPx: LAYOUT.pickRadiusPx * 1.2,
+      hover: {
+        text: i.name,
+        ...(stream
+          ? { value: `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of the fuel` }
+          : i.rating ? { value: i.rating } : {}),
+      },
+    });
+
     // Eighteen standing captions over a drawing this size is a page of text
     // with a diagram behind it. Only the things that make the cycle a cycle
     // keep a name; a generator sits against the turbine that drives it and a
     // step-up transformer against the generator, so both are legible from
     // their neighbours and answer on hover.
-    if (!emphasised && !NAMED_IN_PLANT.has(i.kind)) {
-      picks.push({
-        id: i.id, kind: 'site', world: p.clone(),
-        radiusPx: LAYOUT.pickRadiusPx * 1.2,
-      });
-      continue;
-    }
-    const value = emphasised && stream
-      ? `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of the fuel`
-      : stream ? formatPower(stream.mw)
-        : emphasised && i.rating ? i.rating : undefined;
+    if (detail !== 'all' && !emphasised && !NAMED_IN_PLANT.has(i.kind)) continue;
+    const value = detail === 'minimal' && !emphasised
+      ? undefined
+      : (emphasised || detail === 'all') && stream
+        ? `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of the fuel`
+        : stream ? formatPower(stream.mw)
+          : emphasised && i.rating ? i.rating : undefined;
     // A LABEL SITS ON THE SIDE AWAY FROM THE MIDDLE OF THE PLANT.
     //
     // The station is two identical trains with the steam plant between them,
@@ -466,10 +490,6 @@ export function drawPlant(
       tone: isSelected ? 'selected' : 'normal',
     });
 
-    picks.push({
-      id: i.id, kind: 'site', world: p.clone(),
-      radiusPx: LAYOUT.pickRadiusPx * 1.2,
-    });
   }
 
   // --- the station's own headline -------------------------------------------

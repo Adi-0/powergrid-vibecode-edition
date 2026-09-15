@@ -58,7 +58,7 @@ import { ServiceSolution } from '../data/california/service.js';
 import { SITES } from '../data/california/sites.js';
 import { project } from '../data/california/geography.js';
 import { toWorld } from '../render/world.js';
-import { ZOOM, LevelId } from '../render/style.js';
+import { ZOOM, LevelId, TextDetail } from '../render/style.js';
 
 export type SceneId =
   | 'system' | 'ground' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine';
@@ -204,6 +204,14 @@ export interface ComposeInput {
   faultBusId?: string | null;
   motor?: { busId: string; state: string; label: string } | null;
   onlyKV?: number | null;
+  /**
+   * How much type the drawing carries. See TextDetail.
+   *
+   * Passed to every scene rather than applied afterwards, because only the
+   * scene knows which of its own captions is the one worth keeping when there
+   * is room for one.
+   */
+  detail?: TextDetail;
 }
 
 export interface ComposeResult {
@@ -272,6 +280,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // follows the same bounds tests the drawing does.
   let floorScale = Infinity;
   let drewDots = false;
+  const detail: TextDetail = input.detail ?? 'normal';
   let faultAt: Vector3 | undefined;
 
   /**
@@ -350,6 +359,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aSystem,
       view,
       onlyKV: input.onlyKV ?? null,
+      detail,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aSystem);
@@ -371,6 +381,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       showSubstation: aSub <= 0,
       faultBusId: input.faultBusId ?? null,
       motor: input.motor ?? null,
+      detail,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aFeeder);
@@ -386,6 +397,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       showProtection: input.showProtection,
       opacity: aSub,
       faultBusId: input.faultBusId ?? null,
+      detail,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aSub);
@@ -399,6 +411,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       selectedId: input.selectedId,
       hoveredId: input.hoveredId,
       opacity: aService,
+      detail,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aService);
@@ -412,6 +425,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       selectedId: input.selectedId,
       hoveredId: input.hoveredId,
       opacity: aPlant,
+      detail,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aPlant);

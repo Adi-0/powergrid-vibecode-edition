@@ -39,7 +39,9 @@ import {
   buildSystemGeometry, formatMW, SystemGeometry, PickTarget,
 } from '../render/scene-system.js';
 import { buildFeederGeometry, FeederGeometry } from '../render/scene-feeder.js';
-import { LevelId, levelForScale, ZOOM } from '../render/style.js';
+import {
+  LevelId, levelForScale, ZOOM, TextDetail, LABEL_BUDGET,
+} from '../render/style.js';
 import { ScopeId } from '../data/simplifications.js';
 
 const stage = document.getElementById('stage') as HTMLElement;
@@ -56,7 +58,8 @@ let geometry: SystemGeometry = buildSystemGeometry(state.current.solved);
 const feederGeometry: FeederGeometry = buildFeederGeometry();
 
 /** View state: things that change what is drawn but not what is solved. */
-const view = { substationMorph: 0, showProtection: false };
+const view: { substationMorph: number; showProtection: boolean; detail: TextDetail } =
+  { substationMorph: 0, showProtection: false, detail: 'normal' };
 
 const tooltip = new Tooltip();
 /**
@@ -97,6 +100,7 @@ const viewport: Viewport = new Viewport(stage, {
         }
         : null,
       onlyKV: debug.onlyKV,
+      detail: view.detail,
     });
     lastFrame = r;
     // How far in it is worth going HERE. Set every frame, because it depends
@@ -105,9 +109,9 @@ const viewport: Viewport = new Viewport(stage, {
     return { segments: r.segments, labels: r.labels, picks: r.picks };
   },
   onPick: (id, kind) => state.select(kind ?? 'none', id),
-  onHover: (id, kind, at) => {
-    state.hover(id);
-    showHoverReadout(id, kind, at);
+  onHover: (hit, at) => {
+    state.hover(hit?.id ?? null);
+    showHoverReadout(hit, at);
   },
   onCameraChange: (mpp, level) => onCamera(mpp, level),
   // The contextual panels ask "what is on screen", which only the frame that
@@ -362,6 +366,20 @@ controls.innerHTML =
   // when they already have a question; this is the one for a reader who does
   // not yet know what to be curious about, and among six identical grey
   // buttons it was invisible.
+  // HOW MUCH THE DRAWING SAYS OUT LOUD.
+  //
+  // A reader who knows what they are looking for wants every name and every
+  // number; a reader meeting a power system for the first time wants a drawing
+  // they can take in. This is the one control that serves both, and it is put
+  // beside the way in rather than buried in a settings panel, because the
+  // reader who most needs it is the one who has just arrived.
+  `<span class="seg" role="group" aria-label="How much text">` +
+  `<span class="seg__label">Text</span>` +
+  (['minimal', 'normal', 'all'] as const).map((d) =>
+    `<button class="btn btn--quiet seg__btn" data-detail="${d}" ` +
+    `aria-pressed="${d === 'normal'}">` +
+    `${d === 'minimal' ? 'Least' : d === 'normal' ? 'Normal' : 'All'}</button>`).join('') +
+  `</span>` +
   `<button class="btn" data-action="guide" aria-pressed="false">Show me around</button>` +
   `<button class="btn btn--quiet" data-panel="glossary">Glossary</button>` +
   `<button class="btn btn--quiet" data-panel="honesty">What this leaves out</button>` +
@@ -373,6 +391,10 @@ footerEl.appendChild(controls);
 controls.addEventListener('click', (e) => {
   const t = (e.target as HTMLElement).closest('button') as HTMLElement | null;
   if (!t) return;
+  if (t.dataset.detail) {
+    setDetail(t.dataset.detail as TextDetail);
+    return;
+  }
   if (t.dataset.panel === 'glossary') side.openGlossary();
   else if (t.dataset.panel === 'honesty') side.openHonesty(viewport.level as ScopeId);
   else if (t.dataset.panel === 'solver') {
@@ -704,46 +726,45 @@ function dominantScene(): SceneId | null {
 /**
  * What the thing under the cursor is, beside the cursor.
  *
- * SITES ARE NAMED ON THE DRAWING AND CIRCUITS ARE NOT, and there is no room to
- * name them: a hundred and forty circuits on one page would be a word search.
- * So the one thing a reader could not find out without clicking was the one
- * thing the drawing is mostly made of — which is a large part of what "hard to
- * discover anything" meant. Sweeping the cursor along a corridor now reads out
- * what each circuit is and what it is carrying.
+ * THE DRAWING CAN AFFORD TO SAY LESS BECAUSE EVERYTHING ANSWERS WHEN ASKED.
+ * A hundred and forty circuits cannot all be named on one page, and the
+ * quieter text settings deliberately print fewer names still — which would be
+ * a loss rather than a relief if the only way to find out what something was
+ * were to select it.
  *
- * Deliberately short. The inspector is one click away and says everything; this
- * only has to answer "what am I pointing at".
+ * The words come from the scene that drew the object, which is the only thing
+ * that knows both what it is called and what the solver says it is doing. This
+ * function just puts them on the screen.
  */
 function showHoverReadout(
-  id: string | null,
-  kind: PickTarget['kind'] | null,
+  hit: PickTarget | null,
   at: { x: number; y: number }
 ): void {
-  if (!id || kind !== 'circuit') {
+  const say = hit?.hover;
+  if (!say) {
     hoverTip.hide();
     return;
   }
-  const solved = state.current.solved;
-  const flow = solved.branchById.get(id);
-  const branch = solved.net.branches.find((b) => b.id === id);
-  if (!flow || !branch) {
-    hoverTip.hide();
-    return;
-  }
-  const out = !branch.inService;
-  const over = Math.abs(flow.loading) > 1;
-  // The circuit's name already carries its voltage class, so the readout does
-  // not say it again. Same rule as the drawing's.
-  const value = out
-    ? 'out of service'
-    : `${formatMW(Math.abs(flow.pFromMW))} · ` +
-      `${(Math.abs(flow.loading) * 100).toFixed(0)} % of rating`;
   hoverTip.showAtPoint(
-    `<div><span class="tooltip__term">${escapeAttr(branch.name)}</span></div>` +
-    `<div class="tooltip__short"${over || out ? ' style="color:var(--alarm)"' : ''}>` +
-    `${value}</div>`,
+    `<div><span class="tooltip__term">${escapeAttr(say.text)}</span></div>` +
+    (say.value
+      ? `<div class="tooltip__short"${say.alarm ? ' style="color:var(--alarm)"' : ''}>` +
+        `${escapeAttr(say.value)}</div>`
+      : ''),
     at.x, at.y
   );
+}
+
+/** Change how much the drawing says, and say so on the control. */
+function setDetail(next: TextDetail): void {
+  if (view.detail === next) return;
+  view.detail = next;
+  viewport.labels.maxLabels = LABEL_BUDGET[next];
+  viewport.labels.collisionPadding = next === 'all' ? 2 : 6;
+  for (const b of controls.querySelectorAll<HTMLElement>('[data-detail]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.detail === next));
+  }
+  viewport.invalidate();
 }
 
 function renderStats(): void {
