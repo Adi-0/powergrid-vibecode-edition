@@ -72,7 +72,16 @@ export class VoltageProfile {
     this.element.style.display = on ? '' : 'none';
   }
 
-  render(solved: SolvedCase, selectedId: string | null): void {
+  /**
+   * `reference` is the same feeder solved a moment earlier — before a motor
+   * started, say. Drawn as a ghost behind the live profile, it turns a number
+   * in a readout into a shape: the whole curve steps down, and it steps down
+   * further the further from the substation you look.
+   */
+  render(
+    solved: SolvedCase, selectedId: string | null,
+    reference: SolvedCase | null = null
+  ): void {
     if (this.element.style.display === 'none') return;
 
     const points: ProfilePoint[] = [];
@@ -177,6 +186,28 @@ export class VoltageProfile {
         `<path d="${path([head, ...chain])}" fill="none" stroke="#8E8B84" stroke-width="1" ` +
         `stroke-dasharray="4 2.5"/>`
       );
+    }
+
+    // The reference profile, behind everything, in the weight of a construction
+    // line. It is the same feeder a second earlier.
+    if (reference) {
+      const was = trunkOrder
+        .map((id) => {
+          const p = byId.get(id);
+          const b = reference.busById.get(
+            id.endsWith('_REG') ? `FDR_${FEEDER_REGULATOR.node}_REG` : feederBusId(id));
+          return p && b ? { ...p, vpu: b.vpu } : null;
+        })
+        .filter((p): p is ProfilePoint => !!p);
+      if (was.length > 1) {
+        svg.push(
+          `<path d="${path(was)}" fill="none" stroke="#8E8B84" stroke-width="1" ` +
+          `stroke-dasharray="1 2"/>`,
+          `<text x="${(x(was[was.length - 1].km) - 3).toFixed(1)}" ` +
+          `y="${(y(was[was.length - 1].vpu) - 5).toFixed(1)}" text-anchor="end" ` +
+          `font-size="8" fill="#5C5953">a second earlier</text>`
+        );
+      }
     }
 
     svg.push(`<path d="${path(trunk)}" fill="none" stroke="#14161A" stroke-width="1.6"/>`);

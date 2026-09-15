@@ -244,6 +244,46 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** For a three-phase or phase-to-phase fault the answer is complete. For a fault to earth the real clearing would usually be faster than shown, because a sensitive ground element sees it long before a phase element does.
 
+### The reliability indices are computed from failure rates, not from history
+
+*Applies to: feeder, protection* · `reliability-from-rates`
+
+**What the model does.** SAIFI, SAIDI, CAIDI, MAIFI and ASAI are worked out from section lengths, canonical failure rates per kilometre-year, canonical repair and switching times, and which device clears which fault. Every number is traceable to those inputs.
+
+**What the full treatment would involve.** A utility computes these from its own outage management system: every interruption that actually happened, with the customers actually affected and the minutes actually taken, classified by cause. The failure rates used here are planning values of the kind used before there is any history to work from.
+
+**What that means for you.** The directions are right and the sensitivities are right — a recloser improves SAIFI, a tie improves SAIDI, fuse blowing trades one against the other. The absolute values belong to the assumed rates, not to any real feeder, and this feeder does not exist.
+
+### Storms are not in the reliability figures
+
+*Applies to: feeder* · `no-major-event-days`
+
+**What the model does.** Faults arrive at a steady rate proportional to how much wire there is. There is no weather: no wind event that brings down twenty spans at once, no heat wave that fails cable joints in a week.
+
+**What the full treatment would involve.** IEEE Std 1366 defines a major event day by a statistical threshold — the 2.5-beta method — and utilities report indices both with and without those days, because the two numbers describe different things: how the system runs, and how badly it can go wrong.
+
+**What that means for you.** The indices here correspond to the reported figures that EXCLUDE major events, which is the flattering half of the pair. A bad storm year can double a utility’s SAIDI on its own.
+
+### Every crew takes exactly the same time
+
+*Applies to: feeder* · `restoration-is-deterministic`
+
+**What the model does.** Repair, switching and back-feeding each take one fixed number of hours. A fault at three in the morning in the rain is restored as quickly as one at noon.
+
+**What the full treatment would involve.** Restoration times are distributions, not constants, and they depend on crew availability, access, weather, and how many other faults are being worked at the same moment — which is exactly why a storm is not just more faults at the same rate.
+
+**What that means for you.** The averages are reasonable and the comparisons between options are sound. The model cannot say anything about the tail: the worst hour of the worst day is the thing customers remember, and it is not here.
+
+### The next feeder can always pick up this one’s far end
+
+*Applies to: feeder* · `tie-always-has-room`
+
+**What the model does.** When the tie is available, every customer beyond the damage is back-fed through it in an hour, whatever the load is at the time.
+
+**What the full treatment would involve.** The adjacent feeder has its own load and its own conductor rating. Back-feeding is a load-flow question: at the evening peak the tie may only be able to take part of the far end, or none of it, and a real switching plan is built around what the neighbour can carry.
+
+**What that means for you.** Overstates what the tie is worth at peak and understates it at night. The mechanism — and why a second path is worth building — is right.
+
 ## Cosmetic
 
 ### One distribution feeder is modelled; the rest are lumped
@@ -298,4 +338,4 @@ Severity is how badly a simplification would change an answer:
 
 ---
 
-*27 entries.*
+*31 entries.*

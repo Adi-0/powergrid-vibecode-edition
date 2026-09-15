@@ -462,11 +462,92 @@ each device would operate.
 
 ---
 
+## Phase 8 — complete
+
+**Breadth, and the one thing in the app that is a route.** Everything the brief
+names that the first seven phases had not built.
+
+### What exists
+
+**How it was solved** (`src/app/solver-panel.ts`). The shape of the problem — PQ,
+PV and slack counted, the 154 unknowns, the Jacobian's 4.15 % of non-zero
+entries — then the convergence itself, plotted TWICE: the warm-started solve that
+produced what is on screen, and the identical case solved cold from a DC
+estimate. The cold curve is the one that shows Newton working. The panel states
+how far apart the two answers are (a few parts in 10¹³) rather than claiming they
+agree. The path breaks wherever a machine hit a reactive limit, with the break
+marked "problem changed", because either side is convergence on a different set
+of equations.
+
+**How often the lights go out** (`src/sim/reliability.ts`, `reliability-panel.ts`).
+SAIFI, SAIDI, CAIDI, MAIFI and ASAI, computed from section lengths, canonical
+failure rates and which device clears which fault — never quoted. Three switches
+that change all of them: the recloser, fuse saving, and the tie to the next
+feeder. The lateral fuses are derived from the feeder's own data (a fuse belongs
+wherever a single-phase circuit taps off the main), and the substation is in the
+sum: the 12.47 kV bus is the largest single contributor to SAIDI despite almost
+never failing, while a fault on either 115 kV line contributes exactly zero.
+
+**Starting a motor** (`src/core/motor.ts`, `src/sim/motor-start.ts`). A 200 hp
+NEMA Design B motor with a code G nameplate, started across the line, through a
+65 % autotransformer or on a soft starter, in either of two places on the feeder.
+Two full solves: one before, one with the locked-rotor demand in the case and the
+capacitor banks and tap changers held where the first one left them, because
+neither can move in the second a start takes. The textbook estimate — starting
+kVA over short-circuit kVA — is printed next to the solved answer, and they agree
+to two decimal places.
+
+**The Ferranti effect** (`src/sim/ferranti.ts`). A parallel circuit energised
+from the sending bus with its far breaker open — what actually happens in a
+control room — and the answer given three ways: the nominal π model the solver
+uses, the exact distributed-parameter result, and the solve. They agree to four
+figures on 230 km and differ by a point on 496 km, which is where a real study
+stops using a lumped model.
+
+**The four planning ratios** (`src/sim/factors.ts`). Load, capacity, demand and
+coincidence, computed from the dispatched day and the feeder's own load data. A
+coincidence factor of 0.73 is why a 50 kVA transformer serves twelve houses whose
+services could each pass 24 kW; a capacity factor of 1.000 against 0.000 says what
+a baseload machine and a peaking machine are for.
+
+**The guided path** (`src/app/guide.ts`). Fourteen steps from the whole state to
+a wall socket and back out to a generator's capability curve. Every step DOES
+something and then says one short thing about it; every step sets the whole state
+it needs, so the dots along the bottom can be jumped to in any order; and it
+drives the same public controls a reader would use by hand, so leaving the path
+leaves the app where the path got to.
+
+### What the drawings caught
+
+| Symptom | Cause |
+|---|---|
+| The convergence plot was a flat line at 10⁻¹² with a jump in it | It was the warm-started re-solve. Honest, and useless as a picture of the method — so the cold solve is drawn beside it |
+| The worked example in the reliability panel read λ = 0 · 0 | The worst contributor is the substation bus, which has no length. The example is now the worst piece of WIRE |
+| Starting the motor dipped the feeder four times too far | `operate()` was re-seating the tap changers from their defaults, so the comparison was against a different feeder. Found because the rule of thumb disagreed |
+| Opening a 500 kV intertie collapsed half the state | Energise a parallel circuit instead, which is what a control room actually does |
+| Jumping to step 7 of the path showed the feeder's text over the system view | Every step now sets the whole state it needs, not a difference from the step before |
+
+### What it does
+
+| Check | Result |
+|---|---|
+| SAIFI / SAIDI / CAIDI, Cherry Lane 1201 | 0.28 /yr · 21 min/yr · 75 min |
+| MAIFI, and what fuse blowing does to it | 1.08 → 0.67, while SAIFI goes 0.28 → 0.34 |
+| Motor start dip, industrial unit / far end | 0.50 % / 1.22 %, against 241 MVA / 96 MVA of stiffness |
+| Rule of thumb against the solve | agrees to 0.01 % of voltage in all six cases |
+| Ferranti rise, 496 km at 500 kV | +24.65 % (π), +23.66 % (distributed) |
+| Load factor · fleet capacity factor · coincidence factor | 0.775 · 0.482 · 0.728 |
+| New model-honesty entries | 4 (31 in total) |
+| New glossary entries | 8 (105 in total) |
+| Tests | 648 passing |
+
+---
+
 ## Running it
 
 ```
 npm install
-npm test          # 471 tests
+npm test          # 648 tests
 npm run typecheck
 npm run dev
 ```

@@ -185,6 +185,19 @@ const EQUIPMENT: Record<string, { path: SymbolPath; sizePx: number; label: strin
   F11: { path: SYM_CUTOUT, sizePx: 12, label: 'normally open' },
 };
 
+/**
+ * An induction motor: a circle with an M in it, per IEEE 315.
+ *
+ * The circle is the same circle as a generator's, which is not an accident — a
+ * rotating machine is a rotating machine, and an induction motor driven above
+ * synchronous speed is an induction generator. The letter is the only thing
+ * that distinguishes them on a drawing.
+ */
+const SYM_MOTOR: SymbolPath = [
+  ...circle(0.78),
+  [[-0.32, -0.3], [-0.32, 0.3], [0, -0.02], [0.32, 0.3], [0.32, -0.3]],
+];
+
 const LATERAL_HEADS = new Set(
   FEEDER_SECTIONS.filter((s) => s.phases !== 'ABC').map((s) => s.from)
 );
@@ -207,6 +220,8 @@ export interface FeederDrawOptions {
   showSubstation?: boolean;
   /** A bus the reader has put a fault on, marked in the one signal colour. */
   faultBusId?: string | null;
+  /** Where the motor is, and what it is doing, if the reader has started it. */
+  motor?: { busId: string; state: string; label: string } | null;
 }
 
 export interface FeederDrawResult {
@@ -359,6 +374,24 @@ export function drawFeeder(
     const violation = bus?.voltageViolation ?? null;
     const color = isSelected ? SELECTION.stroke : violation ? SIGNAL.alarm : INK.ink;
     const depth = depthOf(top) - 1e4;
+
+      // The motor, where the reader has put it. It hangs off the pole on a
+    // short stub, because that is where it is: not in the line, but on the
+    // end of a customer's own service.
+    if (options.motor && options.motor.busId === busId) {
+      placeSymbol(SYM_MOTOR, {
+        x: top.x, y: top.y, z: top.z, sizePx: 15, widthPx: 1.5, color: INK.ink,
+      }, basis, scratch);
+      for (const seg of scratch) marks.push({ seg: fade(seg), depth: depth - 5 });
+      scratch.length = 0;
+      labels.push({
+        id: `feeder:motor:${node.id}`,
+        world: top,
+        text: options.motor.state === 'starting' ? 'Motor starting' : 'Motor running',
+        value: options.motor.label,
+        priority: 8500,
+      });
+    }
 
       // The fault, if the reader has put one here. A cross through the pole in
     // the one colour this app uses for "something is wrong" — and nothing else

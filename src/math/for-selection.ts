@@ -23,9 +23,10 @@ import { FEEDER_NODES, feederBusId } from '../data/california/feeder.js';
 import {
   Derivation, deriveBranch, deriveBus, deriveLineGeometry, deriveServiceDrop,
   deriveSystemBalance, deriveTransformerImpedance, derivePlantEnergy,
-  deriveMachine, deriveFault,
+  deriveMachine, deriveFault, deriveFerranti,
 } from './derive.js';
 import { FaultResult } from '../core/fault.js';
+import { ferrantiStudy, FerrantiStudy } from '../sim/ferranti.js';
 
 export type SelectionKind = 'site' | 'circuit' | 'bus' | 'generator' | 'none';
 
@@ -149,6 +150,30 @@ export function derivationsFor(
 
 const isDerivation = (d: Derivation | null): d is Derivation => d !== null;
 
+/** Lines shorter than this do not rise enough for the point to be worth making. */
+export const FERRANTI_MIN_KM = 120;
+
+/**
+ * The Ferranti study, cached per solved case.
+ *
+ * It is a whole extra power flow, and the math panel is rebuilt every time the
+ * network is re-solved. Caching on the solved case means it is computed once
+ * per line per solve and never on a redraw.
+ */
+const ferrantiCache = new WeakMap<SolvedCase, Map<string, FerrantiStudy | null>>();
+
+function ferrantiFor(solved: SolvedCase, branchId: string): FerrantiStudy | null {
+  let byLine = ferrantiCache.get(solved);
+  if (!byLine) {
+    byLine = new Map();
+    ferrantiCache.set(solved, byLine);
+  }
+  if (!byLine.has(branchId)) {
+    byLine.set(branchId, ferrantiStudy(solved.net, branchId));
+  }
+  return byLine.get(branchId) ?? null;
+}
+
 /** The flow calculation for a branch, and where its impedance came from. */
 function branchDerivations(branchId: string, solved: SolvedCase): Derivation[] {
   const br = solved.net.branches.find((b) => b.id === branchId);
@@ -158,6 +183,14 @@ function branchDerivations(branchId: string, solved: SolvedCase): Derivation[] {
 
   const geometry = deriveLineGeometry(br, solved.net);
   if (geometry) out.push(geometry);
+
+  // A line long enough for its own capacitance to matter gets the Ferranti
+  // study, because on a line this long the capacitance is not a correction
+  // term — it is the dominant thing about the line when it is lightly loaded.
+  if (br.kind === 'line' && (br.lengthKm ?? 0) > FERRANTI_MIN_KM && br.b > 0) {
+    const f = ferrantiFor(solved, branchId);
+    if (f && f.converged) out.push(deriveFerranti(f));
+  }
 
   if (br.kind === 'transformer') {
     // Recover the nameplate from the model, rather than looking it up in a

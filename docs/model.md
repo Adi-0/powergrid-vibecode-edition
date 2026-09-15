@@ -281,7 +281,67 @@ The power flow stops at the transformer's secondary terminals; the last twenty
 metres are worked with ΔV = I·(R·cos φ + X·sin φ) over the loop and shown in
 full. Decision 0011 gives the reasoning and the numbers.
 
-## 11. What the model produces
+## 11. Reliability data — `src/sim/reliability.ts`
+
+Component failure rates and restoration times, of the kind a planner uses before
+there is any outage history to work from. They are not measurements of any real
+feeder, and this is recorded in the honesty register under
+`reliability-from-rates`.
+
+| Quantity | Value | Where it comes from |
+|---|---|---|
+| Overhead line, permanent faults | 0.10 /km·yr | Typical planning value for overhead distribution in a mild climate |
+| Overhead line, temporary faults | 0.30 /km·yr | Three to four times the permanent rate — the ratio is what makes reclosers worth having |
+| Underground cable, permanent | 0.07 /km·yr | Cable fails less often than overhead line |
+| Distribution transformer | 0.006 /yr | Per unit, per year |
+| Transformer bank (115/12.47 kV) | 0.0062 /yr | IEEE 493 order of magnitude for a power transformer |
+| 12.47 kV bus section | 0.0102 /yr | IEEE 493 order of magnitude for a busbar |
+| Repair, overhead | 2.0 h | Crew on site, fault located |
+| Repair, cable | 6.0 h | Location and splicing dominate |
+| Repair, transformer | 4.0 h | Replacement from stock |
+| Switching (isolate and restore) | 0.75 h | Drive out and operate a switch |
+| Back-feed through the tie | 1.0 h | Switching plus the neighbouring feeder's own operations |
+| Fuse replacement after a needless operation | 1.5 h | Patrol the lateral, then replace |
+| Bank failure restoration | 0.5 h | Close the bus tie — the second bank picks it up |
+
+Sectionalising is assumed available at every pole on the three-phase main and
+nowhere on a lateral, which is why a lateral fault is a whole-street outage for
+the whole repair and a main fault is not.
+
+## 12. The motor at the industrial unit — `src/core/motor.ts`
+
+| Quantity | Value | Where it comes from |
+|---|---|---|
+| Rating | 200 hp, 480 V, three-phase | A characteristic large industrial motor |
+| NEMA design class | B | General purpose: normal starting torque, normal starting current |
+| Locked-rotor code letter | G | 5.6 – 6.29 kVA/hp (NEMA MG 1, Table 10-1); the mid-band is used |
+| Full-load efficiency | 0.945 | NEMA Premium for this size |
+| Full-load power factor | 0.87 | Characteristic for a 4-pole machine of this rating |
+| Power factor at standstill | 0.20 | A stalled motor is almost pure leakage reactance |
+| Locked-rotor torque | 1.5 pu | NEMA Design B minimum for this rating |
+| Compressor breakaway torque | 0.35 pu | Mid-range for a compressor started unloaded |
+| Horsepower | 745.699872 W | Exact by definition; 746 is not used |
+
+Starters: across the line; autotransformer at the 65 % tap (line current a², so
+42 %); soft starter limiting to 350 % of full-load current. Torque goes as the
+square of the terminal voltage in every case.
+
+## 13. Planning factors — `src/sim/factors.ts`
+
+The connected load and non-coincident peak per customer class. Everything else —
+load factor, demand factor, coincidence factor, capacity factor — is computed
+from these, from the feeder's own spot loads, and from the dispatched day.
+
+| Class | Connected load | Non-coincident peak |
+|---|---|---|
+| Residential | 24 kW | 5.5 kW |
+| Commercial | 60 kW | 18 kW |
+| Industrial | 400 kW | 90 kW |
+
+A residential connected load of 24 kW is what the service itself can pass — 100
+amperes at 240 volts — not what anybody uses.
+
+## 14. What the model produces
 
 Across 24 hours of both a summer and a winter day, with generator reactive limits
 enforced:

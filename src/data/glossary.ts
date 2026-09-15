@@ -493,7 +493,10 @@ export const GLOSSARY: GlossaryEntry[] = [
       'that current flowing through the line’s series reactance raises the ' +
       'voltage rather than dropping it. On a long extra-high-voltage line it is ' +
       'large enough to damage equipment, which is why such lines carry shunt ' +
-      'reactors.',
+      'reactors. The ratio is 1/cos(\u03b2l), where \u03b2l is the line\u2019s ' +
+      'ELECTRICAL LENGTH: it would go to infinity at 90\u00b0, a quarter ' +
+      'wavelength, which at 60 Hz is about 1,500 km \u2014 so a 500 km line is ' +
+      'already a third of the way there, and rises by a fifth.',
     see: ['shunt-reactor', 'sil', 'reactive-power'],
   },
   {
@@ -657,8 +660,111 @@ export const GLOSSARY: GlossaryEntry[] = [
     id: 'caidi', term: 'CAIDI', category: 'operation',
     symbol: 'CAIDI = SAIDI/SAIFI', unit: 'minutes per interruption',
     short: 'How long an outage lasts on average, once you have had one.',
+    long:
+      'It is a ratio of the other two indices rather than a measurement of its ' +
+      'own, which has an uncomfortable consequence: a utility that clears away ' +
+      'its short interruptions makes CAIDI worse, because what is left is the ' +
+      'long ones. A number that gets worse when the system gets better should ' +
+      'never be read on its own.',
     standard: 'IEEE Std 1366.',
-    see: ['saifi', 'saidi'],
+    see: ['saifi', 'saidi', 'maifi'],
+  },
+  {
+    id: 'maifi', term: 'MAIFI', category: 'operation',
+    symbol: 'MAIFI', unit: 'momentary interruptions per customer per year',
+    short: 'The blinks — interruptions too short to count as outages.',
+    long:
+      'IEEE Std 1366 draws the line at five minutes: anything shorter is ' +
+      'MOMENTARY and is kept out of SAIFI entirely. That is why a recloser ' +
+      'improves SAIFI so dramatically — it converts outages into blinks — and ' +
+      'why the customer whose clocks are all flashing does not feel the ' +
+      'improvement the index reports.',
+    standard: 'IEEE Std 1366.',
+    see: ['saifi', 'recloser', 'fuse-saving'],
+  },
+  {
+    id: 'asai', term: 'ASAI', aliases: ['availability'], category: 'operation',
+    symbol: 'ASAI = (8760 − SAIDI)/8760', unit: 'dimensionless',
+    short: 'The fraction of the year supply was actually available.',
+    long:
+      'Quoting it as a number of nines flatters everybody: the difference ' +
+      'between 99.99 % and 99.999 % is fifty minutes a year, and the difference ' +
+      'between reading the two is one character.',
+    standard: 'IEEE Std 1366.',
+    see: ['saidi'],
+  },
+  {
+    id: 'induction-motor', term: 'Induction motor',
+    aliases: ['squirrel cage', 'asynchronous motor'], category: 'equipment',
+    symbol: 'hp', unit: 'hp or kW',
+    short: 'The workhorse of industry: a motor with no electrical connection to its rotor at all.',
+    long:
+      'The stator\u2019s rotating field induces current in a short-circuited rotor ' +
+      'cage, and the force between the two turns it. Because the induction ' +
+      'needs relative motion, the rotor always runs a little slower than the ' +
+      'field \u2014 the SLIP, typically one to three per cent. At standstill slip ' +
+      'is one and the machine is simply a short-circuited transformer, which is ' +
+      'why starting one draws six times its running current at a power factor ' +
+      'of about 0.2. Most of the electricity used by industry ends up in one of ' +
+      'these.',
+    standard: 'NEMA MG 1 for design classes and locked-rotor code letters.',
+    see: ['locked-rotor', 'power-factor', 'short-circuit-capacity'],
+  },
+  {
+    id: 'locked-rotor', term: 'Locked-rotor current',
+    aliases: ['starting current', 'inrush'], category: 'equipment',
+    symbol: 'I_LR', unit: 'A',
+    short: 'What a motor draws at the instant it is switched on, before it turns.',
+    long:
+      'Six times full-load current is the ordinary figure for a general-purpose ' +
+      'motor, and the NEMA code letter on the nameplate says it more precisely, ' +
+      'as kilovolt-amperes per horsepower at standstill. What makes it a ' +
+      'problem is not the size but the ANGLE: a stalled motor is almost pure ' +
+      'reactance, and reactive current is what moves voltage.',
+    standard: 'NEMA MG 1, Table 10-1 (code letters A to V).',
+    see: ['induction-motor', 'short-circuit-capacity', 'power-factor'],
+  },
+  {
+    id: 'short-circuit-capacity', term: 'Short-circuit capacity',
+    aliases: ['fault level', 'stiffness', 'fault duty'], category: 'analysis',
+    symbol: 'S_sc', unit: 'MVA',
+    short: 'How strong a point on the network is — how little its voltage moves when you disturb it.',
+    long:
+      'It is the apparent power that would flow into a bolted three-phase fault ' +
+      'at that point: S_sc = V\u00b2/|Z_th|, the bus\u2019s Th\u00e9venin impedance turned ' +
+      'into a number with units people can feel. One figure answers two ' +
+      'apparently unrelated questions \u2014 how much current a fault there draws, ' +
+      'and how far the voltage falls when a large motor starts \u2014 because both ' +
+      'are the same divider. A "stiff" bus has a high one; a "weak" bus does ' +
+      'not, and everything connected to it feels everything else.',
+    see: ['fault', 'locked-rotor', 'impedance'],
+  },
+  {
+    id: 'fuse', term: 'Fuse', category: 'protection',
+    symbol: '—', unit: 'A',
+    short: 'A piece of wire chosen to melt before anything more expensive does.',
+    long:
+      'It is the cheapest protective device there is and the only one that ' +
+      'destroys itself doing its job. On a distribution feeder a fuse at the ' +
+      'head of every lateral means a fault on one street takes out one street. ' +
+      'Its weakness is that it cannot tell a branch touching the wire from a ' +
+      'pole knocked down by a car: it melts either way, which is what fuse ' +
+      'saving exists to work around.',
+    standard: 'Ratings per ANSI C37.42 for distribution cutouts.',
+    see: ['fuse-saving', 'recloser', 'coordination'],
+  },
+  {
+    id: 'fuse-saving', term: 'Fuse saving', aliases: ['fast trip'], category: 'protection',
+    short: 'Letting a recloser trip first so a lateral fuse does not blow needlessly.',
+    long:
+      'Four out of five overhead faults clear themselves. A recloser set to ' +
+      'trip on a fast curve gets there before the fuse can melt, so a temporary ' +
+      'fault on one street becomes a blink for the whole feeder rather than an ' +
+      'outage for that street. The opposite policy — fuse blowing — lets the ' +
+      'fuse operate every time, which keeps the rest of the feeder steady and ' +
+      'leaves one street in the dark waiting for a truck. Both are defensible; ' +
+      'which is right depends on who is on the feeder.',
+    see: ['fuse', 'recloser', 'maifi', 'saifi'],
   },
   // --- distribution, the substation, and the service ------------------------
   {

@@ -146,6 +146,20 @@ export class Scrubber {
   }
 
   /** Called whenever the app state changes. */
+  /**
+   * Put the season buttons where the state actually is.
+   *
+   * Needed because the guided path changes the season without anybody pressing
+   * a button, and a control that shows the wrong thing is worse than no
+   * control at all.
+   */
+  setSeason(season: Season): void {
+    for (const b of this.element.querySelectorAll('[data-season]')) {
+      (b as HTMLElement).setAttribute(
+        'aria-pressed', String((b as HTMLElement).dataset.season === season));
+    }
+  }
+
   update(day: readonly DispatchResult[], hour: number, dispatch: DispatchResult): void {
     this.day = day;
     this.hour = hour;

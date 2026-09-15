@@ -24,9 +24,13 @@ import { VoltageProfile } from './profile.js';
 import { MathPanel } from './mathpanel.js';
 import { MachinePanel } from './machine-panel.js';
 import { TccPanel } from './tcc-panel.js';
+import { SolverPanel } from './solver-panel.js';
+import { ReliabilityPanel } from './reliability-panel.js';
+import { Guide } from './guide.js';
 import { cherryLaneProtection } from '../data/california/protection-scheme.js';
 import { feederFaultLevels } from '../sim/faults.js';
 import { derivationsFor } from '../math/for-selection.js';
+import { deriveMotorStart, deriveFactors } from '../math/derive.js';
 import { Tooltip, term } from './tooltip.js';
 import {
   composeFrame, destinations, SceneId, Destination, ComposeResult,
@@ -75,6 +79,15 @@ const viewport: Viewport = new Viewport(stage, {
       showProtection: view.showProtection,
       showFlow: true,
       faultBusId: snap.faultAt?.busId ?? null,
+      motor: snap.motor
+        ? {
+          busId: snap.motor.site.busId,
+          state: snap.motor.state,
+          label: snap.motor.state === 'starting'
+            ? `${snap.motor.demand.sKVA.toFixed(0)} kVA · dip ${snap.motor.dipPercent.toFixed(2)} %`
+            : `${snap.motor.demand.pKW.toFixed(0)} kW · pf ${snap.motor.demand.powerFactor.toFixed(2)}`,
+        }
+        : null,
       onlyKV: debug.onlyKV,
     });
     lastFrame = r;
@@ -140,6 +153,27 @@ const levelBar = new LevelBar({
   onAppliance: (id) => state.setAppliance(id),
   onStorage: (on) => state.setStorageInService(on),
   onFault: (busId, kind) => state.setFault(busId, kind),
+  onMotor: (motorState, method, site) => state.setMotor(motorState, method, site),
+  onFactorsWorking: () => {
+    const snap = state.current;
+    // The example is the unit whose capacity factor is most worth explaining:
+    // the one setting the price, if there is one, and otherwise the largest.
+    const f = snap.factors;
+    const marginal = snap.dispatch.marginalUnit;
+    const example = f.capacity.find((g) => g.id === marginal)
+      ?? f.capacity.find((g) => g.capacityFactor > 0.1 && g.capacityFactor < 0.9)
+      ?? f.capacity[0] ?? null;
+    stage.classList.add('has-math');
+    math.show([deriveFactors(f, example)]);
+    mathTarget = null;
+  },
+  onMotorWorking: () => {
+    const study = state.current.motor;
+    if (!study) return;
+    stage.classList.add('has-math');
+    math.show([deriveMotorStart(study)]);
+    mathTarget = null;
+  },
 });
 stage.appendChild(levelBar.element);
 
@@ -153,10 +187,61 @@ const machinePanel = new MachinePanel({
 });
 stage.appendChild(machinePanel.element);
 
+const solver = new SolverPanel({
+  onClose: () => stage.classList.remove('has-solver'),
+});
+stage.appendChild(solver.element);
+
+const reliabilityPanel = new ReliabilityPanel({
+  onClose: () => stage.classList.remove('has-reliability'),
+});
+stage.appendChild(reliabilityPanel.element);
+
 const tcc = new TccPanel({
   onClose: () => { stage.classList.remove('has-tcc'); state.setFault(null); },
 });
 stage.appendChild(tcc.element);
+
+/**
+ * The guided path.
+ *
+ * It drives the same public controls a reader would use by hand — there is no
+ * private back door into the state — so anything it does can be undone by
+ * touching the control it touched, and leaving the path leaves the app exactly
+ * where the path got to.
+ */
+const guide = new Guide({
+  goTo: (id) => goTo(id),
+  setHour: (hour) => { state.setHour(hour); },
+  setSeason: (season) => { state.setSeason(season); scrubber.setSeason(season); },
+  setStorage: (on) => { state.setStorageInService(on); levelBar.setStorage(on); },
+  setAppliance: (id) => state.setAppliance(id),
+  setMotor: (motorState, method, site) => state.setMotor(motorState, method, site),
+  setFault: (busId, kind) => { state.setFault(busId, kind); levelBar.setFault(busId, kind); },
+  openPanel: (id) => {
+    side.close();
+    solver.setVisible(false);
+    stage.classList.remove('has-solver');
+    reliabilityPanel.setVisible(false);
+    stage.classList.remove('has-reliability');
+    if (id === 'solver') {
+      solver.setVisible(true);
+      stage.classList.add('has-solver');
+      solver.render(state.current.solved);
+    } else if (id === 'reliability') {
+      reliabilityPanel.setVisible(true);
+      stage.classList.add('has-reliability');
+      reliabilityPanel.render();
+    } else if (id === 'honesty') side.openHonesty(viewport.level as ScopeId);
+    else if (id === 'glossary') side.openGlossary();
+  },
+  onLeave: () => {
+    stage.classList.remove('has-guide');
+    (controls.querySelector('[data-action="guide"]') as HTMLElement)
+      ?.setAttribute('aria-pressed', 'false');
+  },
+});
+stage.appendChild(guide.element);
 
 const scrubber = new Scrubber({
   onChange: (hour) => state.setHour(hour),
@@ -167,8 +252,11 @@ footerEl.appendChild(scrubber.element);
 const controls = document.createElement('div');
 controls.className = 'footer__controls';
 controls.innerHTML =
+  `<button class="btn btn--quiet" data-action="guide" aria-pressed="false">Show me around</button>` +
   `<button class="btn btn--quiet" data-panel="glossary">Glossary</button>` +
   `<button class="btn btn--quiet" data-panel="honesty">What this leaves out</button>` +
+  `<button class="btn btn--quiet" data-panel="solver">How it was solved</button>` +
+  `<button class="btn btn--quiet" data-panel="reliability">How often it goes out</button>` +
   `<button class="btn btn--quiet" data-action="restore" style="display:none">Restore all circuits</button>` +
   `<button class="btn btn--quiet" data-action="frame">Whole state</button>`;
 footerEl.appendChild(controls);
@@ -177,6 +265,20 @@ controls.addEventListener('click', (e) => {
   if (!t) return;
   if (t.dataset.panel === 'glossary') side.openGlossary();
   else if (t.dataset.panel === 'honesty') side.openHonesty(viewport.level as ScopeId);
+  else if (t.dataset.panel === 'solver') {
+    solver.toggle();
+    stage.classList.toggle('has-solver', solver.isOpen);
+    solver.render(state.current.solved);
+  }
+  else if (t.dataset.panel === 'reliability') {
+    reliabilityPanel.toggle();
+    stage.classList.toggle('has-reliability', reliabilityPanel.isOpen);
+  }
+  else if (t.dataset.action === 'guide') {
+    guide.toggle();
+    stage.classList.toggle('has-guide', guide.isOpen);
+    t.setAttribute('aria-pressed', String(guide.isOpen));
+  }
   else if (t.dataset.action === 'restore') state.restoreAll();
   else if (t.dataset.action === 'frame') frameAll();
 });
@@ -270,13 +372,21 @@ state.subscribe((snap) => {
   geometry = buildSystemGeometry(snap.solved);
   renderStats();
   inspector.render(snap, geometry);
-  profile.render(snap.solved, snap.selection.id);
+  profile.render(snap.solved, snap.selection.id, snap.motor?.before ?? null);
   if (machinePanel.isOpen) machinePanel.render(snap.solved, lastFrame?.machine);
+  if (solver.isOpen) solver.render(snap.solved);
+  if (reliabilityPanel.isOpen) reliabilityPanel.render();
+  levelBar.setMotor(snap.motor);
+  levelBar.setFactors(snap.factors);
   renderTcc(snap);
   if (math.isOpen && mathTarget) {
     math.update(derivationsFor(
       mathTarget.kind, mathTarget.id, snap.solved, snap.service,
       snap.fault?.result ?? null));
+  } else if (math.isOpen && snap.motor) {
+    // The motor derivation is not bound to a selection: it belongs to the
+    // perturbation itself, and it has to follow the re-solve like any other.
+    math.update([deriveMotorStart(snap.motor)]);
   }
   scrubber.update(state.dispatchDayResults, snap.hour, snap.dispatch);
   (controls.querySelector('[data-action="restore"]') as HTMLElement).style.display =
@@ -320,7 +430,8 @@ function onCamera(mpp: number, level: LevelId): void {
   const wantProfile = scene === 'feeder' || scene === 'service';
   if ((profile.element.style.display === 'none') === wantProfile) {
     profile.setVisible(wantProfile);
-    if (wantProfile) profile.render(state.current.solved, state.current.selection.id);
+    if (wantProfile) profile.render(state.current.solved, state.current.selection.id,
+      state.current.motor?.before ?? null);
   }
 
   // Arriving at the substation with the diagram flat is the right place to
@@ -443,7 +554,7 @@ viewport.start();
 // Exposed for debugging and for the screenshot harness.
 (window as unknown as Record<string, unknown>).gridAtlas = {
   state, viewport, debug, frameAll, side, inspector, goTo, view, levelBar,
-  levelForScale, ZOOM, math, openMath, machinePanel,
+  levelForScale, ZOOM, math, openMath, machinePanel, solver, tcc,
   get lastFrame() { return lastFrame; },
   get geometry() { return geometry; },
 };

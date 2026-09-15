@@ -11,9 +11,9 @@ drops, a plant into its energy conversion chain, a generator into a rotating
 field and three windings — all the way down to the governing equations, with
 live numbers in them.
 
-**Status:** phases 1–7 of 8 complete. See [PROGRESS.md](PROGRESS.md).
+**Status:** all eight phases complete. See [PROGRESS.md](PROGRESS.md).
 
-The chain now runs end to end: the Oregon intertie, the 500 kV backbone, a
+The chain runs end to end: the Oregon intertie, the 500 kV backbone, a
 115/12.47 kV substation you can watch stand up out of its own single-line
 diagram, three kilometres of distribution feeder drawn pole by pole, and a
 socket in a kitchen. One power flow solves all of it, so switching on a kettle
@@ -21,6 +21,14 @@ at 14 Cherry Lane really does move the number at the top of the page. Select
 anything and the math panel shows the full working behind it — and the
 arithmetic on screen is the arithmetic the tests evaluate, character for
 character.
+
+Things you can do to it, each of which re-solves rather than replaying: move
+the time of day and the season, trip any circuit, take the battery fleet out of
+service, put any of four kinds of fault anywhere and watch which device clears
+it, start a 200 hp motor and watch the street dim, energise a 500 kV line with
+its far end open, and switch on a car charger at one house. And if you do not
+yet know what to be curious about, **Show me around** is a fourteen-step path
+through all of it.
 
 ## The two rules
 
@@ -63,6 +71,6 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 
 ```
 npm install
-npm test        # 471 tests
+npm test        # 648 tests
 npm run dev     # the app
 ```

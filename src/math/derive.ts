@@ -33,6 +33,13 @@ import { DropStep } from '../data/california/service.js';
 import { PlantEnergyChain } from '../data/california/plant.js';
 import { MachineOperatingPoint, CapabilityCurve } from '../core/machine.js';
 import { FaultResult } from '../core/fault.js';
+import { ReliabilityResult, RELIABILITY_DATA } from '../sim/reliability.js';
+import { MotorStudy, LOAD_BREAKAWAY_TORQUE_PU } from '../sim/motor-start.js';
+import { FerrantiStudy } from '../sim/ferranti.js';
+import { FactorSet } from '../sim/factors.js';
+import {
+  NEMA_CODE_LETTERS, lockedRotorKVAperHP, running, WATTS_PER_HP,
+} from '../core/motor.js';
 import { add } from '../core/complex.js';
 import { evaluate, num } from './expr.js';
 
@@ -1296,3 +1303,653 @@ const mulC = (k: number, z: { re: number; im: number }) =>
   ({ re: k * z.re, im: k * z.im });
 const parallelMag = (a: number, b: number): number =>
   a + b > 0 ? (a * b) / (a + b) : 0;
+
+// ---------------------------------------------------------------------------
+// Reliability indices
+// ---------------------------------------------------------------------------
+
+/**
+ * SAIFI, SAIDI, CAIDI, MAIFI and ASAI, worked out from the feeder.
+ *
+ * These are the numbers a distribution utility is judged on, and they are
+ * almost always presented as though they had been measured. They are not
+ * measurements: they are the arithmetic consequence of section lengths,
+ * canonical failure rates, and which device clears which fault. Writing the
+ * working out is the only way to make that visible.
+ *
+ * THE DECOMPOSITION IS BY PROTECTIVE DEVICE, which is not how the textbook
+ * writes the sum but is how the system actually works: every section a device
+ * protects drops exactly the same set of customers, so the per-section sum
+ * factorises into one term per device — its exposure times its zone. Read that
+ * way the sum says something a list of sections does not: what each device is
+ * worth.
+ */
+export function deriveReliability(r: ReliabilityResult): Derivation {
+  const byDevice = new Map<string, { lambda: number; customers: number }>();
+  for (const s of r.sections) {
+    const cur = byDevice.get(s.clearedBy) ?? { lambda: 0, customers: s.customersInterrupted };
+    cur.lambda += s.permanentPerYear + (s.temporaryBecomesSustained ? s.temporaryPerYear : 0);
+    byDevice.set(s.clearedBy, cur);
+  }
+  const terms = [...byDevice.entries()]
+    .filter(([, v]) => v.lambda > 0)
+    .sort((a, b) => b[1].lambda * b[1].customers - a[1].lambda * a[1].customers);
+
+  // The worked example is the worst piece of WIRE, not the worst contributor
+  // outright: a substation bus has no length, and λ = f · ℓ would read as
+  // zero times zero.
+  const worst = r.sections.find((s) => s.kind === 'overhead') ?? r.sections[0];
+  const ratePerKm = worst.kind === 'cable'
+    ? RELIABILITY_DATA.cablePermanentPerKmYear
+    : RELIABILITY_DATA.overheadPermanentPerKmYear;
+  const saidiMin = r.saidiMinutes;
+
+  const steps: DerivationStep[] = [];
+
+  steps.push(step(
+    'Failure rate of one section',
+    'λ = f · ℓ',
+    `${n(ratePerKm)} * ${n(worst.lengthKm, 4)}`,
+    'faults/yr',
+    {
+      decimals: 4,
+      checkAgainst: {
+        name: 'the contribution table', value: worst.permanentPerYear, tolerance: 1e-3,
+      },
+      note:
+        `${worst.label} — the worst single piece of wire on the feeder. A ` +
+        `kilometre of overhead line fails permanently about a tenth of a time a ` +
+        `year in a mild climate; cable fails less often and takes three times ` +
+        `as long to repair.`,
+    }
+  ));
+
+  const groups = worst.restoration
+    .map((g) => `${n(g.customers)} * ${n(g.hours, 3)}`).join(' + ');
+  steps.push(step(
+    'Customer-hours it costs each year',
+    'CH = λ · Σ (Nⱼ · rⱼ)',
+    `${n(worst.permanentPerYear, 6)} * (${groups})`,
+    'customer-hours/yr',
+    {
+      decimals: 1,
+      checkAgainst: {
+        name: 'the contribution table', value: worst.customerHoursPerYear, tolerance: 1e-3,
+      },
+      note:
+        'Who waits how long, taken from this section\u2019s own restoration: ' +
+        worst.restoration
+          .map((g) => `${g.customers} customers, ${num(g.hours, 2)} h — ${g.how}`)
+          .join('; ') + '.',
+    }
+  ));
+
+  steps.push(step(
+    'Customer interruptions in a year',
+    'Σ CI = Σ_devices (λ_zone · N_zone)',
+    terms.map(([, v]) => `${n(v.lambda, 6)} * ${n(v.customers)}`).join(' + '),
+    'customer-interruptions/yr',
+    {
+      decimals: 1,
+      checkAgainst: {
+        name: 'the total over sections', value: r.customerInterruptionsPerYear, tolerance: 1e-3,
+      },
+      note:
+        `One term per protective device: how often something in its zone fails, ` +
+        `times how many customers it drops when it opens. ` +
+        terms.map(([name, v]) =>
+          `${name}: ${num(v.lambda, 3)} faults/yr × ${v.customers} customers`).join('; ') + '.',
+    }
+  ));
+
+  steps.push(step(
+    'SAIFI',
+    'SAIFI = Σ (λᵢ · Nᵢ) / N_T',
+    `${n(r.customerInterruptionsPerYear, 4)} / ${n(r.totalCustomers)}`,
+    'interruptions per customer per year',
+    {
+      decimals: 3,
+      checkAgainst: { name: 'the panel', value: r.saifi, tolerance: 1e-4 },
+      note:
+        'The average customer on this feeder loses supply this many times a ' +
+        'year. It says nothing about for how long.',
+    }
+  ));
+
+  steps.push(step(
+    'SAIDI',
+    'SAIDI = Σ (λᵢ · rᵢ · Nᵢ) / N_T',
+    `${n(r.customerHoursPerYear, 4)} / ${n(r.totalCustomers)} * 60`,
+    'minutes per customer per year',
+    {
+      decimals: 1,
+      checkAgainst: { name: 'the panel', value: saidiMin, tolerance: 1e-4 },
+      note:
+        'The same average customer is without supply for this many minutes a ' +
+        'year, all interruptions added together. Utilities quote it in minutes ' +
+        'because the numbers are otherwise uncomfortably large.',
+    }
+  ));
+
+  steps.push(step(
+    'CAIDI',
+    'CAIDI = SAIDI / SAIFI',
+    `${n(saidiMin, 4)} / ${n(r.saifi, 4)}`,
+    'minutes per interruption',
+    {
+      decimals: 1,
+      checkAgainst: { name: 'the panel', value: r.caidiMinutes, tolerance: 1e-3 },
+      note:
+        'How long one interruption lasts on average. It is a RATIO OF THE OTHER ' +
+        'TWO and not an independent measurement, which is why it can get worse ' +
+        'while the system gets better: clear away the short interruptions and ' +
+        'the average of what is left goes up.',
+    }
+  ));
+
+  steps.push(step(
+    'MAIFI',
+    'MAIFI = Σ (λTᵢ · N_mᵢ) / N_T',
+    `${n(r.momentaryCustomersPerYear, 4)} / ${n(r.totalCustomers)}`,
+    'momentary interruptions per customer per year',
+    {
+      decimals: 2,
+      checkAgainst: { name: 'the panel', value: r.maifi, tolerance: 1e-4 },
+      note:
+        'The blinks. Four out of five overhead faults clear themselves the ' +
+        'moment the circuit is de-energised, and a recloser exists to turn those ' +
+        'into this number instead of the one above it.',
+    }
+  ));
+
+  steps.push(step(
+    'ASAI',
+    'ASAI = (8760 − SAIDI) / 8760',
+    `(8760 - ${n(r.saidiHours, 6)}) / 8760`,
+    '',
+    {
+      decimals: 6,
+      checkAgainst: { name: 'the panel', value: r.asai, tolerance: 1e-9 },
+      note:
+        'The fraction of the year the average customer had supply. Quoting it ' +
+        'as a number of nines is a habit worth distrusting: the difference ' +
+        'between four nines and five is fifty minutes a year, and the difference ' +
+        'between reading them is one character.',
+    }
+  ));
+
+  return {
+    id: 'reliability',
+    title: 'Reliability indices',
+    subtitle: `Cherry Lane 1201 — ${r.totalCustomers.toLocaleString()} customers`,
+    standard: 'IEEE Std 1366 — distribution reliability indices',
+    convention:
+      'A SUSTAINED interruption is one lasting longer than five minutes; ' +
+      'anything shorter is MOMENTARY and is counted in MAIFI rather than in ' +
+      'SAIFI, however many customers it affects. Customers are counted, not ' +
+      'megawatts: a hospital and a garden shed each count once. Major event ' +
+      'days — the storm that takes a week to clean up — are excluded here, as ' +
+      'they are from most published figures, which is the single largest ' +
+      'reason a quoted index looks better than a bad year feels.',
+    steps,
+    closing:
+      'Every number above came from how long the wire is, where the devices ' +
+      'are, and how fast somebody can drive there. None of it was measured, ' +
+      'because this feeder does not exist — but the arithmetic is the same ' +
+      'arithmetic, and moving the recloser moves the answer.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Starting a motor
+// ---------------------------------------------------------------------------
+
+/**
+ * The voltage dip when an induction motor starts, twice over.
+ *
+ * Once by the rule of thumb every distribution engineer carries — starting kVA
+ * over short-circuit kVA — and once by the power flow, which solved the whole
+ * network with the motor's locked-rotor demand in it. Printing both is the
+ * point: an approximation whose error is never shown is a superstition, and one
+ * whose error IS shown is a tool.
+ *
+ * The rule works because both impedances in the divider are nearly pure
+ * reactance — the source because it is dominated by transformer and generator
+ * reactance, the stalled motor because it is leakage reactance and very little
+ * else. Where that stops being true, on a feeder whose resistance rivals its
+ * reactance, the rule starts to over-predict, and the two numbers here part
+ * company.
+ */
+export function deriveMotorStart(s: MotorStudy): Derivation {
+  const m = s.motor;
+  const kvaPerHp = lockedRotorKVAperHP(m);
+  const steps: DerivationStep[] = [];
+
+  if (s.state === 'running') {
+    // Up to speed the motor is an ordinary load, and the interesting thing
+    // about it is how ordinary: the machine that drew twelve hundred kilovolt-
+    // amperes a few seconds ago now draws less than two hundred.
+    steps.push(step(
+      'Mechanical output, in electrical units',
+      'P_out = hp · 745.7 W',
+      `${n(m.hp)} * ${n(WATTS_PER_HP, 3)} / 1000`,
+      'kW',
+      {
+        decimals: 1,
+        note:
+          'A horsepower is defined as 745.699872 watts, not 746. The rounded ' +
+          'figure is harmless here and is not used, because a value that is ' +
+          'exact by definition should not be approximated in a place where ' +
+          'somebody might be checking.',
+      }
+    ));
+    steps.push(step(
+      'Electrical input',
+      'P_in = P_out / η',
+      `${n((m.hp * WATTS_PER_HP) / 1000, 3)} / ${n(m.efficiency, 4)}`,
+      'kW',
+      {
+        decimals: 1,
+        checkAgainst: { name: 'the panel', value: s.running.pKW, tolerance: 1e-3 },
+        note:
+          `The difference — about ${num((m.hp * WATTS_PER_HP / 1000) * (1 / m.efficiency - 1), 1)} kW — ` +
+          `is heat in the windings, the core and the bearings. It is why a ` +
+          `motor of this size needs a fan bolted to the back of it.`,
+      }
+    ));
+    steps.push(step(
+      'Apparent power, and the reactive part',
+      'S = P / cos φ   and   Q = S · sin φ',
+      `${n(s.running.pKW, 3)} / ${n(m.fullLoadPF, 4)} * ${n(Math.sin(Math.acos(m.fullLoadPF)), 5)}`,
+      'kVAr',
+      {
+        decimals: 1,
+        checkAgainst: { name: 'the panel', value: s.running.qKVAr, tolerance: 1e-3 },
+        note:
+          `An induction motor always absorbs reactive power, because the ` +
+          `rotating field has to be magnetised from the supply — there is no ` +
+          `other source for it. That is the whole reason a capacitor bank hangs ` +
+          `on a pole half a kilometre away.`,
+      }
+    ));
+    steps.push(step(
+      'What the network did about it',
+      'ΔV = |V|_before − |V|_after',
+      `(${n(s.beforePU, 5)} - ${n(s.duringPU, 5)}) * 100`,
+      '%',
+      {
+        decimals: 3,
+        checkAgainst: { name: 'the solver', value: s.dipPercent, tolerance: 1e-3 },
+        note:
+          'A negative number here means the voltage went UP. Over a minute the ' +
+          'regulator and the capacitor bank have had time to respond, and they ' +
+          'can easily overshoot a load this modest — which is exactly what ' +
+          'they could not do during the start.',
+      }
+    ));
+  } else {
+    steps.push(step(
+      'Locked-rotor apparent power',
+      'S_LR = hp · (kVA/hp)',
+      `${n(m.hp)} * ${n(kvaPerHp, 3)}`,
+      'kVA',
+      {
+        decimals: 0,
+        note:
+          `Code letter ${m.codeLetter} on the nameplate means ` +
+          `${num(NEMA_CODE_LETTERS[m.codeLetter].min, 2)} to ` +
+          `${num(NEMA_CODE_LETTERS[m.codeLetter].max, 2)} kVA per horsepower at ` +
+          `standstill (NEMA MG 1, Table 10-1); the mid-band is used here. It is ` +
+          `the only number on a motor nameplate that describes what it does to ` +
+          `everybody else.`,
+      }
+    ));
+
+    steps.push(step(
+      'Line current at that demand',
+      'I = S / (√3 · V)',
+      `${n(m.hp * kvaPerHp, 1)} * 1000 / (sqrt(3) * ${n(m.voltsLL)})`,
+      'A',
+      {
+        decimals: 0,
+        note:
+          `Against a full-load current of ${num(running(m).amps, 0)} A — a ratio ` +
+          `of about six, which is what "Design B" means.`,
+      }
+    ));
+
+    if (s.method.lineCurrentFactor !== 1) {
+      steps.push(step(
+        `Reduced by the starter — ${s.method.name.toLowerCase()}`,
+        'S_line = S_LR · a²',
+        `${n(m.hp * kvaPerHp, 1)} * ${n(s.method.lineCurrentFactor, 4)}`,
+        'kVA',
+        { decimals: 0, note: s.method.note }
+      ));
+    }
+
+    steps.push(step(
+      'The dip, by the rule of thumb',
+      'ΔV/V ≈ S_LR / (S_sc + S_LR)',
+      `${n(s.demand.sKVA, 1)} / (${n(s.shortCircuitMVA * 1000, 0)} + ${n(s.demand.sKVA, 1)}) * 100`,
+      '%',
+      {
+        decimals: 2,
+        note:
+          `The bus is ${num(s.shortCircuitMVA, 0)} MVA stiff — the same ` +
+          `short-circuit capacity that decides how much current a fault there ` +
+          `would draw. A stiff bus is stiff for both reasons and for the same ` +
+          `reason, which is why this one number is worth knowing about any ` +
+          `point on a network.`,
+      }
+    ));
+
+    steps.push(step(
+      'The dip, by solving the network',
+      'ΔV = |V|_before − |V|_during',
+      `(${n(s.beforePU, 5)} - ${n(s.duringPU, 5)}) * 100`,
+      '%',
+      {
+        decimals: 2,
+        checkAgainst: { name: 'the solver', value: s.dipPercent, tolerance: 1e-3 },
+        note:
+          'Both voltages are solver output, from two full power flows over the ' +
+          'whole state — the second with the motor in the case and with the ' +
+          'capacitor bank and the tap changer held where the first one left ' +
+          'them, because neither can move in the second a start takes.',
+      }
+    ));
+
+    steps.push(step(
+      'Torque the motor develops',
+      'T = T_LR · (a · V)²',
+      `${n(m.lockedRotorTorquePU, 3)} * (${n(s.method.tap, 4)} * ${n(s.duringPU, 5)})^2`,
+      'pu',
+      {
+        decimals: 2,
+        checkAgainst: { name: 'the panel', value: s.torquePU, tolerance: 1e-3 },
+        note:
+          `Squared, which is why a starter that halves the voltage quarters the ` +
+          `torque. The compressor needs ` +
+          `${num(LOAD_BREAKAWAY_TORQUE_PU, 2)} pu to break away, so this ` +
+          `${s.torqueAdequate ? 'is enough' : 'is NOT enough — the motor stalls'}.`,
+      }
+    ));
+  }
+
+  return {
+    id: 'motor-start',
+    title: s.state === 'running' ? 'A motor running' : 'Starting a motor',
+    subtitle: `${m.hp} hp, ${m.voltsLL} V — ${s.site.name.toLowerCase()}`,
+    standard: 'NEMA MG 1 for the code letter and the design class',
+    convention:
+      'Current is drawn INTO the motor, so it is a load and its reactive power ' +
+      'is positive — the motor absorbs vars, it does not supply them. The dip ' +
+      'is quoted as a positive number of per cent when the voltage FALLS, so a ' +
+      'negative dip means it rose. Per-unit voltages are on the bus’s own ' +
+      'base, and the motor’s own figures are at its rated 480 V, not at the ' +
+      'feeder’s 12.47 kV.',
+    steps,
+    closing: s.state === 'running'
+      ? 'Running, it is one of the least remarkable loads on the feeder. ' +
+        'Everything difficult about a motor happens in the first few seconds.'
+      : 'The two dips agree because the divider the rule of thumb imagines is ' +
+        'very nearly the divider that actually exists. Where they disagree, ' +
+        'believe the solve — and then ask what the rule assumed that this ' +
+        'network does not.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The Ferranti effect
+// ---------------------------------------------------------------------------
+
+/**
+ * A long line's far end, higher than its near end.
+ *
+ * Three answers to the same question, in increasing order of faithfulness: the
+ * nominal π model the solver uses, the exact distributed-parameter equations a
+ * real study uses, and the solve itself. They agree to four figures on a
+ * two-hundred-kilometre line and visibly disagree on a five-hundred-kilometre
+ * one, which is the honest way to say what a lumped model is for.
+ */
+export function deriveFerranti(f: FerrantiStudy): Derivation {
+  const steps: DerivationStep[] = [];
+
+  steps.push(step(
+    'How much of a capacitor the line is',
+    'Q_c = B · V²  (at nominal voltage)',
+    `${n(f.b, 5)} * 100`,
+    'MVAr',
+    {
+      decimals: 0,
+      note:
+        `${num(f.lengthKm, 0)} km of conductor in the air, with the earth and ` +
+        `the other phases as the other plate. At nominal voltage the line ` +
+        `generates this much reactive power whether anybody wants it or not, ` +
+        `and somebody has to absorb it.`,
+    }
+  ));
+
+  steps.push(step(
+    'The nominal π answer',
+    'V_r / V_s = 1 / (1 − X·B/2)',
+    `1 / (1 - ${n(f.x, 5)} * ${n(f.b, 5)} / 2)`,
+    '',
+    {
+      decimals: 4,
+      // X and B are printed to five decimal places, and on a 500 kV line
+      // whose susceptance is a few tenths per-unit that rounding is worth a
+      // few parts in a million of the ratio. The tolerance is what the
+      // printing costs, not a licence for the arithmetic to drift.
+      checkAgainst: { name: 'the π model', value: f.nominalPiRatio, tolerance: 1e-5 },
+      note:
+        'With the far end open the only current through the series reactance ' +
+        'is what the receiving-end shunt draws. A capacitive current through ' +
+        'an inductive reactance produces a RISE, because the two are 180° ' +
+        'apart — which is the whole effect in one sentence.',
+    }
+  ));
+
+  steps.push(step(
+    'The exact answer, treating the line as distributed',
+    'V_r / V_s = 1 / cos(βl),  βl = √(X·B)',
+    `1 / cosd(${n((f.betaL * 180) / Math.PI, 4)})`,
+    '',
+    {
+      decimals: 4,
+      checkAgainst: { name: 'the long-line equations', value: f.exactRatio, tolerance: 1e-4 },
+      note:
+        `βl is the line's ELECTRICAL LENGTH: ` +
+        `${num((f.betaL * 180) / Math.PI, 1)}° of the 90° at which the ratio ` +
+        `would go to infinity — a quarter wavelength, about 1,500 km at 60 Hz. ` +
+        `The π model's error is what it costs to pretend the capacitance sits ` +
+        `in two lumps at the ends rather than being spread along the whole ` +
+        `length, and it grows with the cube of that angle.`,
+    }
+  ));
+
+  steps.push(step(
+    'What the solver found, with the far end genuinely open',
+    'V_r / V_s',
+    `${n(f.openEndPU, 5)} / ${n(f.sendingPU, 5)}`,
+    '',
+    {
+      decimals: 4,
+      note:
+        `The line was energised from ${num(f.sendingPU, 4)} pu with its far ` +
+        `breaker open and the whole state re-solved. The open end came out at ` +
+        `${num(f.openEndPU, 4)} pu — a rise of ` +
+        `${num((f.openEndPU / f.sendingPU - 1) * 100, 2)} %.`,
+    }
+  ));
+
+  steps.push(step(
+    'The charging current it draws to do it',
+    'I = V_r · B/2',
+    `${n(f.openEndPU, 5)} * ${n(f.b, 5)} / 2 * 100 * 1e6 / (sqrt(3) * ${n(f.baseKV, 2)} * 1000)`,
+    'A',
+    {
+      decimals: 0,
+      checkAgainst: { name: 'the study', value: f.chargingAmps, tolerance: 1e-3 },
+      note:
+        `An open-circuited line carrying ${num(f.chargingAmps, 0)} amperes. ` +
+        `Nothing is connected to it: the current is the line charging itself.`,
+    }
+  ));
+
+  return {
+    id: `ferranti:${f.branchId}`,
+    title: 'The Ferranti effect',
+    subtitle: `${f.branchName} — ${num(f.lengthKm, 0)} km, far end open`,
+    standard: 'Nominal π and the distributed-parameter line equations',
+    convention:
+      'The SENDING end is the one the line is energised from and the RECEIVING ' +
+      'end is the open one; the ratio is receiving over sending, so a number ' +
+      'greater than one is a rise. Per-unit voltages are on the line’s own ' +
+      'voltage base, and B is the TOTAL shunt susceptance of the line, half of ' +
+      'which sits at each end of the π.',
+    closing:
+      'This is why a long line is not simply switched in from one end. Before ' +
+      'a single customer is connected the far-end voltage can exceed what the ' +
+      'insulation is rated for, so the switching procedure puts a shunt reactor ' +
+      'in first — a lump of inductance whose only job is to absorb the vars a ' +
+      'line makes by existing.',
+    steps,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The factors
+// ---------------------------------------------------------------------------
+
+/**
+ * Load, demand, coincidence and capacity, as ratios rather than as words.
+ *
+ * All four are quoted constantly and confused constantly, and the confusion is
+ * understandable: they are all ratios of a demand to another demand. Writing
+ * them out one after another, in the same numbers, is the shortest route to
+ * seeing what each one is actually dividing by.
+ */
+export function deriveFactors(f: FactorSet, example: FactorSet['capacity'][0] | null): Derivation {
+  const steps: DerivationStep[] = [];
+
+  steps.push(step(
+    'Load factor, over the modelled day',
+    'LF = P_avg / P_peak',
+    `${n(f.averageDemandGW * 1000, 1)} / ${n(f.peakDemandGW * 1000, 1)}`,
+    '',
+    {
+      decimals: 3,
+      checkAgainst: { name: 'the panel', value: f.loadFactor, tolerance: 1e-4 },
+      note:
+        'The whole system is built for the peak and paid for by the energy. A ' +
+        'load factor of one would mean demand never varied and every asset was ' +
+        'fully used every hour; anything less is the cost of a system that has ' +
+        'to be ready for its worst moment.',
+    }
+  ));
+
+  steps.push(step(
+    'Connected load on the feeder',
+    'Σ (n_i · connected_i)',
+    f.byClass.map((c) =>
+      `${n(c.customers)} * ${n(c.connectedKW / c.customers, 2)}`).join(' + '),
+    'kW',
+    {
+      decimals: 0,
+      checkAgainst: { name: 'the feeder', value: f.connectedKW, tolerance: 1e-4 },
+      note:
+        'What every service on this feeder could deliver at once. A house is ' +
+        'counted at what its own service can pass — one hundred amperes at ' +
+        '240 volts — not at what anybody actually uses.',
+    }
+  ));
+
+  steps.push(step(
+    'Demand factor',
+    'DF = P_max / connected load',
+    `${n(f.feederPeakKW, 1)} / ${n(f.connectedKW, 0)}`,
+    '',
+    {
+      decimals: 3,
+      checkAgainst: { name: 'the panel', value: f.demandFactor, tolerance: 1e-4 },
+      note:
+        `Six-sevenths of what could be drawn never is. That is not slack in ` +
+        `the design — it is the whole economics of a distribution system, and ` +
+        `a feeder built for its connected load would cost about ` +
+        `${num(1 / f.demandFactor, 0)} times what this one costs.`,
+    }
+  ));
+
+  steps.push(step(
+    'Sum of the individual peaks',
+    'Σ (n_i · P̂_i)',
+    f.byClass.map((c) =>
+      `${n(c.customers)} * ${n(c.peaksKW / c.customers, 2)}`).join(' + '),
+    'kW',
+    {
+      decimals: 0,
+      checkAgainst: { name: 'the feeder', value: f.sumOfIndividualPeaksKW, tolerance: 1e-4 },
+      note:
+        'Every customer’s own worst moment, added up as though they all ' +
+        'happened together. They do not.',
+    }
+  ));
+
+  steps.push(step(
+    'Coincidence factor',
+    'F_co = P_group / Σ P̂_i',
+    `${n(f.feederPeakKW, 1)} / ${n(f.sumOfIndividualPeaksKW, 0)}`,
+    '',
+    {
+      decimals: 3,
+      checkAgainst: { name: 'the panel', value: f.coincidenceFactor, tolerance: 1e-4 },
+      note:
+        `Its reciprocal, ${num(f.diversityFactor, 2)}, is the DIVERSITY FACTOR, ` +
+        `and the two names get used for each other constantly. This is the ` +
+        `most valuable number in distribution planning: it is why a 50 kVA ` +
+        `transformer can serve twelve houses whose services could each pass ` +
+        `24 kW, and the more customers you put behind one piece of equipment ` +
+        `the smaller it gets.`,
+    }
+  ));
+
+  if (example) {
+    steps.push(step(
+      `Capacity factor — ${example.name}`,
+      'CF = E / (P_rated · T)',
+      `${n(example.energyMWh, 1)} / (${n(example.capacityMW, 1)} * 24)`,
+      '',
+      {
+        decimals: 3,
+        checkAgainst: { name: 'the dispatch', value: example.capacityFactor, tolerance: 1e-3 },
+        note:
+          `Energy actually dispatched over the day against energy if it had ` +
+          `run flat out for all of it. Across the whole fleet it is ` +
+          `${num(f.fleetCapacityFactor, 3)} — and the units at the bottom of ` +
+          `that list are at zero, because a peaking plant is built to be ` +
+          `available rather than to run.`,
+      }
+    ));
+  }
+
+  return {
+    id: 'factors',
+    title: 'The factors',
+    subtitle: 'load, demand, coincidence and capacity',
+    standard: 'The standard definitions used in utility planning',
+    convention:
+      'Every one of these is a ratio of a POWER to a POWER or of an ENERGY to ' +
+      'an ENERGY, so all of them are dimensionless and none of them has a unit ' +
+      'however it is quoted. The period matters and is stated with each: the ' +
+      'load factor and the capacity factors here are over the modelled day, ' +
+      'not over a year, and an annual figure would be lower for the load ' +
+      'factor and different for every unit.',
+    steps,
+    closing:
+      'Four ratios, one idea: a power system is sized for a moment and paid ' +
+      'for by a year, and the distance between those two is where all of the ' +
+      'engineering and all of the money is.',
+  };
+}

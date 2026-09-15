@@ -30,8 +30,14 @@ import { evaluate, pretty, num, ExpressionError } from '../src/math/expr.js';
 import {
   deriveBases, deriveBus, deriveBranch, deriveLineGeometry,
   deriveTransformerImpedance, deriveServiceDrop, deriveSystemBalance,
-  derivePlantEnergy, deriveMachine, deriveFault, Derivation,
+  derivePlantEnergy, deriveMachine, deriveFault, deriveReliability,
+  deriveMotorStart, deriveFerranti, deriveFactors, Derivation,
 } from '../src/math/derive.js';
+import { factors } from '../src/sim/factors.js';
+import { ferrantiStudy, ferrantiCandidates } from '../src/sim/ferranti.js';
+import { studyMotorStart, MOTOR_SITES } from '../src/sim/motor-start.js';
+import { START_METHODS } from '../src/core/motor.js';
+import { reliability, DEFAULT_RELIABILITY_OPTIONS } from '../src/sim/reliability.js';
 import { buildFaultModel, solveFault, FaultKind } from '../src/core/fault.js';
 import { indexCase } from '../src/core/network.js';
 import { polar } from '../src/core/complex.js';
@@ -198,6 +204,54 @@ function allDerivations(): Derivation[] {
           baseKV: bus.baseKV, baseMVA: solved.net.baseMVA,
         });
         out.push(deriveFault(f, bus.baseKV));
+      }
+    }
+  }
+
+  // The planning factors, in every season, with a different example unit.
+  {
+    const base2 = californiaCase();
+    for (const season of ['summer', 'spring', 'winter'] as const) {
+      const d = dispatchDay(base2, DAY_PROFILES[season], SLACK_BUS);
+      const f = factors(base2, d);
+      out.push(deriveFactors(f, f.capacity.find((g) => g.capacityFactor > 0.1
+        && g.capacityFactor < 0.9) ?? f.capacity[0]));
+      out.push(deriveFactors(f, null));
+    }
+  }
+
+  // The Ferranti effect, on the longest lines in the case.
+  {
+    for (const id of ferrantiCandidates(solved.net).slice(0, 4)) {
+      const f = ferrantiStudy(solved.net, id);
+      if (f && f.converged) out.push(deriveFerranti(f));
+    }
+  }
+
+  // Starting the motor: every starter, in both places, plus running.
+  {
+    const base = californiaCase();
+    const profile = DAY_PROFILES.summer;
+    const day = dispatchDay(base, profile, SLACK_BUS);
+    const dispatched = applyDispatch(base, profile, 18, day[18]);
+    const beforeRun = operate(dispatched);
+    for (const site of MOTOR_SITES) {
+      for (const m of START_METHODS) {
+        out.push(deriveMotorStart(
+          studyMotorStart(dispatched, beforeRun, 'starting', m.id, site.id)));
+      }
+      out.push(deriveMotorStart(
+        studyMotorStart(dispatched, beforeRun, 'running', 'across-the-line', site.id)));
+    }
+  }
+
+  // The reliability indices, under every combination of the three decisions
+  // the panel offers, because each one changes which sections group together.
+  for (const recloserInService of [true, false]) {
+    for (const fuseSaving of [true, false]) {
+      for (const tieAvailable of [true, false]) {
+        out.push(deriveReliability(reliability(
+          { ...DEFAULT_RELIABILITY_OPTIONS, recloserInService, fuseSaving, tieAvailable })));
       }
     }
   }

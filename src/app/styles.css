@@ -1070,3 +1070,257 @@ button, select, input {
   padding-top: 8px;
   border-top: var(--rule);
 }
+
+/* --------------------------------------------------------------------- */
+/* The solver panel                                                        */
+/* --------------------------------------------------------------------- */
+
+.panel--solver {
+  right: var(--pad);
+  top: var(--pad);
+  width: 440px;
+  max-height: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--solver .panel__body { overflow-y: auto; }
+.panel--solver svg { display: block; margin: 6px auto 4px; }
+
+.stage.has-solver .panel--inspect {
+  right: calc(var(--pad) + 440px + 9px);
+}
+
+.solver__section + .solver__section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: var(--rule);
+}
+/* The legend under the convergence plot belongs to the plot above it, so it
+   takes the spacing of a section without the rule that separates one. */
+.solver__section--tight + .solver__section,
+.solver__section + .solver__section--tight {
+  border-top: 0;
+  padding-top: 0;
+}
+.solver__section + .solver__section--tight { margin-top: 2px; }
+
+.solver__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 12px;
+  margin: 8px 0;
+}
+.solver__cell {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+.solver__label { font-size: 12px; }
+.solver__value { font-size: 14px; font-weight: 500; text-align: right; }
+.solver__note {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
+.solver__row {
+  display: grid;
+  grid-template-columns: 22px 66px 66px 1fr 44px;
+  gap: 7px;
+  padding: 1px 0;
+  font-size: 11px;
+}
+.solver__row--head {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: var(--rule);
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+}
+.solver__row--limit { grid-template-columns: 1fr 80px 1fr; }
+.solver__row .num { text-align: right; }
+.solver__row--head .num { text-align: right; }
+
+.solver__restart {
+  margin: 6px 0 3px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--ink-ghost);
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+/* The two starting points on the convergence plot. */
+.solver__keys {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 2px 0 8px;
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+.solver__key {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  flex: none;
+}
+.solver__key--warm { border-top: 2px solid var(--ink); }
+.solver__key--cold { border-top: 1px dashed var(--ink-muted); margin-left: 8px; }
+
+/* --------------------------------------------------------------------- */
+/* Reliability                                                             */
+/* --------------------------------------------------------------------- */
+
+.panel--reliability {
+  right: var(--pad);
+  top: var(--pad);
+  width: 430px;
+  max-height: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--reliability .panel__body { overflow-y: auto; }
+
+.stage.has-reliability .panel--inspect {
+  right: calc(var(--pad) + 430px + 9px);
+}
+
+.rel__section + .rel__section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: var(--rule);
+}
+
+.rel__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin: 9px 0 8px;
+}
+.rel__cell { display: flex; flex-direction: column; gap: 1px; }
+.rel__label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.rel__value { font-size: 21px; font-weight: 500; line-height: 1.1; }
+.rel__unit {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  margin-left: 5px;
+}
+.rel__note { font-size: 10px; color: var(--ink-muted); line-height: 1.35; }
+
+.rel__switch { margin: 0 0 10px; }
+.rel__switch:last-of-type { margin-bottom: 4px; }
+.rel__switch .note { margin: 4px 0 3px; }
+.rel__deltas { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.rel__delta {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+}
+/* The only colour in this panel, and it means what colour always means here:
+   this is the direction that is worse. */
+.rel__worse { color: var(--alarm); }
+
+.rel__row {
+  display: grid;
+  grid-template-columns: 1fr 88px 58px 62px;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 11px;
+  border-bottom: 1px solid var(--ground-shade);
+}
+.rel__row span:nth-child(2) { color: var(--ink-muted); font-size: 10px; }
+.rel__row .num { text-align: right; }
+.rel__row--head {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: var(--rule);
+}
+.rel__row--head .num { text-align: right; }
+
+.rel__working { margin-top: 8px; }
+.rel__caveat { margin-top: 12px; padding-top: 10px; border-top: var(--rule); }
+
+/* The motor-start controls on the feeder. */
+.level__motor { margin-top: 10px; padding-top: 9px; border-top: var(--rule); }
+.level__motor .level__readout {
+  margin: 7px 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+/* The four planning ratios, at the system level. */
+.level__factors { margin-top: 10px; padding-top: 9px; border-top: var(--rule); }
+.level__factor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 8px 0 6px;
+}
+.level__factor { display: flex; flex-direction: column; gap: 1px; }
+.level__factor-label {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.level__factor-value { font-size: 17px; font-weight: 500; line-height: 1.15; }
+.level__factor-note { font-size: 9.5px; color: var(--ink-muted); line-height: 1.35; }
+
+/* --------------------------------------------------------------------- */
+/* The guided path                                                         */
+/* --------------------------------------------------------------------- */
+
+/* Top-centre: the one part of the stage nothing else uses, and directly under
+   the readouts the first steps are talking about. */
+.panel--guide {
+  left: 50%;
+  transform: translateX(-50%);
+  top: var(--pad);
+  width: 470px;
+  max-width: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--guide .panel__body { padding-bottom: 6px; }
+.panel--guide .note { margin: 0; }
+
+.guide__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 8px;
+  border-top: var(--rule);
+}
+.guide__foot .btn[disabled] { opacity: 0.35; cursor: default; }
+.guide__foot [data-role='next'] { margin-left: auto; }
+
+.guide__dots { display: flex; gap: 5px; align-items: center; }
+/* A row of marks, not a progress bar: the reader can jump to any of them, and
+   the filled one is where they are. */
+.guide__dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 1px solid var(--ink-faint);
+  background: none;
+  cursor: pointer;
+}
+.guide__dot[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); }
+.guide__dot:hover { border-color: var(--ink); }

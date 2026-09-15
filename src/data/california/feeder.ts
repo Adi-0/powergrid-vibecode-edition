@@ -165,10 +165,11 @@ export const FEEDER_SECTIONS: FeederSection[] = [
 /**
  * Where the load actually sits.
  *
- * Peak demand on this feeder is about 6.3 MW across roughly 1,450 customers —
- * a little over 4 kW each at the moment they all peak together, which is what
- * the coincidence factor is about: each of those houses can draw far more than
- * 4 kW, but they do not all do it at once.
+ * Peak demand on this feeder is about 7.1 MW across 1,585 customers — a little
+ * under 4.5 kW each at the moment they all peak together, which is what the
+ * coincidence factor is about: each of those houses has a service capable of
+ * 24 kW and peaks on its own at five or six, and they do not all do it at the
+ * same moment. The factors panel computes that ratio rather than asserting it.
  */
 export const FEEDER_LOADS: FeederSpotLoad[] = [
   { node: 'F01', peakKW: 420, powerFactor: 0.95, customers: 40, loadClass: 'commercial',

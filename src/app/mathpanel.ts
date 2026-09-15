@@ -126,70 +126,78 @@ export class MathPanel {
       : '';
     this.tabs.style.display = this.derivations.length > 1 ? '' : 'none';
 
-    const parts: string[] = [];
+    this.body.innerHTML = derivationHTML(d);
+  }
+}
 
-    if (d.standard) {
-      parts.push(
-        `<p class="math__standard">${escapeHtml(d.standard)}</p>`
-      );
-    }
+/**
+ * A whole derivation as markup.
+ *
+ * Module-level rather than a method because the math panel is not the only
+ * place a worked derivation belongs: anywhere the app states a number it
+ * derived, it can show the derivation, and it must show it the same way.
+ */
+export function derivationHTML(d: Derivation): string {
+  const parts: string[] = [];
 
-    // The sign convention comes FIRST, before any arithmetic, because it is
-    // the thing a reader has to hold in their head while reading the rest.
-    if (d.convention) {
-      parts.push(
-        `<section class="math__convention">` +
-        `<h4 class="inspect__heading">Reference direction</h4>` +
-        `<p class="note">${escapeHtml(d.convention)}</p>` +
-        (d.diagram ? `<div class="math__diagram">${d.diagram}</div>` : '') +
-        `</section>`
-      );
-    }
+  if (d.standard) {
+    parts.push(`<p class="math__standard">${escapeHtml(d.standard)}</p>`);
+  }
 
-    if (d.bases && d.bases.length > 0) {
-      parts.push(
-        `<section class="math__bases">` +
-        `<h4 class="inspect__heading">Bases in force</h4>` +
-        d.bases.map(baseRow).join('') +
-        `</section>`
-      );
-    }
-
+  // The sign convention comes FIRST, before any arithmetic, because it is
+  // the thing a reader has to hold in their head while reading the rest.
+  if (d.convention) {
     parts.push(
-      `<ol class="math__steps">` +
-      d.steps.map((s, i) => this.stepHTML(s, i + 1)).join('') +
-      `</ol>`
-    );
-
-    if (d.closing) {
-      parts.push(`<p class="math__closing">${escapeHtml(d.closing)}</p>`);
-    }
-
-    this.body.innerHTML = parts.join('');
-  }
-
-  private stepHTML(s: DerivationStep, index: number): string {
-    const value = num(s.value, s.decimals ?? 4);
-    const agrees = s.checkAgainst
-      ? `<div class="math__check">` +
-        `Same as ${escapeHtml(s.checkAgainst.name)}: ` +
-        `<span class="num">${num(s.checkAgainst.value, s.decimals ?? 4)}</span>` +
-        `</div>`
-      : '';
-    return (
-      `<li class="math__step">` +
-      `<div class="math__label"><span class="math__index num">${index}</span>` +
-      `${escapeHtml(s.label)}</div>` +
-      `<div class="math__general">${escapeHtml(s.general)}</div>` +
-      `<div class="math__work num">= ${escapeHtml(pretty(s.substituted))}</div>` +
-      `<div class="math__result num">= ${escapeHtml(pretty(value))}` +
-      (s.unit ? `<span class="math__unit">${escapeHtml(s.unit)}</span>` : '') +
-      `</div>` +
-      agrees +
-      (s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : '') +
-      `</li>`
+      `<section class="math__convention">` +
+      `<h4 class="inspect__heading">Reference direction</h4>` +
+      `<p class="note">${escapeHtml(d.convention)}</p>` +
+      (d.diagram ? `<div class="math__diagram">${d.diagram}</div>` : '') +
+      `</section>`
     );
   }
+
+  if (d.bases && d.bases.length > 0) {
+    parts.push(
+      `<section class="math__bases">` +
+      `<h4 class="inspect__heading">Bases in force</h4>` +
+      d.bases.map(baseRow).join('') +
+      `</section>`
+    );
+  }
+
+  parts.push(
+    `<ol class="math__steps">` +
+    d.steps.map((s, i) => stepHTML(s, i + 1)).join('') +
+    `</ol>`
+  );
+
+  if (d.closing) {
+    parts.push(`<p class="math__closing">${escapeHtml(d.closing)}</p>`);
+  }
+  return parts.join('');
+}
+
+function stepHTML(s: DerivationStep, index: number): string {
+  const value = num(s.value, s.decimals ?? 4);
+  const agrees = s.checkAgainst
+    ? `<div class="math__check">` +
+      `Same as ${escapeHtml(s.checkAgainst.name)}: ` +
+      `<span class="num">${num(s.checkAgainst.value, s.decimals ?? 4)}</span>` +
+      `</div>`
+    : '';
+  return (
+    `<li class="math__step">` +
+    `<div class="math__label"><span class="math__index num">${index}</span>` +
+    `${escapeHtml(s.label)}</div>` +
+    `<div class="math__general">${escapeHtml(s.general)}</div>` +
+    `<div class="math__work num">= ${escapeHtml(pretty(s.substituted))}</div>` +
+    `<div class="math__result num">= ${escapeHtml(pretty(value))}` +
+    (s.unit ? `<span class="math__unit">${escapeHtml(s.unit)}</span>` : '') +
+    `</div>` +
+    agrees +
+    (s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : '') +
+    `</li>`
+  );
 }
 
 /**

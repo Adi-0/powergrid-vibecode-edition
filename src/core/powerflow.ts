@@ -117,6 +117,18 @@ export interface IterationRecord {
   /** Largest correction applied this step: Δθ in radians, Δ|V| in per-unit. */
   maxDTheta: number;
   maxDV: number;
+  /**
+   * Set on the first iteration after the PROBLEM ITSELF changed.
+   *
+   * When a machine runs out of reactive capability its bus stops being a
+   * voltage-controlled bus and becomes an ordinary load bus pinned at the
+   * limit. That is a physical transition, and it changes the set of unknowns
+   * part-way through solving — so the mismatch jumps back up and Newton starts
+   * again on a different problem. Without this marker the convergence plot
+   * looks like the method failing, when it is the method doing exactly what it
+   * should.
+   */
+  restarted?: string;
 }
 
 export interface PowerFlowResult {
@@ -141,6 +153,8 @@ export interface PowerFlowResult {
   ybus: Ybus;
   /** Final mismatch, per-unit — the number that must be below `tol`. */
   finalMismatch: number;
+  /** The convergence tolerance this solve was asked to reach, per-unit. */
+  tol: number;
   /** Wall-clock solve time, milliseconds. */
   solveMs: number;
   /** True if the iteration started from a DC power-flow angle estimate. */
@@ -298,6 +312,8 @@ export function solvePowerFlow(
   const switchCount = new Int32Array(n);
 
   const trace: IterationRecord[] = [];
+  /** Why the next inner solve is starting, if it is not the first. */
+  let pendingRestart: string | undefined;
   let converged = false;
   let iter = 0;
   let finalMismatch = Infinity;
@@ -305,7 +321,12 @@ export function solvePowerFlow(
 
   // Outer loop exists only for Q-limit switching; without it, it runs once.
   for (let outer = 0; outer < (opts.enforceQLimits ? 20 : 1); outer++) {
+    const traceStart = trace.length;
     const inner = newtonLoop(y, vm, va, sched, type, opts, net, trace, iter);
+    if (pendingRestart !== undefined && trace.length > traceStart) {
+      trace[traceStart].restarted = pendingRestart;
+      pendingRestart = undefined;
+    }
     iter = inner.iteration;
     converged = inner.converged;
     finalMismatch = inner.mismatch;
@@ -329,6 +350,7 @@ export function solvePowerFlow(
     // strand the system in a state it would never actually reach.
     const { q } = calcInjections(y, vm, va);
     let switched = false;
+    let switchedCount = 0;
     for (let i = 0; i < n; i++) {
       const schedV = net.buses[i].vSched;
       if (switchCount[i] >= opts.maxSwitchesPerBus) continue;
@@ -341,6 +363,7 @@ export function solvePowerFlow(
           qLimited.push({ bus: net.buses[i].id, limit: 'qMax', qMVAr: qMaxPU[i] * net.baseMVA });
           switchCount[i]++;
           switched = true;
+          switchedCount++;
         } else if (qGen < qMinPU[i] - qTol) {
           type[i] = 'PQ';
           pinned[i] = 'qMin';
@@ -348,6 +371,7 @@ export function solvePowerFlow(
           qLimited.push({ bus: net.buses[i].id, limit: 'qMin', qMVAr: qMinPU[i] * net.baseMVA });
           switchCount[i]++;
           switched = true;
+          switchedCount++;
         }
       } else if (pinned[i] && schedV !== undefined) {
         // Pinned at maximum but the voltage has come back up on its own, or
@@ -361,10 +385,16 @@ export function solvePowerFlow(
           vm[i] = schedV;
           switchCount[i]++;
           switched = true;
+          switchedCount++;
         }
       }
     }
     if (!switched) break;
+    // Record why the next round exists, so the convergence plot can say that
+    // the problem changed rather than that the method wandered.
+    pendingRestart =
+      `${switchedCount} bus${switchedCount === 1 ? '' : 'es'} changed type on a ` +
+      `reactive limit`;
   }
 
   const { p: pInj, q: qInj } = calcInjections(y, vm, va);
@@ -383,6 +413,7 @@ export function solvePowerFlow(
     busOrder: idx.order,
     ybus: y,
     finalMismatch,
+    tol: opts.tol,
     solveMs: performance.now() - t0,
     dcInitialised: dcUsed,
     ...(error ? { error } : {}),

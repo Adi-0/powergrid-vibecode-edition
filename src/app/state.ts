@@ -10,6 +10,11 @@
  */
 
 import { NetworkCase, cloneCase } from '../core/network.js';
+import {
+  studyMotorStart, MotorStudy, MotorState, MOTOR_SITES,
+} from '../sim/motor-start.js';
+import { StartMethod } from '../core/motor.js';
+import { factors, FactorSet } from '../sim/factors.js';
 import { SolvedCase } from '../core/results.js';
 import { californiaCase, SLACK_BUS } from '../data/california/network.js';
 import { DayProfile, DAY_PROFILES, Season } from '../sim/profiles.js';
@@ -68,6 +73,20 @@ export interface AppSnapshot {
    * shown in the math panel.
    */
   service: ServiceSolution;
+  /**
+   * The motor start, if the reader has one in progress.
+   *
+   * Unlike the fault, this IS a state of the network — for a few seconds. The
+   * solved case in this snapshot is the case WITH the motor's locked-rotor
+   * demand in it, so every voltage on screen is the dipped one.
+   */
+  motor: MotorStudy | null;
+  /**
+   * The planning factors for the day as dispatched — load, demand, coincidence
+   * and capacity. They belong to the whole day rather than to this hour, so
+   * they change when the season does and not when the scrubber moves.
+   */
+  factors: FactorSet;
 }
 
 type Listener = (snapshot: AppSnapshot) => void;
@@ -85,6 +104,9 @@ export class AppState {
   private _appliance: Appliance | null = null;
   private _storageInService = true;
   private _faultAt: { busId: string; kind: FaultKind } | null = null;
+  private _motorState: MotorState = 'off';
+  private _motorMethod: StartMethod = 'across-the-line';
+  private _motorSite = MOTOR_SITES[0].id;
   private snapshot: AppSnapshot;
   private readonly listeners = new Set<Listener>();
 
@@ -139,10 +161,20 @@ export class AppState {
     }
 
     const result = operate(net);
+
+    // The motor is the one perturbation that changes the network AFTER the
+    // ordinary solve, because what it does is defined by the difference: the
+    // case is solved without it to get the voltage the street was at, then
+    // again with its locked-rotor demand in place to get the voltage it fell
+    // to. Both solves are real; the dip is not estimated anywhere.
+    const motor = this._motorState === 'off' ? null
+      : studyMotorStart(net, result, this._motorState, this._motorMethod, this._motorSite);
+    const final = motor ? motor.result : result;
+
     return {
       net,
-      solved: result.solved,
-      operate: result,
+      solved: final.solved,
+      operate: final,
       dispatch,
       hour: this._hour,
       season: this._season,
@@ -154,11 +186,13 @@ export class AppState {
       hovered: this._hovered,
       lastSolveMs: performance.now() - t0,
       appliance: this._appliance,
-      service: serviceFrom(result.solved, this._appliance),
+      service: serviceFrom(final.solved, this._appliance),
       faultAt: this._faultAt,
       fault: this._faultAt
-        ? studyFault(result.solved, this._faultAt.busId, this._faultAt.kind)
+        ? studyFault(final.solved, this._faultAt.busId, this._faultAt.kind)
         : null,
+      motor,
+      factors: factors(this.base, this.day),
     };
   }
 
@@ -245,6 +279,30 @@ export class AppState {
   get faultAt(): { busId: string; kind: FaultKind } | null {
     return this._faultAt;
   }
+
+  /**
+   * Start, run or stop the motor at the industrial unit.
+   *
+   * Every argument is optional so that the three controls — whether it is
+   * running, how it is started, and where it is — can be moved one at a time
+   * without the caller having to restate the other two.
+   */
+  setMotor(
+    state: MotorState,
+    method: StartMethod = this._motorMethod,
+    site: string = this._motorSite
+  ): void {
+    if (state === this._motorState && method === this._motorMethod &&
+        site === this._motorSite) return;
+    this._motorState = state;
+    this._motorMethod = method;
+    this._motorSite = site;
+    this.emit(true);
+  }
+
+  get motorState(): MotorState { return this._motorState; }
+  get motorMethod(): StartMethod { return this._motorMethod; }
+  get motorSite(): string { return this._motorSite; }
 
   /** Switch an appliance on at the modelled house, or switch everything off. */
   setAppliance(id: string | null): void {

@@ -523,6 +523,83 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'does.',
     severity: 'modest',
   },
+  {
+    id: 'reliability-from-rates',
+    scope: ['feeder', 'protection'],
+    title: 'The reliability indices are computed from failure rates, not from history',
+    whatWeDo:
+      'SAIFI, SAIDI, CAIDI, MAIFI and ASAI are worked out from section lengths, ' +
+      'canonical failure rates per kilometre-year, canonical repair and ' +
+      'switching times, and which device clears which fault. Every number is ' +
+      'traceable to those inputs.',
+    fullTreatment:
+      'A utility computes these from its own outage management system: every ' +
+      'interruption that actually happened, with the customers actually ' +
+      'affected and the minutes actually taken, classified by cause. The ' +
+      'failure rates used here are planning values of the kind used before ' +
+      'there is any history to work from.',
+    consequence:
+      'The directions are right and the sensitivities are right \u2014 a recloser ' +
+      'improves SAIFI, a tie improves SAIDI, fuse blowing trades one against ' +
+      'the other. The absolute values belong to the assumed rates, not to any ' +
+      'real feeder, and this feeder does not exist.',
+    severity: 'modest',
+  },
+  {
+    id: 'no-major-event-days',
+    scope: ['feeder'],
+    title: 'Storms are not in the reliability figures',
+    whatWeDo:
+      'Faults arrive at a steady rate proportional to how much wire there is. ' +
+      'There is no weather: no wind event that brings down twenty spans at ' +
+      'once, no heat wave that fails cable joints in a week.',
+    fullTreatment:
+      'IEEE Std 1366 defines a major event day by a statistical threshold \u2014 ' +
+      'the 2.5-beta method \u2014 and utilities report indices both with and ' +
+      'without those days, because the two numbers describe different things: ' +
+      'how the system runs, and how badly it can go wrong.',
+    consequence:
+      'The indices here correspond to the reported figures that EXCLUDE major ' +
+      'events, which is the flattering half of the pair. A bad storm year can ' +
+      'double a utility\u2019s SAIDI on its own.',
+    severity: 'modest',
+  },
+  {
+    id: 'restoration-is-deterministic',
+    scope: ['feeder'],
+    title: 'Every crew takes exactly the same time',
+    whatWeDo:
+      'Repair, switching and back-feeding each take one fixed number of hours. ' +
+      'A fault at three in the morning in the rain is restored as quickly as ' +
+      'one at noon.',
+    fullTreatment:
+      'Restoration times are distributions, not constants, and they depend on ' +
+      'crew availability, access, weather, and how many other faults are being ' +
+      'worked at the same moment \u2014 which is exactly why a storm is not just ' +
+      'more faults at the same rate.',
+    consequence:
+      'The averages are reasonable and the comparisons between options are ' +
+      'sound. The model cannot say anything about the tail: the worst hour of ' +
+      'the worst day is the thing customers remember, and it is not here.',
+    severity: 'modest',
+  },
+  {
+    id: 'tie-always-has-room',
+    scope: ['feeder'],
+    title: 'The next feeder can always pick up this one\u2019s far end',
+    whatWeDo:
+      'When the tie is available, every customer beyond the damage is back-fed ' +
+      'through it in an hour, whatever the load is at the time.',
+    fullTreatment:
+      'The adjacent feeder has its own load and its own conductor rating. ' +
+      'Back-feeding is a load-flow question: at the evening peak the tie may ' +
+      'only be able to take part of the far end, or none of it, and a real ' +
+      'switching plan is built around what the neighbour can carry.',
+    consequence:
+      'Overstates what the tie is worth at peak and understates it at night. ' +
+      'The mechanism \u2014 and why a second path is worth building \u2014 is right.',
+    severity: 'modest',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>
