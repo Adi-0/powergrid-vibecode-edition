@@ -46,6 +46,16 @@ function strokeSwatch(weightPx: number, dash: number[], color: string = INK.ink)
   );
 }
 
+/** Two circles, to say that size means quantity. */
+function sizeSwatch(): string {
+  return (
+    `<svg width="34" height="14" viewBox="0 0 34 14" aria-hidden="true">` +
+    `<circle cx="7" cy="7" r="2.6" fill="none" stroke="${INK.ink}" stroke-width="1.2"/>` +
+    `<circle cx="23" cy="7" r="5.6" fill="none" stroke="${INK.ink}" stroke-width="1.5"/>` +
+    `</svg>`
+  );
+}
+
 export class Legend {
   readonly element: HTMLElement;
   private readonly body: HTMLElement;
@@ -98,6 +108,17 @@ export class Legend {
       'drawing survives being photocopied, and colour stays free to mean ' +
       'one thing.';
     v.appendChild(note);
+
+    // --- What the size of a symbol means -----------------------------------
+    // The legend has to be complete, and symbol size now carries meaning, so
+    // it has to say what.
+    const z = this.group('Size — by how much is there');
+    this.row(
+      z, sizeSwatch(), 'Bigger means more',
+      'A site symbol is drawn larger where there is more generating capacity, ' +
+      'or more demand. Square-rooted, so a four-gigawatt station is about six ' +
+      'times the area of a hundred-megawatt one rather than forty.'
+    );
 
     // --- The one signal colour ---------------------------------------------
     const s = this.group('Colour means one thing');

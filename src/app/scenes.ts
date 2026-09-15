@@ -44,6 +44,7 @@ import { drawSubstation, substationBounds } from '../render/scene-substation.js'
 import { FeederGeometry, drawFeeder } from '../render/scene-feeder.js';
 import { drawService, serviceBounds } from '../render/scene-service.js';
 import { drawGround, groundBounds } from '../render/scene-ground.js';
+import { drawTerrain } from '../render/scene-terrain.js';
 import { drawPlant, plantBounds } from '../render/scene-plant.js';
 import { drawMachine, machineBounds } from '../render/scene-machine.js';
 import { Generator } from '../core/network.js';
@@ -248,6 +249,15 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     active.push({ scene, alpha, fit: screenFit(bounds, view) });
     return alpha;
   };
+
+  // --- the coast, behind everything ------------------------------------------
+  // Not a scene with a panel and a name: it is the paper the state is drawn on.
+  // Visible wherever the transmission drawing is, and gone once the window is
+  // small enough that the nearest coastline is a hundred kilometres away.
+  if (mpp > 12) {
+    const shore = drawTerrain(Math.min(1, (mpp - 12) / 40), view);
+    segments.push(...shore.segments);
+  }
 
   // --- the ground, before anything electrical -------------------------------
   const aGround = include('ground', groundBounds());

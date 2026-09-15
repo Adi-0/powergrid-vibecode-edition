@@ -300,8 +300,14 @@ describe('every displayed quantity comes from the solver', () => {
   it('collects enough labels to be worth checking', () => {
     // If the scenes ever stop returning labels as data, this check silently
     // becomes vacuous, which would be worse than it failing.
-    expect(LABELS[0].size).toBeGreaterThan(120);
-    for (const set of LABELS) expect(set.size).toBeGreaterThan(120);
+    //
+    // The floor moved from 120 to 100 when the plant stopped printing a
+    // standing caption on all eighteen of its items. Those captions still
+    // exist — they appear on hover — and they are built from the same stream
+    // and rating data the visible ones use, so no PATH to a displayed number
+    // stopped being covered. What shrank is the count, not the coverage.
+    expect(LABELS[0].size).toBeGreaterThan(100);
+    for (const set of LABELS) expect(set.size).toBeGreaterThan(100);
     // Every branch of the zoom tree must actually be represented, or the
     // check below quietly stops covering half the app.
     for (const prefix of ['feeder:', 'sub:', 'svc:', 'plant:', 'machine:']) {

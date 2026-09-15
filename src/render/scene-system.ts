@@ -482,10 +482,26 @@ export function drawSystem(
     const color = anyAlarm ? SIGNAL.alarm : isSelected ? SELECTION.stroke : INK.ink;
     const emphasis = isSelected || isHovered ? 1.35 : 1;
 
-    // Size communicates importance: the highest voltage present at the site.
+    // SIZE IS HOW MUCH MACHINE IS THERE; WEIGHT IS VOLTAGE.
+    //
+    // Size used to be the highest voltage present, in three buckets, which
+    // meant Diablo Canyon at 2.26 GW and an empty 500 kV switchyard were drawn
+    // identically. At a glance the most useful thing about a site is how big
+    // it is, and the model already knows: installed capacity where there are
+    // machines, peak demand where there is load.
+    //
+    // Square-rooted, so a four-gigawatt station is about six times the area of
+    // a hundred-megawatt one rather than forty times it and off the page.
+    // Voltage keeps the stroke weight, which is the encoding the legend
+    // promises and the one that must not move.
     const topKV = Math.max(...node.buses.map((b) => b.kV));
-    const size = (topKV >= 500 ? 1.25 : topKV >= 230 ? 1.0 : 0.78) *
-      LAYOUT.siteSymbolPx * emphasis;
+    const capacityMW = node.generation.reduce((a, g) => a + g.capacityMW, 0);
+    const scaleFor = (mw: number, floor: number, span: number): number =>
+      Math.max(floor, Math.min(1.9, floor + span * Math.sqrt(Math.max(0, mw) / 3000)));
+    const magnitude = capacityMW > 0 ? scaleFor(capacityMW, 0.62, 0.95)
+      : node.peakLoadMW > 0 ? scaleFor(node.peakLoadMW, 0.58, 0.85)
+      : 0.72;
+    const size = magnitude * LAYOUT.siteSymbolPx * emphasis;
     const strokeW = (topKV >= 500 ? 1.5 : 1.2) * (isSelected ? 1.5 : 1);
 
     const place = {
