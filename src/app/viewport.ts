@@ -10,7 +10,7 @@
 import { Scene, WebGLRenderer, Color, Vector2, Vector3 } from 'three';
 import { IsoCamera } from '../render/iso.js';
 import { LineBatch, LineSegment } from '../render/line-batch.js';
-import { LabelLayer, LabelSpec } from '../render/labels.js';
+import { LabelLayer, LabelSpec, inkField } from '../render/labels.js';
 import { INK, ZOOM, levelForScale, LevelId } from '../render/style.js';
 import { PickTarget } from '../render/scene-system.js';
 
@@ -124,7 +124,13 @@ export class Viewport {
     if (this.needsBuild) {
       const content = this.events.build();
       this.batch.update(content.segments);
-      this.labels.layout(this.camera, content.labels);
+      // The label layout is told where the drawing is, so a caption prefers
+      // clear paper to the middle of a corridor. Built here because this is the
+      // one place that has both the segments and the camera they were built
+      // for, and it costs one pass over the frame that was just assembled.
+      this.labels.layout(this.camera, content.labels, inkField(
+        this.camera, content.segments,
+        this.camera.viewport.width, this.camera.viewport.height));
       this.picks = content.picks;
       this.needsBuild = false;
       this.needsDraw = true;
