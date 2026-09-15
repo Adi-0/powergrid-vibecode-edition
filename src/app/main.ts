@@ -489,7 +489,7 @@ function rightPanelInsetPx(without: string[] = []): number {
   let leftmost = width;
   for (const el of document.querySelectorAll<HTMLElement>(
     '.panel--inspect, .panel--tcc, .panel--solver, .panel--reliability, ' +
-    '.panel--machine, .panel--math'
+    '.panel--machine, .panel--math, .panel--side'
   )) {
     if (el.style.display === 'none' || el.offsetParent === null) continue;
     if (without.some((c) => el.classList.contains(c))) continue;
