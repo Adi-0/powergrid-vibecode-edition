@@ -390,13 +390,14 @@ function refreshForScene(): void {
  * The panels are all anchored to the same edge and overlap each other, so the
  * inset is the widest one that is actually on screen, not their sum.
  */
-function rightPanelInsetPx(): number {
+function rightPanelInsetPx(without: string[] = []): number {
   let widest = 0;
   for (const el of document.querySelectorAll<HTMLElement>(
     '.panel--inspect, .panel--tcc, .panel--solver, .panel--reliability, ' +
     '.panel--machine, .panel--math'
   )) {
     if (el.style.display === 'none' || el.offsetParent === null) continue;
+    if (without.some((c) => el.classList.contains(c))) continue;
     widest = Math.max(widest, el.getBoundingClientRect().width);
   }
   return widest > 0 ? widest + 18 : 0;
@@ -425,10 +426,13 @@ const MACHINE_PANEL_PX = 430 + 18;
 function insetsOnArrival(id: LevelId): { bottom: number; right: number } {
   return {
     bottom: id === 'feeder' || id === 'service' ? 186 : 0,
+    // The capability curve opens by itself at the machine and closes on the way
+    // out, so it counts at that destination and nowhere else. Panels that
+    // belong to a SELECTION rather than to a level stay where they are, and are
+    // measured as they stand.
     right: id === 'machine'
-      ? MACHINE_PANEL_PX
-      // Panels that belong to a selection, not to a level, stay where they are.
-      : rightPanelInsetPx(),
+      ? Math.max(MACHINE_PANEL_PX, rightPanelInsetPx(['panel--machine']))
+      : rightPanelInsetPx(['panel--machine']),
   };
 }
 
@@ -475,8 +479,21 @@ function onCamera(mpp: number, level: LevelId): void {
   // On the generation branch the scene decides; on the distribution branch the
   // scale does, because there the two agree.
   const scene = dominantScene();
+  // WHERE THE BREADCRUMB SAYS YOU ARE IS WHAT YOU ARE LOOKING AT.
+  //
+  // The scale band and the drawing on screen used to be allowed to disagree,
+  // and in the wide gap between a feeder and a region they did: the breadcrumb
+  // read Region while the panel beside it was headed Cherry Lane 1201 and the
+  // feeder filled the middle of the page. Every scene answers for itself now.
+  //
+  // The exception is the region, which is the one level with no drawing of its
+  // own — it is the system view at a regional scale — so there the scale still
+  // has to say so.
   const here: LevelId =
-    scene === 'plant' || scene === 'machine' ? scene : level;
+    scene === null ? level
+      : scene === 'system' ? (level === 'region' ? 'region' : 'system')
+      : scene === 'ground' ? level
+      : scene;
   renderBreadcrumb(here);
   side.setScope(here as ScopeId);
 

@@ -258,9 +258,8 @@ export class Viewport {
   ): void {
     const startTarget = this.camera.target.clone();
     const startScale = this.camera.metresPerPixel;
-    const endScale = Math.max(
-      Math.max(ZOOM.min, this.camera.floorScale),
-      Math.min(ZOOM.max, metresPerPixel));
+    // Not clamped by the compositor's floor: see IsoCamera.setZoomExact.
+    const endScale = Math.max(ZOOM.min, Math.min(ZOOM.max, metresPerPixel));
     const t0 = performance.now();
 
     const step = () => {
@@ -272,7 +271,7 @@ export class Viewport {
       this.camera.target.lerpVectors(startTarget, target, e);
       // Scale interpolates geometrically: zoom is multiplicative, so a linear
       // blend would crawl at the far end and lurch at the near one.
-      this.camera.setZoom(startScale * Math.pow(endScale / startScale, e));
+      this.camera.setZoomExact(startScale * Math.pow(endScale / startScale, e));
       this.invalidate();
       this.events.onCameraChange?.(
         this.camera.metresPerPixel, levelForScale(this.camera.metresPerPixel)

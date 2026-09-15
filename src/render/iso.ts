@@ -92,9 +92,34 @@ export class IsoCamera {
     this.camera.updateMatrixWorld();
   }
 
+  /**
+   * Zoom, respecting the floor the compositor set for where the camera IS.
+   *
+   * This is the setter for the wheel and the pinch: a reader dragging the zoom
+   * in over open country should stop where the last drawing fades out rather
+   * than sail on into a blank page.
+   */
   setZoom(metresPerPixel: number): void {
     const floor = Math.max(ZOOM.min, this.floorScale);
     this.metresPerPixel = clamp(metresPerPixel, floor, ZOOM.max);
+    this.apply();
+  }
+
+  /**
+   * Zoom to exactly this scale, floor or no floor.
+   *
+   * THE FLOOR IS ABOUT WHERE THE CAMERA IS, AND A FLIGHT IS ABOUT WHERE IT IS
+   * GOING. Clamping a commanded flight by it is how travelling from the whole
+   * state to one house used to strand the camera half way: the floor is
+   * recomputed each frame from what is under the camera, and half way across
+   * California the only thing under it was a distribution feeder, whose floor
+   * is a third of a metre per pixel. The flight then could not go below that,
+   * finished early, and left the reader looking at a street from three hundred
+   * metres up wondering why the zoom had stopped working. A destination the
+   * application chose is legible by construction.
+   */
+  setZoomExact(metresPerPixel: number): void {
+    this.metresPerPixel = clamp(metresPerPixel, ZOOM.min, ZOOM.max);
     this.apply();
   }
 
@@ -253,7 +278,7 @@ export class IsoCamera {
 
     const availW = Math.max(1, this.viewportWidth - left - right - marginPx * 2);
     const availH = Math.max(1, this.viewportHeight - top - bottom - marginPx * 2);
-    this.setZoom(Math.max(spanX / availW, spanY / availH, ZOOM.min));
+    this.setZoomExact(Math.max(spanX / availW, spanY / availH, ZOOM.min));
 
     // Centre what is actually drawn, in the space that is actually visible.
     //

@@ -477,8 +477,18 @@ export function drawFeeder(
     // captions on long leaders reaching into empty paper — which is what made
     // the approach to the feeder look broken. Only the pieces of equipment
     // keep a name until the poles are far enough apart to point at.
-    const spacious = camera.metresPerPixel < 8;
+    // Two thresholds, both about whether a caption can be read where it is.
+    //
+    // Far out, the whole feeder is a hundred-pixel clump and naming the
+    // recloser, the regulator, the capacitor and the tie point puts four
+    // two-line captions around a smudge — the text then IS the drawing, which
+    // is exactly the state the approach to the feeder used to be in. Closer,
+    // the equipment can be pointed at; closer still, so can the poles.
+    const mpp = camera.metresPerPixel;
+    const spacious = mpp < 8;
+    const closeEnoughToName = mpp < 13;
     if (!bus) continue;
+    if (!closeEnoughToName && !isSelected && !isHovered) continue;
     if (!spacious && !kit && !isSelected && !isHovered && node.id !== 'SVC_LV') {
       picks.push({
         id: node.id, kind: 'site', world: top.clone(),

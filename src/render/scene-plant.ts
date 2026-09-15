@@ -228,6 +228,80 @@ export function drawPlant(
     }
   }
 
+  // --- what else is inside the fence ---------------------------------------
+  //
+  // A combined-cycle station is not two turbines in a field. The energy chain
+  // is the subject and rightly has the drawing to itself, but with nothing
+  // else inside the boundary the site read as a large empty diamond with the
+  // interesting part pushed into one corner — and a reader who has just been
+  // told this is a real place is entitled to ask what the rest of it is.
+  //
+  // So: the building the plant is run from, the water plant that feeds the
+  // steam cycle and the cooling tower, the road in, and the gas line arriving
+  // from off site. All scenery — no picks, no numbers, one name each — drawn
+  // at the weight of the boundary they sit inside.
+  {
+    const site = (x: number, y: number): Vector3 =>
+      new Vector3(PLANT_ORIGIN.x + x, 0, PLANT_ORIGIN.z - y);
+    const scenery = (
+      ax: number, ay: number, bx: number, by: number,
+      widthPx = 0.9, opacity = 1
+    ): void => {
+      const a = site(ax, ay);
+      const b = site(bx, by);
+      mark({
+        a: [a.x, 0, a.z], b: [b.x, 0, b.z],
+        widthPx, color: INK.inkFaint, opacity,
+      }, Number.MAX_SAFE_INTEGER - 19);
+    };
+    const box = (
+      x: number, y: number, w: number, d: number, h: number
+    ): void => {
+      const cs: [number, number][] = [
+        [x - w / 2, y - d / 2], [x + w / 2, y - d / 2],
+        [x + w / 2, y + d / 2], [x - w / 2, y + d / 2], [x - w / 2, y - d / 2],
+      ];
+      for (let k = 0; k + 1 < cs.length; k++) {
+        scenery(cs[k][0], cs[k][1], cs[k + 1][0], cs[k + 1][1], 1.0);
+      }
+      if (h > 0) {
+        const a = site(x - w / 2, y + d / 2);
+        mark({
+          a: [a.x, 0, a.z], b: [a.x, h, a.z],
+          widthPx: 0.8, color: INK.inkFaint,
+        }, Number.MAX_SAFE_INTEGER - 19);
+      }
+    };
+
+    // The control building, in the corner the switchyard leaves empty.
+    box(206, 20, 34, 18, 8);
+    // Water treatment: the cooling tower and the steam cycle both drink.
+    box(206, 140, 26, 22, 4);
+    for (let k = 1; k < 4; k++) {
+      scenery(193 + k * 6.5, 129, 193 + k * 6.5, 151, 0.7, 0.55);
+    }
+    // The road in, past the control building and up the length of the site.
+    scenery(260, 12, 30, 12, 0.8, 0.45);
+    scenery(260, 28, 30, 28, 0.8, 0.45);
+    scenery(30, 12, 30, 150, 0.8, 0.45);
+    scenery(46, 12, 46, 150, 0.8, 0.45);
+    // The gas, arriving from off site. It is a pipeline tap, not a tank.
+    scenery(16, 28, -12, 28, 1.2, 0.9);
+
+    labels.push({
+      id: 'plant:control-building',
+      world: site(206, 20),
+      text: 'Control building',
+      side: 'below', priority: 700, tone: 'muted',
+    });
+    labels.push({
+      id: 'plant:gas-in',
+      world: site(-10, 28),
+      text: 'Gas, from the interstate pipeline',
+      side: 'above', priority: 690, tone: 'muted',
+    });
+  }
+
   // --- buildings, as footprints at their true size --------------------------
   for (const i of PLANT_ITEMS) {
     if (!i.sizeM) continue;
@@ -370,11 +444,21 @@ export function drawPlant(
       ? `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of the fuel`
       : stream ? formatPower(stream.mw)
         : emphasised && i.rating ? i.rating : undefined;
+    // A LABEL SITS ON THE SIDE AWAY FROM THE MIDDLE OF THE PLANT.
+    //
+    // The station is two identical trains with the steam plant between them,
+    // and the drawing is a flow left to right. Left to itself the layout put
+    // whichever caption came first wherever there was room, so names landed in
+    // the middle of the ducts they belonged to and on top of the other train's
+    // equipment. Pushing each one outwards leaves the flow between the trains
+    // clear, which is the part of the drawing that is doing the teaching.
+    const north = i.at[1] > PLANT_SITE.depthM / 2;
     labels.push({
       id: `plant:${i.id}`,
       world: p,
       text: i.name,
       ...(value ? { value } : {}),
+      side: north ? 'above' : 'below',
       priority: plantPriority(i) + (emphasised ? 5000 : 0),
       tone: isSelected ? 'selected' : 'normal',
     });
@@ -483,7 +567,9 @@ export function plantBounds(): {
   min: { x: number; z: number; y?: number };
   max: { x: number; z: number; y?: number };
 } {
-  const pad = 20;
+  // Just outside the fence. A wider pad framed twenty metres of empty tarmac on
+  // every side of a drawing that was already struggling to fill the page.
+  const pad = 6;
   return {
     min: {
       x: PLANT_ORIGIN.x - pad, z: PLANT_ORIGIN.z - PLANT_SITE.depthM - pad, y: 0,

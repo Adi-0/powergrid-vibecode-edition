@@ -90,7 +90,11 @@ const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   // The generation branch. These overlap the distribution ones in SCALE but
   // never on the page, because they are three hundred kilometres away and the
   // compositor culls a scene whose bounds the camera cannot see.
-  plant:      [0.045, 0.09, 0.70, 1.6],
+  // Gone by the time the machine is legible. The generator is drawn as a
+  // CROSS-SECTION, not as a thing standing in the yard, so the station behind
+  // it is not the same place seen from further out — it is a handful of
+  // kilometre-long lines crossing the page at angles that mean nothing there.
+  plant:      [0.058, 0.11, 0.70, 1.6],
   machine:    [0, 0, 0.055, 0.12],
 };
 

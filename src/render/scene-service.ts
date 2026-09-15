@@ -260,6 +260,8 @@ export function drawService(
           : `${step.currentA.toFixed(1)} A · −${step.dropV.toFixed(2)} V`,
         priority: isSelected ? 5400 : 320,
         tone: isSelected ? 'selected' : 'muted',
+        // The wires below the chain, the things they join above it.
+        side: 'below',
       });
     }
 
@@ -337,6 +339,7 @@ export function drawService(
           }
         : v !== undefined ? { value: `${v.toFixed(2)} V` }
         : n.rating ? { value: n.rating } : {}),
+      side: 'above',
       priority: servicePriority(n) + (isSelected || isHovered ? 5000 : 0),
       tone: isSelected ? 'selected' : outOfRange ? 'alarm' : 'normal',
     });
