@@ -275,7 +275,7 @@ html, body {
   width: 236px;
   /* Always present and always complete, but never more than half the page:
      beyond that the legend stops being a key and starts being the subject. */
-  max-height: min(50%, calc(100% - 2 * var(--pad)));
+  max-height: min(45%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
@@ -370,6 +370,9 @@ html, body {
   color: var(--ink-muted);
   font-size: 10.5px;
   font-weight: 400;
+  /* A unit is a separate word from its number. Without this the spans butt
+     together and per-unit impedances read "0.00363pu". */
+  margin-left: 0.28em;
 }
 
 .note {
@@ -550,8 +553,16 @@ button, select, input {
   color: var(--ink-muted);
   margin: 0 0 6px;
 }
+/* A material simplification is marked by WEIGHT, not by colour.
+   Colour in this app means one thing — something is wrong — and a
+   simplification the model is being honest about is not that. Using the alarm
+   red here spent the one signal the palette has on a second meaning, which is
+   exactly the failure the legend warns against. */
 .honesty__item--material { border-left: 2px solid var(--ink); padding-left: 8px; }
-.honesty__item--material .honesty__severity { color: var(--alarm); }
+.honesty__item--material .honesty__severity {
+  color: var(--ink);
+  font-weight: 600;
+}
 
 .kv--stacked {
   display: block;
@@ -711,7 +722,7 @@ button, select, input {
   width: 268px;
   /* The legend owns the bottom half of this column and must never be
      covered: it is the one panel the brief requires to be always present. */
-  max-height: min(42%, calc(100% - 2 * var(--pad)));
+  max-height: min(47%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
@@ -1064,7 +1075,10 @@ button, select, input {
   padding: 2px 0;
   font-size: 11.5px;
 }
-.tcc__row--first .tcc__time { color: var(--alarm); font-weight: 500; }
+/* The device that gets there first is the one doing its job. That is the
+   system working, not a fault, so it is marked by weight rather than by the
+   one colour this app reserves for something being wrong. */
+.tcc__row--first .tcc__time { color: var(--ink); font-weight: 600; }
 /* The sample of the curve's own weight, so a row can be matched to a line on
    the plot without a colour key. */
 .tcc__weight {
@@ -1247,9 +1261,10 @@ button, select, input {
   letter-spacing: 0.03em;
   color: var(--ink-muted);
 }
-/* The only colour in this panel, and it means what colour always means here:
-   this is the direction that is worse. */
-.rel__worse { color: var(--alarm); }
+/* The direction that is worse, marked by weight. An index moving the wrong
+   way under a trade-off the reader chose is not a fault, and colour here means
+   a fault and nothing else. */
+.rel__worse { color: var(--ink); font-weight: 600; }
 
 .rel__row {
   display: grid;

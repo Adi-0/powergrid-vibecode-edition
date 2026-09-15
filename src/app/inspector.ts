@@ -593,7 +593,7 @@ function bothUnits(pu: number, base: number, unit: string): string {
   return (
     `<span class="quantity__value num">${pu.toFixed(5)}</span>` +
     `<span class="quantity__unit">pu</span>` +
-    `<span class="quantity__unit"> = ${physical.toPrecision(4)} ${unit}</span>`
+    `<span class="quantity__unit">= ${physical.toPrecision(4)} ${unit}</span>`
   );
 }
 

@@ -91,6 +91,34 @@ const shots = [
   ['08-service', async () => { await go('service'); }],
   ['09-plant', async () => { await go('plant'); }],
   ['10-machine', async () => { await go('machine'); }],
+  ['11-inspect-circuit', async () => {
+    await go('system');
+    await page.evaluate(() => {
+      const g = window.gridAtlas;
+      const busiest = [...g.state.current.solved.branchById.values()]
+        .filter((b) => Math.abs(b.pFromMW) > 300)
+        .sort((a, b) => Math.abs(b.pFromMW) - Math.abs(a.pFromMW))[0];
+      if (busiest) g.state.select('circuit', busiest.branchId);
+    });
+  }],
+  ['12-math', async () => {
+    await page.evaluate(() => {
+      const g = window.gridAtlas;
+      const sel = g.state.current.selection;
+      if (sel.id) g.openMath(sel.kind, sel.id);
+    });
+  }],
+  ['13-honesty', async () => {
+    await page.evaluate(() => {
+      window.gridAtlas.math.close();
+      document.querySelector('[data-panel="honesty"]').click();
+    });
+  }],
+  ['14-glossary', async () => {
+    await page.evaluate(() => {
+      document.querySelector('[data-panel="glossary"]').click();
+    });
+  }],
 ];
 
 for (const [name, fn] of shots) {

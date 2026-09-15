@@ -8,6 +8,7 @@
  * is for.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   VOLTAGE_CLASSES, voltageClass, INK, SIGNAL, SELECTION, ISOMETRIC, FLOW, ZOOM,
@@ -269,3 +270,55 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
   else h = ((r - g) / d + 4) * 60;
   return { h, s, l };
 }
+
+// ---------------------------------------------------------------------------
+// The one signal colour stays one signal
+// ---------------------------------------------------------------------------
+
+describe('saturated colour means exactly one thing', () => {
+  const css = readFileSync(
+    new URL('../src/app/styles.css', import.meta.url), 'utf8');
+
+  /**
+   * Every rule allowed to spend the alarm colour, and why.
+   *
+   * The visual direction reserves saturated colour for one meaning: something
+   * is wrong. That rule decays quietly — a severity label here, a "this one
+   * fired first" there — and each borrowing is individually reasonable while
+   * together they cost the palette its only signal. Three had crept in before
+   * this test existed: a honesty-panel severity tag, the device that operates
+   * first in a coordination study (which is the system WORKING), and a
+   * reliability index moving the wrong way under a trade-off the reader chose.
+   */
+  const ALLOWED = [
+    ".map-label[data-tone='alarm']",   // a bus outside its limits
+    '.stat--alarm',                    // the violation counts in the header
+    '.kv dd.is-alarm',                 // a quantity in violation
+    '.inspect__alarm',                 // the inspector's alarm box
+    '.tcc__bad',                       // protection that does not coordinate
+  ];
+
+  it('is used only where something is actually wrong', () => {
+    const offenders: string[] = [];
+    // Walk rule by rule: selector text up to the brace, body after it.
+    const rules = css.split('}');
+    for (const rule of rules) {
+      const brace = rule.indexOf('{');
+      if (brace < 0) continue;
+      const selector = rule.slice(0, brace).replace(/\/\*[\s\S]*?\*\//g, '').trim();
+      const body = rule.slice(brace + 1);
+      if (!/var\(--alarm\b/.test(body)) continue;
+      if (ALLOWED.some((a) => selector.includes(a))) continue;
+      // The palette definition itself, and the class that IS the definition.
+      if (selector === ':root') continue;
+      offenders.push(selector.replace(/\s+/g, ' '));
+    }
+    expect(offenders, 'these spend the alarm colour on something else').toEqual([]);
+  });
+
+  it('keeps the allowlist honest by actually matching something', () => {
+    for (const a of ALLOWED) {
+      expect(css.includes(a), `${a} is no longer in the stylesheet`).toBe(true);
+    }
+  });
+});
