@@ -448,6 +448,32 @@ button, select, input {
 .seg__btn:last-of-type { border-right-width: 1px; }
 .seg__btn[aria-pressed='true'] { background: var(--ink); color: var(--ground); }
 
+/* A paragraph the reader can ask for. The summary is phrased as the question
+   it answers, and marked the way a term is marked, because it is the same
+   promise: there is more here if you want it. */
+.more {
+  margin-top: 8px;
+  border-top: var(--rule);
+  padding-top: 7px;
+}
+.more > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  color: var(--ink-muted);
+  border-bottom: 1px dotted var(--ink-faint);
+  display: inline-block;
+  padding-bottom: 1px;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before {
+  content: '+ ';
+  font-weight: 600;
+}
+.more[open] > summary::before { content: '\2212 '; }
+.more > summary:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.more__body > .note:first-child { margin-top: 6px; }
+
 /* --------------------------------------------------------------------- */
 /* Time scrubber                                                          */
 /* --------------------------------------------------------------------- */

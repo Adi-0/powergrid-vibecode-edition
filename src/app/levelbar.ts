@@ -212,6 +212,23 @@ export class LevelBar {
    * They live at the system level because that is where the shape of the day
    * is on screen — the scrubber below is the load factor, drawn.
    */
+  /**
+   * A paragraph the reader can ask for.
+   *
+   * INFORMATION IS NOT FREE BECAUSE IT IS TRUE. Every level opened with
+   * everything it had to say, so arriving anywhere meant reading three
+   * paragraphs before looking at the drawing — and the drawing is the thing
+   * that was supposed to be doing the explaining. The first line stays; the
+   * rest is one click away, phrased as the question it answers so the click is
+   * worth making.
+   */
+  private more(summary: string, body: string): string {
+    return (
+      `<details class="more"><summary>${summary}</summary>` +
+      `<div class="more__body">${body}</div></details>`
+    );
+  }
+
   private factorsSection(): string {
     const f = this.factors;
     if (!f) return '';
@@ -219,9 +236,9 @@ export class LevelBar {
       `<div class="level__factor"><span class="level__factor-label">${label}</span>` +
       `<span class="level__factor-value num">${value}</span>` +
       `<span class="level__factor-note">${note}</span></div>`;
-    return (
+    return this.more(
+      'The four ratios a system is planned with',
       `<div class="level__factors">` +
-      `<h4 class="inspect__heading">The four ratios it is planned with</h4>` +
       `<div class="level__factor-grid">` +
       // Both numbers of each ratio, in one line rather than two: the division
       // has to stay visible — it is the whole point of showing a ratio — but
@@ -458,13 +475,15 @@ export class LevelBar {
       body.innerHTML =
         `<p class="note">Gas burns in a turbine. Its exhaust is still hot ` +
         `enough to boil water, so a second turbine runs on the steam. Together ` +
-        `they get about half the energy in the fuel out as electricity, which ` +
-        `is as good as burning anything gets.</p>` +
-        `<p class="note">Stream widths are the energy in them. The widest is ` +
-        `the fuel going in. Follow it: most comes back out as the two exhaust ` +
-        `streams, and what the steam turbine cannot use leaves through the ` +
-        `condenser. That last one is the half no engine can keep.</p>` +
-        `<p class="note">Select any piece of it for the working.</p>`;
+        `they get about half the energy in the fuel out as electricity.</p>` +
+        this.more('How to read the streams',
+          `<p class="note">Stream widths are the energy in them. The widest ` +
+          `is the fuel going in. Follow it: most comes back out as the two ` +
+          `exhaust streams, and what the steam turbine cannot use leaves ` +
+          `through the condenser. That last one is the half no engine can ` +
+          `keep — and half is as good as burning anything gets.</p>` +
+          `<p class="note">Point at any piece of it for what it is doing; ` +
+          `select it for the working.</p>`);
       return;
     }
 
@@ -476,10 +495,11 @@ export class LevelBar {
         `<p class="note">Three windings 120° apart in the stator, and a rotor ` +
         `turning inside them at 3,600 rev/min — two poles at 60 Hz, so the ` +
         `rotor IS the frequency.</p>` +
-        `<p class="note">The rotor is drawn at the ` +
-        `${term('load-angle', 'load angle')} it is actually running at: how far ` +
-        `the torque on its shaft has dragged it ahead of the voltage at its ` +
-        `terminals. Open the fuel valve and that angle grows.</p>`;
+        this.more('Why the rotor is drawn on a slant',
+          `<p class="note">It is at the ` +
+          `${term('load-angle', 'load angle')} it is actually running at: how ` +
+          `far the torque on its shaft has dragged it ahead of the voltage at ` +
+          `its terminals. Open the fuel valve and that angle grows.</p>`);
       return;
     }
 
@@ -489,12 +509,12 @@ export class LevelBar {
       sub.textContent = 'one corner of the network';
       body.innerHTML =
         `<p class="note">Closer in, the network stops being a shape and becomes ` +
-        `circuits between places. Each line here is a real circuit; parallel ` +
-        `ones are drawn side by side because that is how they are built and how ` +
-        `they share the load.</p>` +
-        `<p class="note">Click any circuit to see what it is carrying, and to ` +
-        `take it out of service. The flows redistribute through what is left, ` +
-        `by an actual re-solve.</p>` +
+        `circuits between places. Each line here is a real circuit.</p>` +
+        this.more('What you can do to it',
+          `<p class="note">Parallel circuits are drawn side by side because ` +
+          `that is how they are built and how they share the load. Click any ` +
+          `one to see what it is carrying, and to take it out of service: the ` +
+          `flows redistribute through what is left, by an actual re-solve.</p>`) +
         (this.tripped > 0
           ? `<div class="inspect__actions">` +
             `<button class="btn" data-role="restore">Put ` +

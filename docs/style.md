@@ -219,6 +219,20 @@ worth keeping when there is room for one.
 
 What makes *Least* quiet rather than lossy is the rule below.
 
+## A level leads with one line and opens up when asked
+
+Information is not free because it is true. Every level used to open with
+everything it had to say, so arriving anywhere meant reading three paragraphs
+before looking at the drawing — and the drawing is the thing that was supposed
+to be doing the explaining.
+
+The first line stays. The rest sits behind a disclosure whose summary is
+phrased as the question it answers — *How to read the streams*, *Why the rotor
+is drawn on a slant*, *The four ratios a system is planned with* — so the click
+is worth making, and so a reader who does not need it is not made to read past
+it. The summary is marked the way a glossary term is marked, because it is the
+same promise: there is more here if you want it.
+
 ## The legend is the filter
 
 A key that explains an encoding is the obvious place to ask for one part of it:
