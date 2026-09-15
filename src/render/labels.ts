@@ -77,6 +77,9 @@ export interface InkField {
   cols: number;
   rows: number;
   cell: number;
+  /** The middle of the drawing, in screen pixels: where the ink actually is. */
+  centreX: number;
+  centreY: number;
 }
 
 const INK_CELL_PX = 12;
@@ -117,12 +120,18 @@ export function inkField(
   const pa = new Vector2();
   const pb = new Vector2();
   const w = new Vector3();
+  let sumX = 0;
+  let sumY = 0;
+  let sumW = 0;
 
   const put = (x: number, y: number, weight: number): void => {
     const cx = (x / cell) | 0;
     const cy = (y / cell) | 0;
     if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return;
     cells[cy * cols + cx] += weight;
+    sumX += x * weight;
+    sumY += y * weight;
+    sumW += weight;
   };
 
   for (const seg of segments) {
@@ -142,7 +151,43 @@ export function inkField(
       put(pa.x + dx * t, pa.y + dy * t, weight);
     }
   }
-  return { cells, cols, rows, cell };
+  return {
+    cells, cols, rows, cell,
+    centreX: sumW > 0 ? sumX / sumW : widthPx / 2,
+    centreY: sumW > 0 ? sumY / sumW : heightPx / 2,
+  };
+}
+
+/**
+ * The candidates, ordered so that a label goes outward only as a last resort.
+ *
+ *   1. beside its subject, on the side facing the drawing;
+ *   2. at arm's length on that side, on a leader;
+ *   3. beside its subject on the outward side;
+ *   4. at arm's length outward.
+ *
+ * Within each group the most inward-facing direction comes first, so ties in
+ * ink break towards the middle of the drawing rather than away from it.
+ */
+function inwardFirst(
+  tries: readonly Placement[], at: Vector2, ink: InkField
+): Placement[][] {
+  const dx = ink.centreX - at.x;
+  const dy = ink.centreY - at.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return [[...tries]];
+  const ux = dx / len;
+  const uy = dy / len;
+  const facing = (p: Placement): number =>
+    (p[0] * ux + p[1] * uy) / Math.hypot(p[0], p[1]);
+  const byFacing = (a: Placement, b: Placement): number => facing(b) - facing(a);
+  const inward = tries.filter((p) => facing(p) > 0.05).sort(byFacing);
+  const outward = tries.filter((p) => facing(p) <= 0.05).sort(byFacing);
+  const inwardFar = inward.map(([x, y]) => [x, y, 2.6] as Placement);
+  // Three groups, tried in order. There is deliberately no fourth: a name that
+  // fits nowhere inward and nowhere beside its point is dropped rather than
+  // held out on a leader over open sea, where it reads as the name of the sea.
+  return [inward, inwardFar, outward];
 }
 
 /** How much ink a rectangle would be written over. */
@@ -175,10 +220,21 @@ const overlaps = (a: Rect, b: Rect, pad: number): boolean =>
   a.x - pad < b.x + b.w && a.x + a.w + pad > b.x &&
   a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
 
-/** Candidate placements, tried in order: up-right, up-left, down-right, ... */
-const PLACEMENTS: [number, number][] = [
-  [1, -1], [-1, -1], [1, 1], [-1, 1], [0, -1.6], [0, 1.6],
+/**
+ * Candidate placements: which way from its subject a label may sit, and how
+ * far, as a multiple of the standard offset.
+ *
+ * The first six are the ordinary ring, tried in the conventional order —
+ * up-right, up-left, down-right, and so on. The rest are the same directions
+ * at arm's length, tried only when the near ring is full: a name that cannot
+ * sit beside its point is better held out on a leader than dropped, and better
+ * held out over the subject than off the edge of it.
+ */
+type Placement = readonly [number, number, number];
+const NEAR: Placement[] = [
+  [1, -1, 1], [-1, -1, 1], [1, 1, 1], [-1, 1, 1], [0, -1.6, 1], [0, 1.6, 1],
 ];
+const PLACEMENTS: Placement[] = NEAR;
 
 /**
  * The same candidates, restricted to one side.
@@ -195,11 +251,11 @@ const PLACEMENTS: [number, number][] = [
  * gets placed rather than dropped — losing the current and the volts dropped
  * along a wire to keep a tidy rhythm would be a bad trade.
  */
-const ABOVE: [number, number][] = [
-  [1, -1], [-1, -1], [0, -1.6], [1, 1], [-1, 1], [0, 1.6],
+const ABOVE: Placement[] = [
+  [1, -1, 1], [-1, -1, 1], [0, -1.6, 1], [1, 1, 1], [-1, 1, 1], [0, 1.6, 1],
 ];
-const BELOW: [number, number][] = [
-  [1, 1], [-1, 1], [0, 1.6], [1, -1], [-1, -1], [0, -1.6],
+const BELOW: Placement[] = [
+  [1, 1, 1], [-1, 1, 1], [0, 1.6, 1], [1, -1, 1], [-1, -1, 1], [0, -1.6, 1],
 ];
 
 export class LabelLayer {
@@ -278,25 +334,50 @@ export class LabelLayer {
       }
       const size = this.measure(spec);
       let put: PlacedLabel | null = null;
+      // A LABEL GOES ON THE SIDE OF ITS SUBJECT THAT FACES THE DRAWING.
+      //
+      // Preferring the least ink, on its own, sends a caption to the emptiest
+      // paper within reach — and the emptiest paper is off the edge of the
+      // subject. On a map of California that meant San Diego, Imperial Valley
+      // and Moss Landing captioned out at sea or over Mexico, each on a
+      // hairline leader, reading as names for somewhere else entirely. Eleven
+      // of thirty-three labels had their site inside the state and their own
+      // text outside it.
+      //
+      // Cartographers have always pushed a coastal name inland. The inward
+      // direction here is simply towards the middle of the ink, which every
+      // scene has without knowing anything about geography.
       const tries = spec.side === 'above' ? ABOVE
         : spec.side === 'below' ? BELOW : PLACEMENTS;
+      const groups = ink ? inwardFirst(tries, px, ink) : [[...tries]];
       // The FIRST free position is not the best one. Candidates are ordered by
       // where a caption conventionally sits, and that order is the tie-break;
       // between them, the one written over the least drawing wins.
-      let bestInk = Infinity;
-      for (const [sx, sy] of tries) {
-        const off = spec.offsetPx ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
-        const x = px.x + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
-        const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
-        const rect = { x, y, w: size.w, h: size.h };
-        if (placed.some((p) => overlaps(rect, p, LAYOUT.labelCollisionPaddingPx))) continue;
-        if (blocked.some((b) => overlaps(rect, b, 2))) continue;
-        const over = ink ? inkUnder(ink, rect) : 0;
-        if (over < bestInk) {
-          bestInk = over;
-          put = { spec, x, y, w: size.w, h: size.h, anchorX: px.x, anchorY: px.y };
+      // THE GROUP DECIDES THE SIDE; THE INK DECIDES THE SPOT WITHIN IT.
+      //
+      // Minimising ink across all candidates at once looks like the same thing
+      // and is not: the emptiest paper within reach of a coastal site is the
+      // sea, so least-ink always won there and the name went out to sea. Each
+      // group is exhausted before the next is considered, and inside a group
+      // the cleanest placement wins.
+      for (const group of groups) {
+        let bestInk = Infinity;
+        for (const [sx, sy, scale] of group) {
+          const base = spec.offsetPx ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
+          const off = [base[0] * scale, base[1] * scale];
+          const x = px.x + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
+          const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
+          const rect = { x, y, w: size.w, h: size.h };
+          if (placed.some((p) => overlaps(rect, p, LAYOUT.labelCollisionPaddingPx))) continue;
+          if (blocked.some((b) => overlaps(rect, b, 2))) continue;
+          const over = ink ? inkUnder(ink, rect) : 0;
+          if (over < bestInk) {
+            bestInk = over;
+            put = { spec, x, y, w: size.w, h: size.h, anchorX: px.x, anchorY: px.y };
+          }
+          if (over === 0) break;
         }
-        if (over === 0) break;
+        if (put) break;
       }
       // A value is only spoken for once it has actually been PLACED: a label
       // that collided and was dropped must not take its number down with it.

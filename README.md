@@ -86,5 +86,6 @@ node tools/audit.mjs      # every view: segments, labels, scale, breadcrumb, pan
 node tools/navigate.mjs   # all 42 journeys between levels arrive at the same size
 node tools/guide-walk.mjs # the fourteen-step path lands where it says
 node tools/states.mjs     # a tripped line, a fault, an overload: where colour earns its place
+node tools/label-geography.mjs   # every name on the map is on the map
 node tools/crop.mjs substation 1 600 180 560 400 yard   # one detail, at print scale
 ```

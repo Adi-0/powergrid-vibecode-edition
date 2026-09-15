@@ -559,6 +559,7 @@ tools live in `tools/`:
 | `navigate.mjs` | Does getting there work? All forty-two journeys between the seven levels, failing if a destination is reached at a different scale depending on where you started |
 | `guide-walk.mjs` | Does the fourteen-step path land where it says? |
 | `crop.mjs` | Does it hold up at print scale? One view at three times device scale, cropped |
+| `label-geography.mjs` | Are the map's names on the map? Counts labels whose site is inside California and whose text is not |
 | `states.mjs` | Does it hold up when something is wrong? A tripped backbone, a fault on a busbar, an overloaded pad-mount, a motor starting |
 
 ### What the second pass found
