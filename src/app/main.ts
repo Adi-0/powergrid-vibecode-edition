@@ -12,7 +12,7 @@
  */
 
 import './styles.css';
-import { Vector3 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import { AppState, AppSnapshot } from './state.js';
 import { Viewport, FrameContent } from './viewport.js';
 import { Legend } from './legend.js';
@@ -148,6 +148,50 @@ function openMath(kind: Parameters<typeof derivationsFor>[0], id: string): void 
   mathTarget = { kind, id };
   stage.classList.add('has-math');
   math.show(derivations);
+  keepSelectionVisible();
+}
+
+/**
+ * Keep what the reader picked out from under the panel that explains it.
+ *
+ * Opening the working on a 500 kV circuit put a four-hundred-pixel panel and a
+ * six-hundred-pixel panel over the map, and the circuit both of them were about
+ * was behind them. Nothing was broken and the effect was worse than if
+ * something had been: the reader is reading a derivation of a flow on a line
+ * they can no longer see, which is most of the reason to have drawn it.
+ *
+ * The camera pans by the smallest amount that brings the subject back into the
+ * paper that is still showing — never zooms, because the scale is the reader's,
+ * and never moves at all if the subject is already clear.
+ */
+function keepSelectionVisible(): void {
+  const sel = state.current.selection;
+  if (!sel.id || !lastFrame) return;
+  const target = lastFrame.picks.find((p) => p.id === sel.id);
+  if (!target) return;
+
+  const at = viewport.camera.worldToScreen(
+    target.worldB ? target.world.clone().lerp(target.worldB, 0.5) : target.world,
+    new Vector2());
+  const { width, height } = viewport.camera.viewport;
+  const margin = 40;
+  const free = {
+    x0: 300 + margin,
+    x1: width - rightPanelInsetPx() - margin,
+    y0: 52 + margin,
+    y1: height - profileInsetPx() - margin,
+  };
+  if (free.x1 <= free.x0 || free.y1 <= free.y0) return;
+
+  const dx = at.x < free.x0 ? free.x0 - at.x : at.x > free.x1 ? free.x1 - at.x : 0;
+  const dy = at.y < free.y0 ? free.y0 - at.y : at.y > free.y1 ? free.y1 - at.y : 0;
+  if (dx === 0 && dy === 0) return;
+
+  const b = viewport.camera.groundBasis();
+  viewport.flyTo(
+    viewport.camera.target.clone().add(new Vector3(
+      b.rightX * -dx + b.downX * -dy, 0, b.rightZ * -dx + b.downZ * -dy)),
+    viewport.camera.metresPerPixel, 420);
 }
 
 /**
@@ -399,20 +443,24 @@ function refreshForScene(): void {
 /**
  * How much of the right-hand side is covered by a panel, in pixels.
  *
- * The panels are all anchored to the same edge and overlap each other, so the
- * inset is the widest one that is actually on screen, not their sum.
+ * Measured from the LEFTMOST edge any of them reaches, not from the widest of
+ * them. Most of the time they are anchored to the same edge and overlap, and
+ * the two are the same number — but opening the working moves the inspector
+ * left to sit beside the math panel, and then the widest single panel
+ * understates the covered strip by the width of the other one.
  */
 function rightPanelInsetPx(without: string[] = []): number {
-  let widest = 0;
+  const width = viewport.camera.viewport.width;
+  let leftmost = width;
   for (const el of document.querySelectorAll<HTMLElement>(
     '.panel--inspect, .panel--tcc, .panel--solver, .panel--reliability, ' +
     '.panel--machine, .panel--math'
   )) {
     if (el.style.display === 'none' || el.offsetParent === null) continue;
     if (without.some((c) => el.classList.contains(c))) continue;
-    widest = Math.max(widest, el.getBoundingClientRect().width);
+    leftmost = Math.min(leftmost, el.getBoundingClientRect().left);
   }
-  return widest > 0 ? widest + 18 : 0;
+  return leftmost < width ? width - leftmost + 18 : 0;
 }
 
 /** How much of the bottom of the stage the profile plot is covering. */
@@ -450,10 +498,18 @@ function insetsOnArrival(id: LevelId): { bottom: number; right: number } {
 
 // --- state plumbing -------------------------------------------------------
 
+let lastSelectionId: string | null = null;
+
 state.subscribe((snap) => {
   geometry = buildSystemGeometry(snap.solved);
   renderStats();
   inspector.render(snap, geometry);
+  // A new selection opens the inspector over the right-hand side of the map,
+  // which is where the reader may well have just clicked.
+  if (snap.selection.id !== lastSelectionId) {
+    lastSelectionId = snap.selection.id;
+    if (snap.selection.id) requestAnimationFrame(() => keepSelectionVisible());
+  }
   profile.render(snap.solved, snap.selection.id, snap.motor?.before ?? null);
   if (machinePanel.isOpen) machinePanel.render(snap.solved, lastFrame?.machine);
   if (solver.isOpen) solver.render(snap.solved);
