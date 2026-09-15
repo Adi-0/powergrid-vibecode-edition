@@ -751,11 +751,12 @@ button, select, input {
 }
 
 .panel--level {
-  /* Takes what it needs, up to two thirds, and never less than a third: the
-     legend under it must not be squeezed out of existence by a long caption,
-     and a long caption must not be squeezed out by the legend. */
-  flex: 0 1 auto;
-  max-height: 62%;
+  /* Takes what it needs, up to two thirds of the column. It does not shrink
+     below that: these are the controls for the level you are on, and half a
+     row of them cut off by the key underneath is the worse of the two
+     truncations. The legend, which is reference and scrolls, takes the rest. */
+  flex: 0 0 auto;
+  max-height: 66%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -773,7 +774,11 @@ button, select, input {
   margin-top: 9px;
 }
 .level__slider input[type='range'] {
-  flex: 1;
+  /* Shrinkable to nothing. When the panel gains a scrollbar the row loses
+     fifteen pixels, and a track that cannot give them up pushes the button at
+     the far end of it off the edge of the panel. */
+  flex: 1 1 0;
+  min-width: 0;
   -webkit-appearance: none;
   appearance: none;
   height: 16px;

@@ -209,16 +209,19 @@ export class LevelBar {
       `<div class="level__factors">` +
       `<h4 class="inspect__heading">The four ratios it is planned with</h4>` +
       `<div class="level__factor-grid">` +
+      // Both numbers of each ratio, in one line rather than two: the division
+      // has to stay visible — it is the whole point of showing a ratio — but
+      // the words around it were costing four lines of a panel that shares its
+      // column with the legend.
       cell(term('load-factor', 'Load factor'), f.loadFactor.toFixed(3),
-        `${f.averageDemandGW.toFixed(1)} GW average against ` +
-        `${f.peakDemandGW.toFixed(1)} GW peak`) +
+        `${f.averageDemandGW.toFixed(1)} of ${f.peakDemandGW.toFixed(1)} GW peak`) +
       cell(term('capacity-factor', 'Capacity factor'), f.fleetCapacityFactor.toFixed(3),
-        'the whole fleet, over this day') +
+        'the fleet, over this day') +
       cell(term('demand-factor', 'Demand factor'), f.demandFactor.toFixed(3),
-        `${(f.feederPeakKW / 1000).toFixed(1)} MW peak against ` +
-        `${(f.connectedKW / 1000).toFixed(1)} MW connected, on the feeder`) +
+        `${(f.feederPeakKW / 1000).toFixed(1)} of ` +
+        `${(f.connectedKW / 1000).toFixed(1)} MW connected`) +
       cell(term('coincidence-factor', 'Coincidence'), f.coincidenceFactor.toFixed(3),
-        `${f.customers.toLocaleString()} customers; diversity factor ` +
+        `${f.customers.toLocaleString()} customers, D = ` +
         `${f.diversityFactor.toFixed(2)}`) +
       `</div>` +
       `<p class="note">All four say how far apart the worst moment and the ` +
