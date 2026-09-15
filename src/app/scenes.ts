@@ -246,6 +246,8 @@ export interface ComposeResult {
     /** Nominal voltages, kV, whose class appears in this frame. */
     kV: number[];
   };
+  /** Where a fault mark was drawn, if one was, so the camera can keep it. */
+  faultAt?: Vector3;
 }
 
 /**
@@ -270,6 +272,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // follows the same bounds tests the drawing does.
   let floorScale = Infinity;
   let drewDots = false;
+  let faultAt: Vector3 | undefined;
 
   /**
    * Take a scene's labels at the scene's own strength.
@@ -372,6 +375,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     segments.push(...r.segments);
     addLabels(r.labels, aFeeder);
     picks.push(...r.picks);
+    if (r.faultAt) faultAt = r.faultAt;
   }
 
   if (aSub > 0) {
@@ -381,10 +385,12 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       hoveredId: input.hoveredId,
       showProtection: input.showProtection,
       opacity: aSub,
+      faultBusId: input.faultBusId ?? null,
     });
     segments.push(...r.segments);
     addLabels(r.labels, aSub);
     picks.push(...r.picks);
+    if (r.faultAt) faultAt = r.faultAt;
   }
 
   const aService = include('service', serviceBounds());
@@ -443,6 +449,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       machineMarks: aSystemDrawn, dots: drewDots, sizes: aSystemDrawn,
       kV: [...kV],
     },
+    ...(faultAt ? { faultAt } : {}),
   };
 }
 

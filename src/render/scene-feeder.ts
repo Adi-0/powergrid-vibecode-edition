@@ -231,6 +231,8 @@ export interface FeederDrawResult {
   segments: LineSegment[];
   labels: LabelSpec[];
   picks: PickTarget[];
+  /** Where the fault mark was drawn, if one was, so the camera can keep it. */
+  faultAt?: Vector3;
 }
 
 interface Mark { seg: LineSegment; depth: number; haloPx?: number }
@@ -245,6 +247,7 @@ export function drawFeeder(
 ): FeederDrawResult {
   const alpha = options.opacity ?? 1;
   const marks: Mark[] = [];
+  let faultAt: Vector3 | undefined;
   const labels: LabelSpec[] = [];
   const picks: PickTarget[] = [];
   const scratch: LineSegment[] = [];
@@ -401,6 +404,7 @@ export function drawFeeder(
     // on the drawing changes, because the power flow still shows the system as
     // it was in the cycle before.
     if (options.faultBusId === busId) {
+      faultAt = top.clone();
       const r = 13;
       for (const [dx, dy] of [[-1, -1], [-1, 1]] as [number, number][]) {
         placeSymbol([[[dx * 1, dy * 1], [-dx * 1, -dy * 1]]], {
@@ -550,7 +554,7 @@ export function drawFeeder(
     }
     segments.push(m.seg);
   }
-  return { segments, labels, picks };
+  return { segments, labels, picks, ...(faultAt ? { faultAt } : {}) };
 }
 
 /**

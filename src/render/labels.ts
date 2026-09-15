@@ -169,7 +169,7 @@ export interface PlacedLabel {
   anchorY: number;
 }
 
-interface Rect { x: number; y: number; w: number; h: number }
+export interface Rect { x: number; y: number; w: number; h: number }
 
 const overlaps = (a: Rect, b: Rect, pad: number): boolean =>
   a.x - pad < b.x + b.w && a.x + a.w + pad > b.x &&
@@ -225,8 +225,20 @@ export class LabelLayer {
     parent.appendChild(this.element);
   }
 
-  /** Project, rank, place what fits, hide the rest. */
-  layout(camera: IsoCamera, specs: readonly LabelSpec[], ink?: InkField): void {
+  /**
+   * Project, rank, place what fits, hide the rest.
+   *
+   * `blocked` is the rectangles the panels are covering. A label placed under
+   * one is not a faint label or a clipped label, it is an absent label that
+   * still took the space some other label could have used — and the reader sees
+   * a leader line coming out from under a panel and pointing at nothing.
+   */
+  layout(
+    camera: IsoCamera,
+    specs: readonly LabelSpec[],
+    ink?: InkField,
+    blocked: readonly Rect[] = []
+  ): void {
     const placed: PlacedLabel[] = [];
     const seen = new Set<string>();
 
@@ -278,6 +290,7 @@ export class LabelLayer {
         const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
         const rect = { x, y, w: size.w, h: size.h };
         if (placed.some((p) => overlaps(rect, p, LAYOUT.labelCollisionPaddingPx))) continue;
+        if (blocked.some((b) => overlaps(rect, b, 2))) continue;
         const over = ink ? inkUnder(ink, rect) : 0;
         if (over < bestInk) {
           bestInk = over;

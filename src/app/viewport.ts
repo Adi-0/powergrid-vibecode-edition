@@ -10,7 +10,7 @@
 import { Scene, WebGLRenderer, Color, Vector2, Vector3 } from 'three';
 import { IsoCamera } from '../render/iso.js';
 import { LineBatch, LineSegment } from '../render/line-batch.js';
-import { LabelLayer, LabelSpec, inkField } from '../render/labels.js';
+import { LabelLayer, LabelSpec, inkField, Rect } from '../render/labels.js';
 import { INK, ZOOM, levelForScale, LevelId } from '../render/style.js';
 import { PickTarget } from '../render/scene-system.js';
 
@@ -40,6 +40,12 @@ export interface ViewportEvents {
    * for the previous position.
    */
   onContent?: () => void;
+  /**
+   * Rectangles the label layout must not place a caption under: the panels
+   * lying over the canvas. Asked for on every rebuild, because which panels are
+   * open changes with what the reader is doing.
+   */
+  obstacles?: () => Rect[];
 }
 
 const CAPACITY = 24000;
@@ -130,7 +136,8 @@ export class Viewport {
       // for, and it costs one pass over the frame that was just assembled.
       this.labels.layout(this.camera, content.labels, inkField(
         this.camera, content.segments,
-        this.camera.viewport.width, this.camera.viewport.height));
+        this.camera.viewport.width, this.camera.viewport.height),
+        this.events.obstacles?.() ?? []);
       this.picks = content.picks;
       this.needsBuild = false;
       this.needsDraw = true;

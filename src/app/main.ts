@@ -101,7 +101,37 @@ const viewport: Viewport = new Viewport(stage, {
   onCameraChange: (mpp, level) => onCamera(mpp, level),
   // The contextual panels ask "what is on screen", which only the frame that
   // was just built can answer.
-  onContent: () => refreshForScene(),
+  /**
+   * Where the panels are, so no caption is written underneath one.
+   *
+   * Measured from the DOM rather than declared, because the panels size
+   * themselves to their content and to the window, and a table of their
+   * rectangles would be wrong by the second time somebody edited a caption.
+   */
+  obstacles: () => {
+    const stageBox = stage.getBoundingClientRect();
+    const out: { x: number; y: number; w: number; h: number }[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('.panel, .column')) {
+      if (el.offsetParent === null) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2) continue;
+      out.push({
+        x: b.left - stageBox.left, y: b.top - stageBox.top,
+        w: b.width, h: b.height,
+      });
+    }
+    return out;
+  },
+  onContent: () => {
+    refreshForScene();
+    // A pan that has been asked for has to wait for the frame that knows where
+    // to pan TO: the fault mark's position is reported by the drawing, and the
+    // drawing has not been rebuilt at the moment the fault is set.
+    if (pendingKeepVisible) {
+      pendingKeepVisible = false;
+      keepSelectionVisible();
+    }
+  },
 });
 
 // --- panels ---------------------------------------------------------------
@@ -148,7 +178,8 @@ function openMath(kind: Parameters<typeof derivationsFor>[0], id: string): void 
   mathTarget = { kind, id };
   stage.classList.add('has-math');
   math.show(derivations);
-  keepSelectionVisible();
+  pendingKeepVisible = true;
+  viewport.invalidate();
 }
 
 /**
@@ -166,13 +197,17 @@ function openMath(kind: Parameters<typeof derivationsFor>[0], id: string): void 
  */
 function keepSelectionVisible(): void {
   const sel = state.current.selection;
-  if (!sel.id || !lastFrame) return;
-  const target = lastFrame.picks.find((p) => p.id === sel.id);
-  if (!target) return;
+  if (!lastFrame) return;
+  const target = sel.id ? lastFrame.picks.find((p) => p.id === sel.id) : undefined;
+  // With nothing selected, the thing the reader is looking at is whatever they
+  // just did: a fault is the only perturbation that puts a mark on the drawing
+  // and opens a panel over it at the same time.
+  const world = target
+    ? (target.worldB ? target.world.clone().lerp(target.worldB, 0.5) : target.world)
+    : lastFrame.faultAt;
+  if (!world) return;
 
-  const at = viewport.camera.worldToScreen(
-    target.worldB ? target.world.clone().lerp(target.worldB, 0.5) : target.world,
-    new Vector2());
+  const at = viewport.camera.worldToScreen(world, new Vector2());
   const { width, height } = viewport.camera.viewport;
   const margin = 40;
   const free = {
@@ -499,6 +534,8 @@ function insetsOnArrival(id: LevelId): { bottom: number; right: number } {
 // --- state plumbing -------------------------------------------------------
 
 let lastSelectionId: string | null = null;
+/** Set when something has changed the drawing and the camera should follow. */
+let pendingKeepVisible = false;
 
 state.subscribe((snap) => {
   geometry = buildSystemGeometry(snap.solved);
@@ -508,7 +545,7 @@ state.subscribe((snap) => {
   // which is where the reader may well have just clicked.
   if (snap.selection.id !== lastSelectionId) {
     lastSelectionId = snap.selection.id;
-    if (snap.selection.id) requestAnimationFrame(() => keepSelectionVisible());
+    if (snap.selection.id) pendingKeepVisible = true;
   }
   profile.render(snap.solved, snap.selection.id, snap.motor?.before ?? null);
   if (machinePanel.isOpen) machinePanel.render(snap.solved, lastFrame?.machine);
@@ -613,6 +650,9 @@ function renderTcc(snap: AppSnapshot): void {
   }
   if (want) {
     tcc.render(snap.fault, cherryLaneProtection(feederFaultLevels(snap.solved)));
+    // The coordination curves open over the right-hand side of the page, which
+    // is where the fault mark may well be.
+    pendingKeepVisible = true;
   }
 }
 

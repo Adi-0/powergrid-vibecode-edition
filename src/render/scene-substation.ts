@@ -417,12 +417,23 @@ export interface SubstationDrawOptions {
   /** How strongly to draw the whole view, 0 to 1, for the level cross-fade. */
   opacity?: number;
   showFlow?: boolean;
+  /**
+   * A bus the reader has put a fault on.
+   *
+   * The feeder has always marked its faults and this view did not, so putting
+   * a three-phase fault on the 12.47 kV busbar produced a panel full of fault
+   * current beside a drawing with nothing wrong in it. The one place the
+   * reader is looking for the fault is the bar it is on.
+   */
+  faultBusId?: string | null;
 }
 
 export interface SubstationDrawResult {
   segments: LineSegment[];
   labels: LabelSpec[];
   picks: PickTarget[];
+  /** Where the fault mark was drawn, if one was, so the camera can keep it. */
+  faultAt?: Vector3;
 }
 
 interface Mark { seg: LineSegment; depth: number; haloPx?: number }
@@ -549,6 +560,38 @@ export function drawSubstation(
       text: 'Eden Vale substation', value: 'single-line diagram',
       priority: 940, tone: 'muted',
     });
+  }
+
+  // --- the fault, if the reader has put one on a bus in this station -------
+  let faultAt: Vector3 | undefined;
+  if (options.faultBusId === HV_BUS || options.faultBusId === LV_BUS) {
+    const id = options.faultBusId === HV_BUS ? 'BUS115' : 'BUS12';
+    const e = elementById.get(id);
+    if (e) {
+      const [ea, eb] = busEnds(frame, e);
+      const at = ea.clone().lerp(eb, 0.5);
+      faultAt = at.clone();
+      // A cross, in the one colour this app uses for "something is wrong".
+      // Nothing else in the drawing changes: the power flow behind it is still
+      // the cycle before the fault, and the panel says so.
+      for (const [dx, dy] of [[-1, -1], [-1, 1]] as [number, number][]) {
+        placeSymbol([[[dx, dy], [-dx, -dy]]], {
+          x: at.x, y: at.y, z: at.z, sizePx: 15,
+          widthPx: 2.6, color: SIGNAL.alarm,
+        }, basis, scratch);
+      }
+      for (const seg of scratch) {
+        mark(seg, Number.MIN_SAFE_INTEGER + 10);
+      }
+      scratch.length = 0;
+      labels.push({
+        id: 'sub:fault',
+        world: at,
+        text: 'Fault here',
+        value: 'the drawing still shows the cycle before it',
+        priority: 9000, tone: 'alarm',
+      });
+    }
   }
 
   // --- the connections ----------------------------------------------------
@@ -780,7 +823,7 @@ export function drawSubstation(
     }
     segments.push(m.seg);
   }
-  return { segments, labels, picks };
+  return { segments, labels, picks, ...(faultAt ? { faultAt } : {}) };
 }
 
 /**
