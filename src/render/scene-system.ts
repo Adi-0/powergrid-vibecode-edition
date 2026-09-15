@@ -208,6 +208,14 @@ export interface SystemDrawOptions {
    * camera descends; at 1 it costs nothing.
    */
   opacity?: number;
+  /**
+   * The ground rectangle the camera can see, for culling.
+   *
+   * Zoomed in, most of the state is off the page, and drawing it anyway cost
+   * two and a half thousand line segments per frame and put labels on sites
+   * nobody can see. A circuit that does not come near the window is not drawn.
+   */
+  view?: { min: { x: number; z: number }; max: { x: number; z: number } } | null;
   /** Debug: draw only this voltage class. */
   onlyKV?: number | null;
   /** Debug: extra width added to every halo, px. */
@@ -294,12 +302,43 @@ export function drawSystem(
   const selected = options.selectedId ?? null;
   const hovered = options.hoveredId ?? null;
 
+  // Distance from the window's centre to the circuit, against the window's own
+  // reach plus a margin.
+  //
+  // A bounding-box test is not good enough here: a four-hundred-kilometre
+  // diagonal circuit from Oregon to Sacramento has a bounding box covering half
+  // the state, so it survives a box test over a window in San Jose that it does
+  // not come within a hundred kilometres of. The closest-approach test rejects
+  // it, and that is the difference between two thousand stray line segments and
+  // none.
+  const cull = options.view ? (() => {
+    const cx = (options.view.min.x + options.view.max.x) / 2;
+    const cz = (options.view.min.z + options.view.max.z) / 2;
+    const reach = 0.5 * Math.hypot(
+      options.view.max.x - options.view.min.x,
+      options.view.max.z - options.view.min.z) + 1500;
+    return { cx, cz, reach };
+  })() : null;
+
+  const offScreen = (a: Vector3, b: Vector3): boolean => {
+    if (!cull) return false;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz;
+    const t = len2 > 0
+      ? Math.max(0, Math.min(1, ((cull.cx - a.x) * dx + (cull.cz - a.z) * dz) / len2))
+      : 0;
+    return Math.hypot(a.x + t * dx - cull.cx, a.z + t * dz - cull.cz) > cull.reach;
+  };
+
+
   // --- 1. Coastline ---------------------------------------------------------
   // Pushed with an artificially large depth so it always sits behind
   // everything: it is a margin note, not part of the structure.
   for (let i = 0; i + 1 < geometry.outline.length; i++) {
     const a = geometry.outline[i];
     const b = geometry.outline[i + 1];
+    if (offScreen(a, b)) continue;
     marks.push({
       seg: { a: [a.x, 0, a.z], b: [b.x, 0, b.z], widthPx: 0.9, color: INK.inkGhost },
       depth: Number.MAX_SAFE_INTEGER,
@@ -320,6 +359,7 @@ export function drawSystem(
   const haloPad = options.haloPad ?? HALO_PAD_PX;
   for (const c of geometry.circuits) {
     if (options.onlyKV != null && Math.abs(c.kV - options.onlyKV) > 1) continue;
+    if (offScreen(c.a, c.b)) continue;
     const flowData = solved.branchById.get(c.branch.id);
     const cls = voltageClass(c.kV);
     const h = heightFor(c.kV);
@@ -432,6 +472,7 @@ export function drawSystem(
 
   // --- 5. Site symbols ------------------------------------------------------
   for (const node of geometry.sites.values()) {
+    if (offScreen(node.ground, node.ground)) continue;
     const kind = dominantKind(node);
     const anyAlarm = node.buses.some(
       (b) => solved.busById.get(b.id)?.voltageViolation != null

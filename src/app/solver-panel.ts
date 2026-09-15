@@ -120,18 +120,17 @@ function shape(solved: SolvedCase): string {
   return (
     `<section class="solver__section">` +
     `<h4 class="inspect__heading">The shape of the problem</h4>` +
-    `<p class="note">Every bus has four quantities — P, Q, |V| and θ — and two ` +
-    `of them are known. Which two is what the ${term('bus', 'bus')} type means.</p>` +
+    `<p class="note">Every ${term('bus', 'bus')} has four quantities — P, Q, ` +
+    `|V|, θ — and two of them are known. Which two is the bus type.</p>` +
     `<div class="solver__grid">` +
     cell(term('pq-bus', 'PQ buses'), String(nPQ), 'P and Q known; |V| and θ found') +
     cell(term('pv-bus', 'PV buses'), String(nPV), 'P and |V| known; Q and θ found') +
     cell(term('slack-bus', 'Slack'), '1', '|V| and θ fixed; takes what is left over') +
     cell('Unknowns', String(n), '2·n_PQ + n_PV — the size of the Jacobian') +
     `</div>` +
-    `<p class="note">The ${term('jacobian', 'Jacobian')} is ${n} × ${n}, which is ` +
-    `${(n * n).toLocaleString()} entries — of which ` +
-    `${((nonZeroFraction(solved) * 100).toFixed(2))} % are not zero, because a ` +
-    `bus is connected to three or four neighbours and to nothing else.</p>` +
+    `<p class="note">The ${term('jacobian', 'Jacobian')} is ${n} × ${n}. ` +
+    `${((nonZeroFraction(solved) * 100).toFixed(2))} % of it is not zero: a bus ` +
+    `touches three or four neighbours and nothing else.</p>` +
     `</section>`
   );
 }
@@ -334,18 +333,14 @@ function startingPoint(warm: PowerFlowResult, cold: PowerFlowResult | null): str
   }
   return (
     keys +
-    `<p class="note">The solve that produced what is on screen began from the ` +
-    `previous solution, which is what a control room does: the system moves a ` +
-    `little, and re-solving from where it was costs ` +
-    `${warm.iterations} iteration${warm.iterations === 1 ? '' : 's'} instead of ` +
-    `${cold.iterations}. The lighter curve is the identical case solved cold — ` +
-    `angles from a ${term('dc-power-flow', 'DC power flow')}, magnitudes flat — ` +
-    `and it is the one that shows the method working.</p>` +
-    `<p class="note">The two answers differ by at most ` +
-    `<span class="num">${dV.toExponential(1)}</span> pu in voltage magnitude and ` +
-    `<span class="num">${dA.toExponential(1)}</span>° in angle, which is the ` +
-    `tolerance and not the starting point. Where you begin decides how long it ` +
-    `takes, never where you arrive.</p>` +
+    `<p class="note">Starting from the previous second's answer costs ` +
+    `${warm.iterations} iteration${warm.iterations === 1 ? '' : 's'}. Starting ` +
+    `cold, from a ${term('dc-power-flow', 'DC power flow')}, costs ` +
+    `${cold.iterations} — and that is the curve that shows the method working.</p>` +
+    `<p class="note">The two answers differ by ` +
+    `<span class="num">${dV.toExponential(1)}</span> pu and ` +
+    `<span class="num">${dA.toExponential(1)}</span>°. Where you start decides ` +
+    `how long it takes, not where you arrive.</p>` +
     `</section>`
   );
 }
@@ -388,18 +383,14 @@ function iterationTable(pf: PowerFlowResult): string {
     `<span>#</span><span>max ΔP</span><span>max ΔQ</span><span>worst bus</span>` +
     `<span>order</span></div>` +
     rows +
-    `<p class="note">The last column is how much better each step is than the ` +
-    `one before, as a power. Near 2 means the error is being SQUARED at every ` +
-    `step — three correct digits become six, six become twelve. That is the ` +
-    `signature of ${term('newton-raphson', 'Newton–Raphson')}, and it is why a ` +
-    `power flow converges in four or five iterations rather than four or five ` +
-    `hundred.</p>` +
+    `<p class="note">Order near 2 means the error is squared each step: three ` +
+    `correct digits become six, six become twelve. That is why ` +
+    `${term('newton-raphson', 'Newton–Raphson')} takes five iterations and not ` +
+    `five hundred.</p>` +
     (pf.trace.some((r) => r.restarted !== undefined)
-      ? `<p class="note">Where the mismatch jumps back up, the PROBLEM changed: ` +
-        `a machine ran out of reactive capability, its bus stopped being a ` +
-        `voltage-controlled bus, and the set of unknowns is no longer the same ` +
-        `one. That is a physical transition, not the method failing — and it ` +
-        `is often what a voltage collapse is made of.</p>`
+      ? `<p class="note">Where the mismatch jumps, a machine ran out of ` +
+        `reactive capability and its bus changed type. The set of unknowns is ` +
+        `no longer the same one. Not a failure: a transition.</p>`
       : '') +
     `</section>`
   );
@@ -443,11 +434,9 @@ function sparsitySVG(solved: SolvedCase): string {
     `role="img" aria-label="Sparsity of the bus admittance matrix">` +
     `<rect x="0" y="0" width="${size}" height="${size}" fill="none" ` +
     `stroke="#C8C4BA" stroke-width="1"/>${dots.join('')}</svg>` +
-    `<p class="note">One dot for every non-zero entry, ${n} × ${n}. The diagonal ` +
-    `is solid because every bus has a self-admittance; everything off it is a ` +
-    `branch. The emptiness is the point: a bus is connected to three or four ` +
-    `neighbours and to nothing else, and that sparsity is the only reason a ` +
-    `power flow on a network of tens of thousands of buses is possible at all.</p>` +
+    `<p class="note">One dot per non-zero entry. The diagonal is every bus's ` +
+    `self-admittance; everything off it is a branch. The emptiness is why a ` +
+    `network of fifty thousand buses can be solved at all.</p>` +
     `</section>`
   );
 }
@@ -455,8 +444,7 @@ function sparsitySVG(solved: SolvedCase): string {
 function limits(pf: PowerFlowResult): string {
   if (pf.qLimited.length === 0) {
     return (
-      `<p class="note">No machine hit a reactive limit, so every PV bus held ` +
-      `the voltage it was asked to hold.</p>`
+      `<p class="note">No machine hit a reactive limit.</p>`
     );
   }
   return (
@@ -468,10 +456,9 @@ function limits(pf: PowerFlowResult): string {
       `<span class="num">${q.qMVAr.toFixed(0)} MVAr</span>` +
       `<span>${q.limit === 'qMax' ? 'at its maximum' : 'at its minimum'}</span>` +
       `</div>`).join('') +
-    `<p class="note">A machine that runs out of reactive capability stops ` +
-    `holding its voltage. The solver notices, converts the bus from PV to PQ ` +
-    `at the limit, and carries on — which changes the size of the problem ` +
-    `part-way through solving it.</p>` +
+    `<p class="note">Out of reactive capability, a machine stops holding its ` +
+    `voltage. The solver pins the bus at the limit and carries on, which ` +
+    `changes the problem part-way through.</p>` +
     `</section>`
   );
 }

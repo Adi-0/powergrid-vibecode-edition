@@ -200,10 +200,8 @@ export class LevelBar {
         `${f.customers.toLocaleString()} customers; diversity factor ` +
         `${f.diversityFactor.toFixed(2)}`) +
       `</div>` +
-      `<p class="note">Every one of them is a way of saying how far apart a ` +
-      `system’s worst moment and its ordinary hour are. The coincidence ` +
-      `factor is the one that pays for everything: it is why a 50 kVA ` +
-      `transformer serves twelve houses whose services could each pass 24 kW.</p>` +
+      `<p class="note">All four say how far apart the worst moment and the ` +
+      `ordinary hour are.</p>` +
       `<div class="inspect__actions">` +
       `<button class="btn btn--quiet" data-role="factors-working">Show the working</button>` +
       `</div></div>`
@@ -277,14 +275,9 @@ export class LevelBar {
       `<div class="level__motor">` +
       `<h4 class="inspect__heading">Start the ` +
       `${term('induction-motor', '200 hp motor')}</h4>` +
-      `<p class="note">At standstill an induction motor is a short-circuited ` +
-      `transformer: no rotation means no back-emf, and only the leakage ` +
-      `reactance limits the current. This one draws ` +
-      `<span class="num">${fullLoadAmps(m).toFixed(0)} A</span> running and ` +
-      `<span class="num">${lockedRotorAmps(m).toFixed(0)} A</span> at the ` +
-      `instant the contactor closes — at a power factor of ` +
-      `<span class="num">${m.startingPF.toFixed(2)}</span>, which is what ` +
-      `actually moves the voltage.</p>` +
+      `<p class="note"><span class="num">${fullLoadAmps(m).toFixed(0)} A</span> running, ` +
+      `<span class="num">${lockedRotorAmps(m).toFixed(0)} A</span> at the instant ` +
+      `it starts, at power factor <span class="num">${m.startingPF.toFixed(2)}</span>.</p>` +
       `<div class="level__appliances">` +
       states.map(([id, label]) =>
         `<button class="btn btn--quiet" data-motor-state="${id}" ` +
@@ -312,8 +305,7 @@ export class LevelBar {
   private motorReadout(): string {
     const s = this.motor;
     if (!s) {
-      return `<p class="note">Nothing is running. Pick a state above and the ` +
-        `whole feeder is solved again with the motor in it.</p>`;
+      return `<p class="note">Pick a state above.</p>`;
     }
     if (s.state === 'running') {
       return (
@@ -323,12 +315,10 @@ export class LevelBar {
         `power factor <span class="num">${s.demand.powerFactor.toFixed(2)}</span>, ` +
         `drawing <span class="num">${s.demand.amps.toFixed(0)} A</span>.` +
         `</div>` +
-        `<p class="note">Up to speed it is an ordinary load, and a modest one. ` +
-        `The voltage at its bus is <span class="num">${s.duringPU.toFixed(4)} pu</span> ` +
-        `against <span class="num">${s.beforePU.toFixed(4)} pu</span> before it ` +
-        `was switched on — and it may have gone UP, because over a minute the ` +
-        `regulator and the capacitor bank have had time to respond, which ` +
-        `during the start they had not.</p>` +
+        `<p class="note">Voltage at its bus ` +
+        `<span class="num">${s.beforePU.toFixed(4)}</span> → ` +
+        `<span class="num">${s.duringPU.toFixed(4)} pu</span>. It may have risen: ` +
+        `over a minute the regulator has time to respond. During the start it does not.</p>` +
         this.workingButton()
       );
     }
@@ -340,22 +330,16 @@ export class LevelBar {
       `<span class="num">${s.duringPU.toFixed(4)} pu</span> · dip ` +
       `<span class="num">${s.dipPercent.toFixed(2)} %</span>` +
       `</div>` +
-      `<p class="note">The bus is ` +
-      `<span class="num">${s.shortCircuitMVA.toFixed(0)} MVA</span> stiff, so the ` +
-      `rule of thumb — starting kVA over ` +
-      `${term('short-circuit-capacity', 'short-circuit capacity')} — predicts ` +
-      `<span class="num">${s.estimatedDipPercent.toFixed(2)} %</span> against the ` +
-      `<span class="num">${s.dipPercent.toFixed(2)} %</span> the power flow ` +
-      `actually produced. ${short
-        ? 'A dip this small is at the edge of what an eye can see in a filament lamp.'
-        : 'A dip of this size is visible in a filament lamp and audible in another motor.'}</p>` +
-      `<p class="note">Torque goes as the square of the voltage the motor gets, ` +
-      `so it develops <span class="num">${s.torquePU.toFixed(2)} pu</span> against ` +
-      `the <span class="num">${LOAD_BREAKAWAY_TORQUE_PU.toFixed(2)} pu</span> the ` +
-      `compressor needs to break away. ${s.torqueAdequate
-        ? 'It accelerates.'
-        : 'It does not accelerate: it sits at zero speed drawing locked-rotor ' +
-          'current until something opens.'}</p>` +
+      `<p class="note">Bus stiffness ` +
+      `<span class="num">${s.shortCircuitMVA.toFixed(0)} MVA</span>. The ` +
+      `${term('short-circuit-capacity', 'rule of thumb')} predicts ` +
+      `<span class="num">${s.estimatedDipPercent.toFixed(2)} %</span>; the solve says ` +
+      `<span class="num">${s.dipPercent.toFixed(2)} %</span>. ${short
+        ? 'Barely visible in a filament lamp.'
+        : 'Visible in a filament lamp.'}</p>` +
+      `<p class="note">Torque <span class="num">${s.torquePU.toFixed(2)} pu</span> ` +
+      `against <span class="num">${LOAD_BREAKAWAY_TORQUE_PU.toFixed(2)} pu</span> needed. ` +
+      `${s.torqueAdequate ? 'It accelerates.' : 'It stalls.'}</p>` +
       this.workingButton()
     );
   }
@@ -386,10 +370,7 @@ export class LevelBar {
       title.textContent = '14 Cherry Lane';
       sub.textContent = 'switch something on';
       body.innerHTML =
-        `<p class="note">These are real loads in the real case. Switching one on ` +
-        `re-dispatches the whole state and re-solves the ${term('power-flow', 'power flow')} — ` +
-        `the voltage at this socket, at the substation and at the generator that ` +
-        `ends up covering it all move, by the amount the physics says and not more.</p>` +
+        `<p class="note">Switch one on. The whole state re-solves.</p>` +
         `<div class="level__appliances">` +
         APPLIANCES.map((a) =>
           `<button class="btn btn--quiet" data-appliance="${a.id}" ` +
@@ -412,15 +393,10 @@ export class LevelBar {
       sub.textContent = isFeeder ? 'one distribution feeder' : 'inside the fence';
       body.innerHTML =
         (isFeeder
-          ? `<p class="note">Three kilometres of street at the height the wires ` +
-            `actually hang. The three-phase main runs the length of it; the ` +
-            `single-phase laterals branch into the side streets, each behind its ` +
-            `own fuse. The plot below is voltage against distance, which is the ` +
-            `shape everything on this feeder exists to manage.</p>` +
+          ? `<p class="note">Three kilometres of street. The plot below is ` +
+            `voltage against distance along it.</p>` +
             this.motorControls()
-          : `<p class="note">A substation is drawn two ways, and the relationship ` +
-            `between them is the thing that is hard to learn. Slide between them ` +
-            `below, or put a fault somewhere and watch which device clears it.</p>` +
+          : `<p class="note">The same station, drawn two ways. Slide between them.</p>` +
             `<div class="level__slider">` +
             `<button class="btn btn--quiet" data-role="morph-end" data-value="0">Diagram</button>` +
             `<input type="range" min="0" max="100" step="1" value="${Math.round(this.morph * 100)}" ` +
@@ -444,15 +420,9 @@ export class LevelBar {
       title.textContent = 'The whole system';
       sub.textContent = 'what absorbs the midday surplus';
       body.innerHTML =
-        `<p class="note">On a mild spring afternoon the sun produces more than ` +
-        `the state consumes. Every fuel-burning unit backs down to its minimum, ` +
-        `the export ties fill up, and what is left has to go somewhere — into ` +
-        `several gigawatts of batteries, charging. Take them out and the price ` +
-        `stops being flat: it collapses towards nothing at midday and spikes in ` +
-        `the evening, because the energy that covered the evening peak was ` +
-        `stored at noon and is no longer there. That gap is what a battery ` +
-        `fleet is paid for, and what it does to ${term('curtailment', 'curtailment')} ` +
-        `and to the ${term('duck-curve', 'duck curve')} follows from it.</p>` +
+        `<p class="note">On a spring afternoon the sun makes more than the ` +
+        `state uses. The surplus goes into batteries. Take them out and watch ` +
+        `the ${term('duck-curve', 'price')} for the day change shape.</p>` +
         `<div class="inspect__actions">` +
         `<button class="btn" data-role="storage" aria-pressed="${!this.storage}">` +
         `${this.storage ? 'Take the batteries out of service' : 'Put the batteries back'}` +

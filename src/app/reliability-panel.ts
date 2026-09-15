@@ -100,10 +100,8 @@ export class ReliabilityPanel {
 function indices(r: ReliabilityResult): string {
   return (
     `<section class="rel__section">` +
-    `<p class="note">These four numbers are how a distribution utility is ` +
-    `judged, and none of them is measured here: each one is computed from how ` +
-    `much wire is in the air, where the devices that can isolate a piece of it ` +
-    `are, and how long a crew takes to get there.</p>` +
+    `<p class="note">None of these is measured. Each follows from the length ` +
+    `of wire, the placement of the switches, and how fast a crew arrives.</p>` +
     `<div class="rel__grid">` +
     cell(term('saifi', 'SAIFI'), r.saifi.toFixed(2), 'interruptions',
       'per customer per year') +
@@ -114,10 +112,9 @@ function indices(r: ReliabilityResult): string {
     cell(term('maifi', 'MAIFI'), r.maifi.toFixed(2), 'blinks',
       'under five minutes — not counted in SAIFI') +
     `</div>` +
-    `<p class="note">Availability, ${term('asai', 'ASAI')}: ` +
-    `<span class="num">${(r.asai * 100).toFixed(4)} %</span> of the year — which ` +
-    `sounds like nothing is ever wrong, and is exactly why the minutes above are ` +
-    `the number people actually argue about.</p>` +
+    `<p class="note">${term('asai', 'ASAI')} ` +
+    `<span class="num">${(r.asai * 100).toFixed(4)} %</span> of the year, which ` +
+    `is why nobody argues about ASAI.</p>` +
     `</section>`
   );
 }
@@ -166,30 +163,23 @@ function switches(o: ReliabilityOptions, r: ReliabilityResult): string {
     `<h4 class="inspect__heading">The three decisions behind them</h4>` +
     sw('recloser', o.recloserInService,
       o.recloserInService ? 'Recloser R1 in service' : 'Recloser R1 out of service',
-      `A ${term('recloser', 'recloser')} half-way down the feeder means a fault ` +
-      `beyond it is cleared by it rather than by the breaker at the substation, ` +
-      `so the near half of the feeder never notices. Take it out and every ` +
-      `fault becomes the breaker's.`,
+      `A ${term('recloser', 'recloser')} half-way down clears faults beyond ` +
+      `it, so the near half never notices. Out of service, every fault is the ` +
+      `substation breaker's.`,
       { recloserInService: !o.recloserInService }) +
     sw('fuse-saving', o.fuseSaving,
       o.fuseSaving ? 'Fuse saving on' : 'Fuse saving off (fuse blowing)',
-      `A ${term('fuse', 'fuse')} cannot tell a branch touching the wire from a ` +
-      `pole that has been hit by a car. With fuse saving the recloser trips on ` +
-      `a fast curve first, so a temporary fault on one street becomes a blink ` +
-      `for the whole feeder instead of an outage for that street. Turn it off ` +
-      `and the trade runs the other way.`,
+      `A ${term('fuse', 'fuse')} cannot tell a branch on the wire from a pole ` +
+      `hit by a car. Fuse saving turns one street's outage into everyone's ` +
+      `blink. Off, the trade runs the other way.`,
       { fuseSaving: !o.fuseSaving }) +
     sw('tie', o.tieAvailable,
       o.tieAvailable ? 'Tie to the next feeder available' : 'No tie — radial to the end',
-      `The normally-open switch at the far end can be closed to feed the end of ` +
-      `this feeder from the next one, so the customers beyond the damage wait ` +
-      `about an hour instead of waiting for the repair.`,
+      `Close the switch at the far end and the next feeder picks up ` +
+      `everything past the damage. An hour, instead of a repair.`,
       { tieAvailable: !o.tieAvailable }) +
-    `<p class="note">Every one of these makes something worse. Fuse saving ` +
-    `trades outages for blinks; a recloser adds a device that can itself fail; ` +
-    `a tie is a second circuit that has to be built and kept clear. There is no ` +
-    `option here without a cost, which is what makes it engineering rather than ` +
-    `arithmetic.</p>` +
+    `<p class="note">Every one of them makes something else worse. That is ` +
+    `the job.</p>` +
     `</section>`
   );
 }
@@ -215,13 +205,11 @@ function contributions(r: ReliabilityResult): string {
     `<div class="rel__row rel__row--head"><span>section</span>` +
     `<span>cleared by</span><span>customers</span><span>cust·h/yr</span></div>` +
     rows +
-    `<p class="note">The eight worst sections account for ` +
+    `<p class="note">These eight are ` +
     `<span class="num">${((top / total) * 100).toFixed(0)} %</span> of the ` +
-    `customer-hours. The substation's 12.47 kV bus is usually near the top of ` +
-    `this list despite almost never failing, because when it does it takes the ` +
-    `whole feeder with it for ${RELIABILITY_DATA.busRepairHours.toFixed(0)} hours — ` +
-    `which is what a rate times a consequence means, and why counting faults is ` +
-    `not the same as counting outages.</p>` +
+    `customer-hours. The 12.47 kV bus is near the top despite almost never ` +
+    `failing: when it does, it takes the whole feeder for ` +
+    `${RELIABILITY_DATA.busRepairHours.toFixed(0)} hours.</p>` +
     `</section>`
   );
 }
@@ -239,11 +227,8 @@ function working(r: ReliabilityResult, open: boolean): string {
 
 function caveat(): string {
   return (
-    `<p class="note rel__caveat">This feeder is short, dense and urban, and it ` +
-    `has both a recloser and a tie, so its indices come out better than a ` +
-    `national average — which is dominated by long rural circuits. The failure ` +
-    `rates are canonical planning values, not measurements, and major event ` +
-    `days are excluded, as they are from most published figures. What this ` +
-    `leaves out is in the honesty panel.</p>`
+    `<p class="note rel__caveat">Short, dense, urban, with a recloser and a ` +
+    `tie: better than a national average, which is dominated by long rural ` +
+    `circuits. Planning rates, not measurements. Storms excluded.</p>`
   );
 }

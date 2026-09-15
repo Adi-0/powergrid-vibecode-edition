@@ -70,8 +70,8 @@ export type SceneId =
  * by which point you are looking at three poles).
  */
 const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
-  system:     [6, 18, Infinity, Infinity],
-  feeder:     [0.22, 0.55, 26, 70],
+  system:     [14, 40, Infinity, Infinity],
+  feeder:     [0.22, 0.55, 20, 45],
   substation: [0.030, 0.050, 0.30, 0.75],
   service:    [0, 0, 0.055, 0.10],
   // The generation branch. These overlap the distribution ones in SCALE but
@@ -80,6 +80,15 @@ const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   plant:      [0.045, 0.09, 0.70, 1.6],
   machine:    [0, 0, 0.055, 0.12],
 };
+
+/**
+ * The scale at which a scene has faded to a quarter — as far in as it is worth
+ * going before it is gone altogether.
+ */
+function quarterAlphaScale(scene: SceneId): number {
+  const [gone0, full0] = ENVELOPE[scene];
+  return gone0 + 0.25 * (full0 - gone0);
+}
 
 /** How strongly a scene is drawn at a given scale: 0 hidden, 1 full. */
 export function sceneAlpha(scene: SceneId, metresPerPixel: number): number {
@@ -117,6 +126,25 @@ type Box = { min: { x: number; z: number }; max: { x: number; z: number } };
 const overlaps = (a: Box, b: Box): boolean =>
   a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.z <= b.max.z && a.max.z >= b.min.z;
 
+/**
+ * How well a scene fits the window: 1 when it exactly fills it, falling off
+ * when it is much smaller OR much larger.
+ *
+ * This is the answer to "what is the reader actually looking at", which is not
+ * the same question as "what is drawn at full opacity". A drawing the size of a
+ * postage stamp in the middle of the window is not what you are looking at even
+ * if every one of its lines is at full strength; neither is one whose edges are
+ * a hundred screens away.
+ */
+function screenFit(bounds: Box | null, view: Box | null): number {
+  if (!bounds || !view) return 1;
+  const span = (b: Box) => Math.max(b.max.x - b.min.x, b.max.z - b.min.z);
+  const scene = span(bounds);
+  const window = span(view);
+  if (scene <= 0 || window <= 0) return 0;
+  return Math.min(scene, window) / Math.max(scene, window);
+}
+
 export interface ComposeInput {
   solved: SolvedCase;
   service: ServiceSolution;
@@ -140,10 +168,30 @@ export interface ComposeResult {
   segments: LineSegment[];
   labels: LabelSpec[];
   picks: PickTarget[];
-  /** Which scenes contributed, and how strongly, for the breadcrumb to say so. */
-  active: { scene: SceneId; alpha: number }[];
+  /**
+   * Which scenes contributed, how strongly they are drawn, and how much of the
+   * screen each one actually occupies.
+   *
+   * `alpha` and `fit` answer two different questions and conflating them was a
+   * real bug: at 0.5 m/px the substation fills the window while the feeder is a
+   * line running off both edges, and both are drawn at full strength. Opacity
+   * cannot tell those apart. `fit` can, because it compares the scene's
+   * on-screen size against the window.
+   */
+  active: { scene: SceneId; alpha: number; fit: number }[];
   /** The machine the machine view drew, if it drew one, for the panels. */
   machine?: Generator | undefined;
+  /**
+   * The finest scale worth showing at this camera position, metres per pixel.
+   *
+   * There is a floor to how far in it is worth going, and it is not the same
+   * everywhere: over Cherry Lane it is the kitchen socket, over the Eden Vale
+   * yard it is the yard, and over empty desert it is a few kilometres up. Past
+   * that floor every scene has faded out and the reader gets a blank page —
+   * which is what used to happen, and reads as the app breaking rather than as
+   * the model ending.
+   */
+  floorScale: number;
 }
 
 /**
@@ -161,24 +209,38 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   const segments: LineSegment[] = [];
   const labels: LabelSpec[] = [];
   const picks: PickTarget[] = [];
-  const active: { scene: SceneId; alpha: number }[] = [];
+  const active: { scene: SceneId; alpha: number; fit: number }[] = [];
+
+  // How far in it is worth zooming HERE: the deepest scene whose subject is
+  // actually under the camera. Accumulated as the scenes are considered, so it
+  // follows the same bounds tests the drawing does.
+  let floorScale = Infinity;
 
   const include = (scene: SceneId, bounds: Box | null): number => {
+    const near = !bounds || !view || overlaps(bounds, view);
+    // Stop a little ABOVE where the scene vanishes, not exactly at it: the last
+    // sliver of a fade is a drawing so faint it reads as a blank page.
+    if (near) floorScale = Math.min(floorScale, quarterAlphaScale(scene));
     const alpha = sceneAlpha(scene, mpp);
     if (alpha <= 0.004) return 0;
-    if (bounds && view && !overlaps(bounds, view)) return 0;
-    active.push({ scene, alpha });
+    if (!near) return 0;
+    active.push({ scene, alpha, fit: screenFit(bounds, view) });
     return alpha;
   };
 
   // --- coarsest first -------------------------------------------------------
-  const aSystem = include('system', null);
+  // The system scene is measured against the extent of the NETWORK, not left
+  // unbounded: once the window is a few kilometres across, a drawing of the
+  // whole state is no longer what anybody is looking at even though its lines
+  // are still crossing the page.
+  const aSystem = include('system', input.systemGeometry.bounds);
   if (aSystem > 0) {
     const r = drawSystem(input.systemGeometry, input.solved, input.camera, {
       selectedId: input.selectedId,
       hoveredId: input.hoveredId,
       showFlow: input.showFlow,
       opacity: aSystem,
+      view,
       onlyKV: input.onlyKV ?? null,
     });
     segments.push(...r.segments);
@@ -259,7 +321,12 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     machine = r.generator;
   }
 
-  return { segments, labels, picks, active, machine };
+  // Nothing modelled under the camera at all — over open country, say. The
+  // floor is then the scale at which the transmission drawing itself gives up,
+  // because that is genuinely as close as this model goes out there.
+  if (!Number.isFinite(floorScale)) floorScale = ENVELOPE.system[0];
+
+  return { segments, labels, picks, active, machine, floorScale };
 }
 
 // ---------------------------------------------------------------------------

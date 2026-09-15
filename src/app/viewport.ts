@@ -258,7 +258,9 @@ export class Viewport {
   ): void {
     const startTarget = this.camera.target.clone();
     const startScale = this.camera.metresPerPixel;
-    const endScale = Math.max(ZOOM.min, Math.min(ZOOM.max, metresPerPixel));
+    const endScale = Math.max(
+      Math.max(ZOOM.min, this.camera.floorScale),
+      Math.min(ZOOM.max, metresPerPixel));
     const t0 = performance.now();
 
     const step = () => {

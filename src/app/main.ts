@@ -91,6 +91,9 @@ const viewport: Viewport = new Viewport(stage, {
       onlyKV: debug.onlyKV,
     });
     lastFrame = r;
+    // How far in it is worth going HERE. Set every frame, because it depends
+    // on what the camera is over, not on a global constant.
+    viewport.camera.floorScale = r.floorScale;
     return { segments: r.segments, labels: r.labels, picks: r.picks };
   },
   onPick: (id, kind) => state.select(kind ?? 'none', id),
@@ -464,12 +467,29 @@ function renderTcc(snap: AppSnapshot): void {
   }
 }
 
+/**
+ * What the reader is actually looking at.
+ *
+ * Not "which scene is drawn most strongly" — that was the old rule and it was
+ * wrong in both directions. Zoomed into the Eden Vale yard, the feeder is still
+ * at full opacity because its own scale band is wide, so the panels offered
+ * feeder controls over a picture of a substation. Zoomed out, ties went to the
+ * coarsest scene because it happened to be drawn first.
+ *
+ * The rule now is opacity TIMES how much of the window the scene occupies, so
+ * the drawing that fills the screen wins and a drawing running off both edges
+ * loses to the one sitting inside them.
+ */
 function dominantScene(): SceneId | null {
   if (!lastFrame) return null;
   let best: SceneId | null = null;
-  let bestAlpha = 0.35;
+  let bestScore = 0.02;
   for (const a of lastFrame.active) {
-    if (a.alpha > bestAlpha) { bestAlpha = a.alpha; best = a.scene; }
+    // Ties and near-ties go to the FINER scene, because the scenes are listed
+    // coarsest-first and in a hand-over the reader is on their way in. The old
+    // rule left a dead band mid-transition where nothing was named at all.
+    const score = a.alpha * a.fit;
+    if (score >= bestScore * 0.92) { bestScore = Math.max(bestScore, score); best = a.scene; }
   }
   return best === 'system' ? null : best;
 }

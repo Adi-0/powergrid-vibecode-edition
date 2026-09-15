@@ -63,11 +63,9 @@ const STEPS: GuideStep[] = [
       h.setHour(18);
       h.goTo('system');
     },
-    text: () => `Six in the evening in July. Every line on this drawing is a real ` +
-      `circuit carrying a real number of megawatts, and the marks travelling ` +
-      `along them move in the direction the power does. How heavy a line is ` +
-      `says what ${term('ansi-c84-1', 'voltage')} it runs at — never what ` +
-      `colour it is, because colour here means only that something is wrong.`,
+    text: () => `Six in the evening in July. The marks move the way the power ` +
+      `does. Heavier line, higher ${term('ansi-c84-1', 'voltage')}. Colour is ` +
+      `reserved for faults.`,
   },
   {
     title: 'Four in the morning',
@@ -77,11 +75,9 @@ const STEPS: GuideStep[] = [
       h.setHour(4);
       h.goTo('system');
     },
-    text: () => `The same state, fourteen hours earlier. Demand has fallen by a ` +
-      `third, the expensive machines have stopped, and the price at the top of ` +
-      `the screen has collapsed. Nothing here was scripted: the ` +
-      `${term('merit-order', 'dispatch')} was re-run and the ` +
-      `${term('power-flow', 'power flow')} re-solved for this hour.`,
+    text: () => `Fourteen hours earlier. Demand down a third, the expensive ` +
+      `machines stopped, the price collapsed. Re-${term('merit-order', 'dispatched')} ` +
+      `and re-solved, not replayed.`,
   },
   {
     title: 'Who sets the price',
@@ -91,11 +87,9 @@ const STEPS: GuideStep[] = [
       h.setHour(19);
       h.goTo('system');
     },
-    text: () => `The evening peak. At the bottom of the screen is the ` +
-      `${term('marginal-unit', 'marginal unit')} — the last and most expensive ` +
-      `machine needed to meet demand. Everybody who generates is paid what IT ` +
-      `costs, which is the single strangest and most important fact about how ` +
-      `electricity is sold.`,
+    text: () => `The evening peak. Along the bottom: the ` +
+      `${term('marginal-unit', 'marginal unit')}, the last machine needed. ` +
+      `Everyone generating is paid what it costs.`,
   },
   {
     title: 'A spring afternoon, and the batteries',
@@ -106,11 +100,9 @@ const STEPS: GuideStep[] = [
       h.setStorage(true);
       h.goTo('system');
     },
-    text: () => `Mild spring, one o'clock: the sun produces more than the state ` +
-      `consumes. Every fuel-burning unit has backed down to its minimum and ` +
-      `several gigawatts are going into batteries. Now take them out of ` +
-      `service with the button on the left and watch the price for the whole ` +
-      `day change shape.`,
+    text: () => `Spring, one o'clock. The sun is making more than the state ` +
+      `uses and the surplus is going into batteries. Take them out with the ` +
+      `button on the left.`,
   },
   {
     title: 'Down to a substation',
@@ -121,12 +113,9 @@ const STEPS: GuideStep[] = [
       h.setStorage(true);
       h.goTo('substation');
     },
-    text: () => `Eden Vale, south of San Jose. This is the ` +
-      `${term('single-line-diagram', 'single-line diagram')} — the drawing ` +
-      `every engineer works from, which throws away the physical arrangement ` +
-      `and keeps only what is connected to what. Slide the control on the left ` +
-      `from Diagram to Yard and watch it stand up into the thing that is ` +
-      `actually there.`,
+    text: () => `Eden Vale, south of San Jose, as a ` +
+      `${term('single-line-diagram', 'single-line diagram')}: what is connected ` +
+      `to what, and nothing else. Slide from Diagram to Yard.`,
   },
   {
     title: 'The street',
@@ -136,11 +125,9 @@ const STEPS: GuideStep[] = [
       h.setFault(null, 'single-line-to-ground');
       h.goTo('feeder');
     },
-    text: () => `Three kilometres of distribution feeder at the height the wires ` +
-      `hang. The plot below is voltage against distance — the single most ` +
-      `useful picture in distribution engineering. You can see it fall away ` +
-      `from the substation, jump where the ${term('voltage-regulator', 'regulator')} ` +
-      `lifts it, and hold flat past the ${term('capacitor-bank', 'capacitor bank')}.`,
+    text: () => `Three kilometres of feeder. Below: voltage against distance. ` +
+      `It sags, the ${term('voltage-regulator', 'regulator')} lifts it, the ` +
+      `${term('capacitor-bank', 'capacitor bank')} holds it.`,
   },
   {
     title: 'Somebody starts a motor',
@@ -150,11 +137,9 @@ const STEPS: GuideStep[] = [
       h.goTo('feeder');
       h.setMotor('starting', 'across-the-line', 'far-end');
     },
-    text: () => `Two hundred horsepower at the far end of the feeder. At ` +
-      `standstill a motor is a short-circuited transformer: it draws six times ` +
-      `its running current at a power factor of 0.2, and the whole street dims. ` +
-      `The dotted line on the profile is where the voltage was a second ago. ` +
-      `Try the reduced-voltage starters and watch what they cost in torque.`,
+    text: () => `Two hundred horsepower, six times its running current, and ` +
+      `the street dims. The dotted line is where the voltage was a second ago. ` +
+      `Try the other starters.`,
   },
   {
     title: 'The wall outlet',
@@ -164,11 +149,9 @@ const STEPS: GuideStep[] = [
       h.setAppliance(null);
       h.goTo('service');
     },
-    text: () => `The end of the chain: 240 volts across two conductors, 120 from ` +
-      `either one to the centre tap. Switch on the car charger. Demand for the ` +
-      `whole state rises by exactly 11.5 kW, losses by about 2.7, generation by ` +
-      `the sum of the two — and the voltage at this socket falls by three ` +
-      `quarters of a volt, because it is all one network and one solve.`,
+    text: () => `240 volts across two conductors, 120 to the centre tap. ` +
+      `Switch on the car charger: state demand rises 11.5 kW, generation 14.2, ` +
+      `and this socket drops three quarters of a volt.`,
   },
   {
     title: 'Where it came from',
@@ -178,20 +161,16 @@ const STEPS: GuideStep[] = [
       h.setMotor('off', 'across-the-line', 'industrial');
       h.goTo('plant');
     },
-    text: () => `A combined-cycle power station: a gas turbine, and behind it a ` +
-      `boiler making steam out of the exhaust to drive a second turbine. The ` +
-      `widths of the streams are proportional to the energy in them, which is ` +
-      `why the one going into the condenser is so uncomfortably wide. That is ` +
+    text: () => `A gas turbine, and behind it a boiler making steam from its ` +
+      `exhaust. Stream widths are energy. The one into the condenser is ` +
       `${term('heat-rate', 'thermal efficiency')}, drawn.`,
   },
   {
     title: 'Inside the machine',
     enter: (h) => { h.openPanel(null); h.goTo('machine'); },
-    text: () => `One synchronous generator in cross-section, with the rotor drawn ` +
-      `at the ${term('load-angle', 'load angle')} it is actually running at. ` +
-      `The panel beside it is the ${term('capability-curve', 'capability curve')}: ` +
-      `every combination of real and reactive power the machine can hold, and ` +
-      `which limit it is up against right now.`,
+    text: () => `One generator in cross-section, rotor drawn at the ` +
+      `${term('load-angle', 'load angle')} it is running at. Beside it, every ` +
+      `output it can hold: the ${term('capability-curve', 'capability curve')}.`,
   },
   {
     title: 'A fault, and what clears it',
@@ -201,11 +180,9 @@ const STEPS: GuideStep[] = [
       h.goTo('feeder');
       h.setFault('FDR_L3B', 'single-line-to-ground');
     },
-    text: () => `One phase touching earth on Cherry Lane. The fault current is ` +
-      `computed from ${term('symmetrical-components', 'symmetrical components')} ` +
-      `and the curves show which device reaches its operating time first. The ` +
-      `fuse on that lateral clears it, and nobody else on the feeder notices — ` +
-      `which is what ${term('coordination', 'coordination')} means.`,
+    text: () => `One phase touching earth on Cherry Lane. The curves show ` +
+      `which device gets there first. The lateral fuse clears it and nobody ` +
+      `else notices: ${term('coordination', 'coordination')}.`,
   },
   {
     title: 'How often the lights go out',
@@ -214,11 +191,9 @@ const STEPS: GuideStep[] = [
       h.goTo('feeder');
       h.openPanel('reliability');
     },
-    text: () => `${term('saifi', 'SAIFI')} and ${term('saidi', 'SAIDI')} are what ` +
-      `a distribution utility is judged on, and they are not weather: they are ` +
-      `the arithmetic consequence of how much wire is in the air and where the ` +
-      `devices that can isolate a piece of it are. Move the three switches and ` +
-      `watch every index change — including the ones that get worse.`,
+    text: () => `${term('saifi', 'SAIFI')} and ${term('saidi', 'SAIDI')} are ` +
+      `not weather. They follow from how much wire is in the air and where the ` +
+      `switches are. Move the three and watch what gets worse.`,
   },
   {
     title: 'How any of this was worked out',
@@ -228,21 +203,16 @@ const STEPS: GuideStep[] = [
       h.goTo('system');
       h.openPanel('solver');
     },
-    text: () => `There is no formula for a power flow. There is a guess, a ` +
-      `measure of how wrong it is, and a way of improving it — and the plot ` +
-      `here is that error shrinking, squaring itself at every step. Where it ` +
-      `jumps back up, a machine ran out of reactive capability and the problem ` +
-      `itself changed.`,
+    text: () => `There is no formula for a power flow: only a guess and a way ` +
+      `to improve it. The plot is that error shrinking. Where it jumps, a ` +
+      `machine ran out of reactive capability.`,
   },
   {
     title: 'What this leaves out',
     enter: (h) => { h.goTo('system'); h.openPanel('honesty'); },
-    text: () => `Everything the model does not represent, in one list, always ` +
-      `available from the button at the bottom of the screen. The network is a ` +
-      `reconstruction and not a copy; the phases are balanced except where ` +
-      `faults are being computed; the reliability figures come from planning ` +
-      `rates and not from history. Knowing where a model stops is most of ` +
-      `knowing how to read one.`,
+    text: () => `Everything this model does not represent, always available ` +
+      `from the button below. Knowing where a model stops is most of knowing ` +
+      `how to read one.`,
   },
 ];
 

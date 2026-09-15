@@ -47,6 +47,16 @@ export class IsoCamera {
   readonly direction: Vector3;
   target = new Vector3(0, 0, 0);
   metresPerPixel = ZOOM.system;
+  /**
+   * The finest scale worth zooming to at the current position, set by the
+   * compositor each frame.
+   *
+   * A hard global minimum is the wrong rule: how far in it is worth going
+   * depends on what is modelled underneath. Past this floor every drawing has
+   * faded out and the reader gets a blank page, which reads as the app being
+   * broken rather than as the model ending.
+   */
+  floorScale = ZOOM.min;
 
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -83,7 +93,8 @@ export class IsoCamera {
   }
 
   setZoom(metresPerPixel: number): void {
-    this.metresPerPixel = clamp(metresPerPixel, ZOOM.min, ZOOM.max);
+    const floor = Math.max(ZOOM.min, this.floorScale);
+    this.metresPerPixel = clamp(metresPerPixel, floor, ZOOM.max);
     this.apply();
   }
 
