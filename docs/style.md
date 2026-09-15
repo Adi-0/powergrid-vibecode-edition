@@ -259,6 +259,13 @@ information. It is also the answer to the thing a map can never do: a hundred
 and forty circuits cannot all be named on one page, so without it the thing the
 drawing is mostly made of would be the one thing a reader could not identify.
 
+**And the drawing says where the depth is.** Two of the sixty places on the map
+open into levels of their own, and nothing on the page said which: a reader
+could sweep the whole state without ever learning that one of these circles is
+a substation they can walk into and another is a power station they can take
+apart. The breadcrumb names the levels; it cannot say which dot leads to them.
+Their readouts do.
+
 ## The legend is a key to the page, not a catalogue
 
 Always present and always complete — where complete means *everything on the
