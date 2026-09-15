@@ -47,6 +47,8 @@ export class LevelBar {
   private morph = 0;
   private protection = false;
   private appliance: string | null = null;
+  /** Which of the "there is more here" paragraphs the reader has opened. */
+  private readonly opened = new Set<string>();
   private storage = true;
   private faultBus: string | null = null;
   private faultKind: FaultKind = 'single-line-to-ground';
@@ -76,6 +78,14 @@ export class LevelBar {
         this.updateMorphReadout();
       }
     });
+    this.element.addEventListener('toggle', (e) => {
+      const d = e.target as HTMLDetailsElement;
+      const key = d.dataset?.more;
+      if (!key) return;
+      if (d.open) this.opened.add(key);
+      else this.opened.delete(key);
+    }, true);
+
     this.element.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button') as HTMLElement | null;
       if (!b) return;
@@ -223,8 +233,14 @@ export class LevelBar {
    * worth making.
    */
   private more(summary: string, body: string): string {
+    // OPEN STAYS OPEN. This panel re-renders whenever the solution changes —
+    // every hour of the scrubber, every switching operation — and a disclosure
+    // the reader has opened snapping shut underneath them because the clock
+    // moved is the kind of thing that makes an interface feel hostile.
+    const open = this.opened.has(summary) ? ' open' : '';
     return (
-      `<details class="more"><summary>${summary}</summary>` +
+      `<details class="more" data-more="${escapeAttr(summary)}"${open}>` +
+      `<summary>${summary}</summary>` +
       `<div class="more__body">${body}</div></details>`
     );
   }
