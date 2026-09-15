@@ -108,6 +108,17 @@ export const SYSTEM_KV_DRAWN = [500, 230, 115];
 
 const siteOfBus = (busId: string): string => busId.split('_')[0].toLowerCase();
 
+/**
+ * The places that open into a level of their own, and what is inside them.
+ *
+ * Short enough to read at the end of a hover readout, and phrased as an
+ * invitation rather than an instruction.
+ */
+const DEEPER_INSIDE: Record<string, string> = {
+  edenvale: 'zoom in: the substation, the feeder, one house',
+  metcalf: 'zoom in: the power station and one generator',
+};
+
 /** Build the static geometry of the system view. Independent of any solution. */
 export function buildSystemGeometry(solved: SolvedCase): SystemGeometry {
   const sites = new Map<string, SiteNode>();
@@ -614,14 +625,24 @@ export function drawSystem(
     for (const seg of scratch) marks.push({ seg, depth: symbolDepth - 1 });
     scratch.length = 0;
 
+    // THE DRAWING SAYS WHERE THE DEPTH IS.
+    //
+    // Two of these sixty places open into levels of their own, and nothing on
+    // the page said which: a reader could sweep the whole state without ever
+    // learning that one of these circles is a substation they can walk into
+    // and another is a power station they can take apart. The breadcrumb names
+    // the levels and cannot say which dot on the map leads to them.
     const readout = siteReadout(node, solved);
+    const deeper = DEEPER_INSIDE[node.site.id];
     picks.push({
       id: node.site.id, kind: 'site',
       world: node.ground.clone(),
       radiusPx: LAYOUT.pickRadiusPx * (topKV >= 500 ? 1.3 : 1),
       hover: {
         text: node.site.name,
-        ...(readout ? { value: readout } : {}),
+        ...(readout || deeper
+          ? { value: [readout, deeper].filter(Boolean).join(' · ') }
+          : {}),
         alarm: anyAlarm,
       },
     });
