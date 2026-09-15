@@ -485,6 +485,8 @@ function dominantScene(): SceneId | null {
   let best: SceneId | null = null;
   let bestScore = 0.02;
   for (const a of lastFrame.active) {
+    // The ground is context for whatever is standing on it, never the subject.
+    if (a.scene === 'ground') continue;
     // Ties and near-ties go to the FINER scene, because the scenes are listed
     // coarsest-first and in a hand-over the reader is on their way in. The old
     // rule left a dead band mid-transition where nothing was named at all.

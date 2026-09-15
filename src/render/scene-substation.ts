@@ -434,6 +434,44 @@ export function drawSubstation(
     });
   }
 
+  // --- the steel, once the yard has risen ---------------------------------
+  //
+  // THIS IS WHAT MAKES A YARD READ AS A YARD. Without it every piece of
+  // equipment hovers at its true height over blank ground and the conductors
+  // between them look like stray marks rather than bus work: the drawing was
+  // correct and still looked like nothing was connected to anything.
+  //
+  // A real substation is mostly structure. Rigid bus is carried on columns;
+  // every breaker, transformer and switch stands on a foundation. Drawing the
+  // columns and the pedestals costs a few dozen lines and turns a scatter of
+  // symbols into a built thing standing on the earth.
+  if (t > 0.05) {
+    const steel = (top: Vector3, widthPx: number): void => {
+      if (top.y <= 0.2) return;
+      const foot = new Vector3(top.x, 0, top.z);
+      mark({
+        a: [foot.x, foot.y, foot.z], b: [top.x, top.y, top.z],
+        widthPx, color: INK.inkFaint, opacity: t * 0.85,
+      }, depthOf(foot) + 40);
+      // A short foot at grade, so the column lands on something.
+      const half = 0.9;
+      const fa = new Vector3(foot.x - half, 0, foot.z);
+      const fb = new Vector3(foot.x + half, 0, foot.z);
+      mark({
+        a: [fa.x, fa.y, fa.z], b: [fb.x, fb.y, fb.z],
+        widthPx: widthPx * 0.9, color: INK.inkFaint, opacity: t * 0.7,
+      }, depthOf(foot) + 41);
+    };
+
+    // A pedestal under everything that stands in the yard. Busbars grow their
+    // own insulator stacks a few lines below, the ground grid is buried and the
+    // fence is already at grade, so none of those gets one.
+    for (const e of ELEMENTS) {
+      if (e.kind === 'bus' || e.kind === 'ground-grid') continue;
+      steel(pos.get(e.id)!, 1.1);
+    }
+  }
+
   // --- the connections ----------------------------------------------------
   for (const [aId, bId] of CONNECTIONS) {
     const ea = elementById.get(aId);

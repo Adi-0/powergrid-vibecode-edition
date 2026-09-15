@@ -336,6 +336,16 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** The thing the drawing is for — three windings in space, a field rotating past them, and the load angle between the rotor and the terminal voltage — is exactly right. The winding detail is not, and nothing in the app depends on it. The machine is also drawn far larger than its true 3 to 4 metres, because at true scale the air gap would be a hairline.
 
+### The streets and houses around the feeder are invented
+
+*Applies to: feeder, service* · `invented-neighbourhood`
+
+**What the model does.** A street grid and building footprints are drawn around Cherry Lane 1201 so the feeder runs through somewhere rather than across blank paper. They carry no load, no address and no electrical meaning: the load is the spot loads in the model, and it is attached to the poles.
+
+**What the full treatment would involve.** A utility works from a parcel map: every service, every meter, every address, tied to the transformer that feeds it. That is what makes a real outage management system able to say which houses are dark.
+
+**What that means for you.** The SCALE is right — block sizes, lot widths and setbacks are the ordinary dimensions of American suburban development, so the sense of how much street a megawatt covers is honest. Which house is which is not, and no house drawn here is the one whose service is modelled, apart from the one that is labelled.
+
 ---
 
-*31 entries.*
+*32 entries.*

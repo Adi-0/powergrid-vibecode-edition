@@ -121,12 +121,12 @@ export const VOLTAGE_CLASSES: VoltageClassStyle[] = [
       'substation.',
   },
   {
-    kV: 12.47, label: '12.47 kV', weightPx: 1.1, dashPx: [7, 3.5],
+    kV: 12.47, label: '12.47 kV', weightPx: 0.9, dashPx: [7, 3.5],
     blurb:
       'Distribution primary. The wires on the poles along an ordinary street.',
   },
   {
-    kV: 0.24, label: '240 V', weightPx: 0.8, dashPx: [2.5, 2],
+    kV: 0.24, label: '240 V', weightPx: 0.6, dashPx: [2.5, 2],
     blurb:
       'Service secondary. The drop from the pole to a building, and the ' +
       'voltage at the outlet.',

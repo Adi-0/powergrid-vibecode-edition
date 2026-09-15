@@ -43,6 +43,7 @@ import { PickTarget, SystemGeometry, drawSystem } from '../render/scene-system.j
 import { drawSubstation, substationBounds } from '../render/scene-substation.js';
 import { FeederGeometry, drawFeeder } from '../render/scene-feeder.js';
 import { drawService, serviceBounds } from '../render/scene-service.js';
+import { drawGround, groundBounds } from '../render/scene-ground.js';
 import { drawPlant, plantBounds } from '../render/scene-plant.js';
 import { drawMachine, machineBounds } from '../render/scene-machine.js';
 import { Generator } from '../core/network.js';
@@ -53,7 +54,7 @@ import { toWorld } from '../render/world.js';
 import { ZOOM, LevelId } from '../render/style.js';
 
 export type SceneId =
-  | 'system' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine';
+  | 'system' | 'ground' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine';
 
 /**
  * Where each scene is legible, in metres per pixel.
@@ -71,6 +72,12 @@ export type SceneId =
  */
 const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   system:     [14, 40, Infinity, Infinity],
+  // The neighbourhood the feeder runs through. It appears a little before the
+  // feeder does and stays after it, because the ground is what a reader orients
+  // on: arriving at a street and then seeing the wires along it is the right
+  // order, and the reverse — wires in a void that later acquire a street — is
+  // the one that felt broken.
+  ground:     [0.02, 0.05, 26, 55],
   feeder:     [0.22, 0.55, 20, 45],
   substation: [0.030, 0.050, 0.30, 0.75],
   service:    [0, 0, 0.055, 0.10],
@@ -227,6 +234,13 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     active.push({ scene, alpha, fit: screenFit(bounds, view) });
     return alpha;
   };
+
+  // --- the ground, before anything electrical -------------------------------
+  const aGround = include('ground', groundBounds());
+  if (aGround > 0) {
+    const r = drawGround({ opacity: aGround, camera: input.camera });
+    segments.push(...r.segments);
+  }
 
   // --- coarsest first -------------------------------------------------------
   // The system scene is measured against the extent of the NETWORK, not left

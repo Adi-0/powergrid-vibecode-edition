@@ -600,6 +600,27 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'The mechanism \u2014 and why a second path is worth building \u2014 is right.',
     severity: 'modest',
   },
+  {
+    id: 'invented-neighbourhood',
+    scope: ['feeder', 'service'],
+    title: 'The streets and houses around the feeder are invented',
+    whatWeDo:
+      'A street grid and building footprints are drawn around Cherry Lane 1201 ' +
+      'so the feeder runs through somewhere rather than across blank paper. ' +
+      'They carry no load, no address and no electrical meaning: the load is ' +
+      'the spot loads in the model, and it is attached to the poles.',
+    fullTreatment:
+      'A utility works from a parcel map: every service, every meter, every ' +
+      'address, tied to the transformer that feeds it. That is what makes a ' +
+      'real outage management system able to say which houses are dark.',
+    consequence:
+      'The SCALE is right \u2014 block sizes, lot widths and setbacks are the ' +
+      'ordinary dimensions of American suburban development, so the sense of ' +
+      'how much street a megawatt covers is honest. Which house is which is ' +
+      'not, and no house drawn here is the one whose service is modelled, ' +
+      'apart from the one that is labelled.',
+    severity: 'cosmetic',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>
