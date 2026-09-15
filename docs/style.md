@@ -179,6 +179,18 @@ equipment named above the chain, the wires between them below. It is a
 preference and not a restriction — a caption with nowhere to go on its own side
 is still placed.
 
+## A name without its number beats no name at all
+
+A two-line caption needs about twice the room of a one-line one, and in the
+corner of a map where six places sit inside forty kilometres that is the
+difference between being placed and being dropped. Losing the megawatts costs
+the reader a figure they can get by pointing at it; losing the whole label costs
+them the knowledge that the place is there.
+
+So every caption is tried twice: once as the scene offered it, and once as the
+name on its own. Six more places are named on the whole-state view than before
+the rule, and the crowded corners carry less type, not more.
+
 ## The drawing never writes the same number twice
 
 A substation single-line names a line terminal, its breaker, its disconnect and

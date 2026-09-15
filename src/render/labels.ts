@@ -334,13 +334,18 @@ export class LabelLayer {
     // scene somebody writes.
     const spokenValues = new Set<string>();
 
+    /** Strip the second line, for a caption that will not otherwise fit. */
+    const withoutValue = (spec: LabelSpec): LabelSpec => {
+      const { value: _dropped, ...rest } = spec;
+      return rest;
+    };
+
     for (const { spec: raw, px } of candidates) {
       let spec = raw;
       if (spec.value !== undefined && spokenValues.has(spec.value)) {
-        const { value: _dropped, ...rest } = spec;
-        spec = rest;
+        spec = withoutValue(spec);
       }
-      const size = this.measure(spec);
+      let size = this.measure(spec);
       let put: PlacedLabel | null = null;
       // A LABEL GOES ON THE SIDE OF ITS SUBJECT THAT FACES THE DRAWING.
       //
@@ -358,6 +363,18 @@ export class LabelLayer {
       const tries = spec.side === 'above' ? ABOVE
         : spec.side === 'below' ? BELOW : PLACEMENTS;
       const groups = ink ? inwardFirst(tries, px, ink) : [[...tries]];
+
+      // A NAME WITHOUT ITS NUMBER BEATS NO NAME AT ALL.
+      //
+      // A two-line caption needs about twice the room of a one-line one, and in
+      // the corner of a map where six places sit inside forty kilometres that
+      // is the difference between being placed and being dropped. Losing the
+      // megawatts costs the reader a figure they can get by pointing at it;
+      // losing the whole label costs them the knowledge that the place is
+      // there. So every caption is tried twice, and the second attempt is the
+      // name on its own.
+      const attempts: LabelSpec[] =
+        spec.value !== undefined ? [spec, withoutValue(spec)] : [spec];
       // The FIRST free position is not the best one. Candidates are ordered by
       // where a caption conventionally sits, and that order is the tie-break;
       // between them, the one written over the least drawing wins.
@@ -368,29 +385,37 @@ export class LabelLayer {
       // sea, so least-ink always won there and the name went out to sea. Each
       // group is exhausted before the next is considered, and inside a group
       // the cleanest placement wins.
-      for (const group of groups) {
-        let bestInk = Infinity;
-        for (const [sx, sy, scale] of group) {
-          const base = spec.offsetPx ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
-          const off = [base[0] * scale, base[1] * scale];
-          const x = px.x + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
-          const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
-          const rect = { x, y, w: size.w, h: size.h };
-          if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
-          if (blocked.some((b) => overlaps(rect, b, 2))) continue;
-          const over = ink ? inkUnder(ink, rect) : 0;
-          if (over < bestInk) {
-            bestInk = over;
-            put = { spec, x, y, w: size.w, h: size.h, anchorX: px.x, anchorY: px.y };
+      for (const attempt of attempts) {
+        size = this.measure(attempt);
+        for (const group of groups) {
+          let bestInk = Infinity;
+          for (const [sx, sy, scale] of group) {
+            const base = attempt.offsetPx ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
+            const off = [base[0] * scale, base[1] * scale];
+            const x = px.x
+              + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
+            const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
+            const rect = { x, y, w: size.w, h: size.h };
+            if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
+            if (blocked.some((b) => overlaps(rect, b, 2))) continue;
+            const over = ink ? inkUnder(ink, rect) : 0;
+            if (over < bestInk) {
+              bestInk = over;
+              put = {
+                spec: attempt, x, y, w: size.w, h: size.h,
+                anchorX: px.x, anchorY: px.y,
+              };
+            }
+            if (over === 0) break;
           }
-          if (over === 0) break;
+          if (put) break;
         }
         if (put) break;
       }
       // A value is only spoken for once it has actually been PLACED: a label
       // that collided and was dropped must not take its number down with it.
       if (!put) continue;
-      if (spec.value !== undefined) spokenValues.add(spec.value);
+      if (put.spec.value !== undefined) spokenValues.add(put.spec.value);
       placed.push(put);
       seen.add(spec.id);
       if (placed.length >= this.maxLabels) break;
