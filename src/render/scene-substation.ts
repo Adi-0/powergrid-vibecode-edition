@@ -53,6 +53,7 @@ import {
 } from './symbols.js';
 import { PickTarget } from './scene-system.js';
 import { flowMark } from './flow.js';
+import { volumeFor, volumeSegments } from './yard-volumes.js';
 
 /** The centre of the yard, in world metres. Both frames are built around it. */
 export const SUBSTATION_CENTRE: Vector3 = (() => {
@@ -150,6 +151,41 @@ function attach(f: SubstationFrame, e: SubstationElement, towards: Vector3): Vec
   return a.clone().addScaledVector(ab, s);
 }
 
+/** Hermite ease between two thresholds, for cross-fades that do not snap. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * How a conductor actually gets from one piece of equipment to another.
+ *
+ * Not in a straight line. A substation is built in bays, and the conductor runs
+ * HORIZONTALLY at height along the bay and DROPS vertically to each device it
+ * passes — a riser up from the equipment terminal, a span across, a riser down.
+ * Everything in a yard is orthogonal, because everything is either hanging from
+ * a structure or standing on a foundation.
+ *
+ * Drawing it as a straight three-dimensional diagonal was the single reason the
+ * yard looked like unconnected scatter: the leads cut across the bays at angles
+ * no conductor takes, so they read as stray marks rather than as bus work.
+ *
+ * The route collapses to a straight line on its own as the yard flattens into
+ * the single-line diagram, because at zero morph every height is zero and both
+ * elbows land on the endpoints. No special case, and no discontinuity in the
+ * middle of the morph.
+ */
+function leadRoute(a: Vector3, b: Vector3): Vector3[] {
+  const h = Math.max(a.y, b.y);
+  const up = new Vector3(a.x, h, a.z);
+  const over = new Vector3(b.x, h, b.z);
+  const out: Vector3[] = [a];
+  for (const p of [up, over, b]) {
+    if (p.distanceTo(out[out.length - 1]) > 1e-6) out.push(p);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Symbols for the equipment that has no system-view equivalent
 // ---------------------------------------------------------------------------
@@ -237,6 +273,24 @@ const SIZE_FOR: Partial<Record<SubstationElement['kind'], number>> = {
 const ALWAYS_NAMED = new Set<SubstationElement['kind']>([
   'bus', 'transformer', 'breaker', 'capacitor', 'line-terminal', 'ground-grid',
 ]);
+
+/**
+ * How far above a device its name hangs once the yard has risen, in metres.
+ *
+ * Roughly the height of the volume, so the caption sits clear of the top of
+ * the object rather than across the middle of it.
+ */
+const LABEL_CLEARANCE_M: Partial<Record<SubstationElement['kind'], number>> = {
+  transformer: 7.0,
+  breaker: 4.0,
+  disconnect: 2.0,
+  capacitor: 3.4,
+  'line-terminal': 2.0,
+  ct: 1.4,
+  pt: 1.4,
+  arrester: 1.2,
+  regulator: 2.2,
+};
 
 // ---------------------------------------------------------------------------
 // Live quantities
@@ -434,44 +488,6 @@ export function drawSubstation(
     });
   }
 
-  // --- the steel, once the yard has risen ---------------------------------
-  //
-  // THIS IS WHAT MAKES A YARD READ AS A YARD. Without it every piece of
-  // equipment hovers at its true height over blank ground and the conductors
-  // between them look like stray marks rather than bus work: the drawing was
-  // correct and still looked like nothing was connected to anything.
-  //
-  // A real substation is mostly structure. Rigid bus is carried on columns;
-  // every breaker, transformer and switch stands on a foundation. Drawing the
-  // columns and the pedestals costs a few dozen lines and turns a scatter of
-  // symbols into a built thing standing on the earth.
-  if (t > 0.05) {
-    const steel = (top: Vector3, widthPx: number): void => {
-      if (top.y <= 0.2) return;
-      const foot = new Vector3(top.x, 0, top.z);
-      mark({
-        a: [foot.x, foot.y, foot.z], b: [top.x, top.y, top.z],
-        widthPx, color: INK.inkFaint, opacity: t * 0.85,
-      }, depthOf(foot) + 40);
-      // A short foot at grade, so the column lands on something.
-      const half = 0.9;
-      const fa = new Vector3(foot.x - half, 0, foot.z);
-      const fb = new Vector3(foot.x + half, 0, foot.z);
-      mark({
-        a: [fa.x, fa.y, fa.z], b: [fb.x, fb.y, fb.z],
-        widthPx: widthPx * 0.9, color: INK.inkFaint, opacity: t * 0.7,
-      }, depthOf(foot) + 41);
-    };
-
-    // A pedestal under everything that stands in the yard. Busbars grow their
-    // own insulator stacks a few lines below, the ground grid is buried and the
-    // fence is already at grade, so none of those gets one.
-    for (const e of ELEMENTS) {
-      if (e.kind === 'bus' || e.kind === 'ground-grid') continue;
-      steel(pos.get(e.id)!, 1.1);
-    }
-  }
-
   // --- the connections ----------------------------------------------------
   for (const [aId, bId] of CONNECTIONS) {
     const ea = elementById.get(aId);
@@ -499,17 +515,33 @@ export function drawSubstation(
     // conductor is broken.
     const classDash = cls.dashPx.length === 2
       ? [cls.dashPx[0], cls.dashPx[1]] as [number, number] : null;
-    mark({
-      a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
-      widthPx: width,
-      color: sel ? SELECTION.stroke : open ? INK.inkFaint : INK.ink,
-      ...(open ? { dash: [2.5, 3.5] as [number, number] }
-        : classDash ? { dash: classDash } : {}),
-    }, depthOf(a.clone().lerp(b, 0.5)), HALO_PAD_PX);
+    const color = sel ? SELECTION.stroke : open ? INK.inkFaint : INK.ink;
+    const dash = open ? [2.5, 3.5] as [number, number]
+      : classDash ? classDash : null;
 
-    if (showFlow && !open && !classDash) {
-      const fm = flowMark([a.x, a.y, a.z], [b.x, b.y, b.z], width, flow);
-      if (fm) marks.push({ seg: fade(fm), depth: depthOf(a.clone().lerp(b, 0.5)) - 1e-3 });
+    // Route it the way a conductor actually runs, and draw the run.
+    const route = leadRoute(a, b);
+    let longest = { len: -1, a: route[0], b: route[0] };
+    for (let i = 0; i + 1 < route.length; i++) {
+      const p0 = route[i];
+      const p1 = route[i + 1];
+      const len = p0.distanceTo(p1);
+      if (len < 1e-6) continue;
+      if (len > longest.len) longest = { len, a: p0, b: p1 };
+      mark({
+        a: [p0.x, p0.y, p0.z], b: [p1.x, p1.y, p1.z],
+        widthPx: width, color,
+        ...(dash ? { dash } : {}),
+      }, depthOf(p0.clone().lerp(p1, 0.5)), HALO_PAD_PX);
+    }
+
+    // One flow mark, on the longest span of the run: a mark on a half-metre
+    // riser is a dot, and a dot does not say which way anything is going.
+    if (showFlow && !open && !classDash && longest.len > 0) {
+      const p0 = longest.a;
+      const p1 = longest.b;
+      const fm = flowMark([p0.x, p0.y, p0.z], [p1.x, p1.y, p1.z], width, flow);
+      if (fm) marks.push({ seg: fade(fm), depth: depthOf(p0.clone().lerp(p1, 0.5)) - 1e-3 });
     }
   }
 
@@ -531,7 +563,10 @@ export function drawSubstation(
       const cls = voltageClass(e.kV);
       mark({
         a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
-        widthPx: cls.weightPx * WEIGHT_SCALE * 2.2 * emphasis, color,
+        // Heavy in the diagram, where the bus is the spine everything hangs
+        // off; slimmer in the yard, where it is a tube twenty feet up and
+        // should not outweigh the equipment standing under it.
+        widthPx: cls.weightPx * WEIGHT_SCALE * (2.2 - 0.9 * t) * emphasis, color,
       }, depth, HALO_PAD_PX);
       // Insulator stacks holding it up, once the yard has risen.
       if (t > 0.2) {
@@ -548,8 +583,31 @@ export function drawSubstation(
         radiusPx: LAYOUT.pickRadiusPx,
       });
     } else {
+      // The symbol and the object it stands for, cross-faded by the morph.
+      //
+      // A flat screen-aligned glyph is exactly right on a single-line diagram
+      // and exactly wrong standing in a yard, where it reads as a label pinned
+      // over the drawing. So the glyph fades out as the yard rises and a real
+      // volume — tank, bushings, insulator stacks — fades in behind it.
+      const symbolAlpha = 1 - smoothstep(0.45, 0.92, t);
+      const volumeAlpha = smoothstep(0.35, 0.85, t);
+
+      if (volumeAlpha > 0.01) {
+        const edges = volumeFor(e.kind, p, e.kV);
+        if (edges.length > 0) {
+          for (const seg of volumeSegments(
+            edges, 1.0 * (isSelected ? 1.6 : 1), color, volumeAlpha
+          )) {
+            const mid = new Vector3(
+              (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
+              (seg.a[2] + seg.b[2]) / 2);
+            marks.push({ seg: fade(seg), depth: depthOf(mid) - 5 });
+          }
+        }
+      }
+
       const path = SYMBOL_FOR[e.kind];
-      if (path) {
+      if (path && symbolAlpha > 0.01) {
         const size = (SIZE_FOR[e.kind] ?? 11) * emphasis;
         placeSymbol(path, {
           x: p.x, y: p.y, z: p.z, sizePx: size,
@@ -561,18 +619,23 @@ export function drawSubstation(
         marks.push({
           seg: fade({
             a: [p.x, p.y, p.z], b: [p.x, p.y, p.z],
-            widthPx: size * 1.9, color: INK.occluder,
+            widthPx: size * 1.9, color: INK.occluder, opacity: symbolAlpha,
           }),
           depth: depth - 1,
         });
-        for (const seg of scratch) marks.push({ seg: fade(seg), depth: depth - 2 });
+        for (const seg of scratch) {
+          marks.push({
+            seg: fade({ ...seg, opacity: (seg.opacity ?? 1) * symbolAlpha }),
+            depth: depth - 2,
+          });
+        }
         scratch.length = 0;
       }
-      // The pedestal or structure it stands on, once the yard has risen.
-      if (t > 0.2 && p.y > 0.3) {
+      // Something to stand on, while the volume is still fading in.
+      if (t > 0.2 && p.y > 0.3 && volumeAlpha < 0.99) {
         mark({
           a: [p.x, 0, p.z], b: [p.x, p.y, p.z],
-          widthPx: 0.9, color: INK.inkFaint, opacity: t * 0.9,
+          widthPx: 0.9, color: INK.inkFaint, opacity: t * 0.9 * (1 - volumeAlpha),
         }, depth + 1);
       }
       picks.push({
@@ -584,7 +647,14 @@ export function drawSubstation(
     // --- labels -----------------------------------------------------------
     const emphasised = isSelected || isHovered;
     const devices = options.showProtection ? protectionFor(e.id) : [];
-    const named = ALWAYS_NAMED.has(e.kind) || emphasised || devices.length > 0;
+    // In the YARD there is a volume under every one of these labels, and
+    // naming all of them buries the drawing under its own captions. Once the
+    // yard has risen, only the things somebody would point at from the gate
+    // keep a standing label; the rest answer on hover.
+    const majorInYard = e.kind === 'bus' || e.kind === 'transformer'
+      || e.kind === 'line-terminal';
+    const named = emphasised || devices.length > 0
+      || (t > 0.6 ? majorInYard : ALWAYS_NAMED.has(e.kind));
     if (!named) continue;
 
     const second = devices.length > 0
@@ -594,9 +664,14 @@ export function drawSubstation(
     // A bus is named at the END of the bar, never at its middle: a label
     // placed over a busbar has the heaviest line in the drawing struck
     // through it, and no amount of offset fixes that on a horizontal bar.
+    // Clear of the object rather than on top of it: a caption struck through
+    // by the thing it names is worse than no caption.
+    const clearance = t > 0.3 && e.kind !== 'bus'
+      ? LABEL_CLEARANCE_M[e.kind] ?? 2.0 : 0;
     labels.push({
       id: `sub:${e.id}`,
-      world: e.kind === 'bus' ? beyondEnd(busEnds(frame, e), camera) : p,
+      world: e.kind === 'bus' ? beyondEnd(busEnds(frame, e), camera)
+        : clearance > 0 ? new Vector3(p.x, p.y + clearance * t, p.z) : p,
       text: e.name,
       ...(second ? { value: second } : {}),
       priority: labelPriority(e, emphasised),
@@ -654,7 +729,7 @@ export function drawSubstation(
  * to move is measured by projecting the bar and scaling.
  */
 function beyondEnd(
-  [a, b]: [Vector3, Vector3], camera: IsoCamera, px = 30
+  [a, b]: [Vector3, Vector3], camera: IsoCamera, px = 76
 ): Vector3 {
   const pa = camera.worldToScreen(a, new Vector2());
   const pb = camera.worldToScreen(b, new Vector2());

@@ -273,7 +273,7 @@ export const ZOOM: {
    * about 860 by 700 pixels here — filling the page without touching the
    * panels at either side.
    */
-  substation: 0.115,
+  substation: 0.14,
   /**
    * One service: the transformer, the drop, the meter, the panel, one socket.
    * About twenty metres of wire and a house footprint around it, which under
