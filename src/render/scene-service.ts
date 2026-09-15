@@ -172,21 +172,48 @@ export function drawService(
   const pos = new Map<string, Vector3>();
   for (const n of SERVICE_NODES) pos.set(n.id, serviceNodePosition(n));
 
-  // --- the house, as a construction outline -------------------------------
+  // --- the house, as a cutaway ---------------------------------------------
+  //
+  // It used to be a footprint and four stubs, which against the neighbourhood
+  // drawn behind it was indistinguishable from any other house on the street —
+  // so the end of the chain, the thing the whole zoom is travelling towards,
+  // happened in a void.
+  //
+  // Now it is an axonometric cutaway: footprint, wall plate, corner posts and
+  // a ridge. Still the lightest weight in the drawing, because the wiring is
+  // the subject and a building drawn in full would outweigh every wire in it —
+  // but enough of a building that the socket is plainly IN one.
   const o = SERVICE_ORIGIN;
-  for (let i = 0; i + 1 < HOUSE.length; i++) {
-    const a = new Vector3(o.x + HOUSE[i][0], 0, o.z - HOUSE[i][1]);
-    const b = new Vector3(o.x + HOUSE[i + 1][0], 0, o.z - HOUSE[i + 1][1]);
-    mark({
-      a: [a.x, 0, a.z], b: [b.x, 0, b.z],
-      widthPx: 0.9, color: INK.inkGhost,
-    }, Number.MAX_SAFE_INTEGER - 20);
-    // Just the corner posts, not the whole box. A building drawn in full
-    // outweighs every wire inside it, and the wires are the subject.
-    mark({
-      a: [a.x, 0, a.z], b: [a.x, 2.4, a.z],
-      widthPx: 0.7, color: INK.inkGhost,
-    }, Number.MAX_SAFE_INTEGER - 19);
+  const WALL_M = 2.7;
+  const RIDGE_M = 4.3;
+  const corners = HOUSE.slice(0, 4).map(([hx, hz]) =>
+    new Vector3(o.x + hx, 0, o.z - hz));
+  const houseDepth = Number.MAX_SAFE_INTEGER - 20;
+  const ghost = (a: Vector3, b: Vector3, widthPx: number, d: number): void => {
+    mark({ a: [a.x, a.y, a.z], b: [b.x, b.y, b.z], widthPx, color: INK.inkGhost }, d);
+  };
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % 4];
+    // Footprint on the ground, and the plate the roof sits on.
+    ghost(a, b, 1.0, houseDepth);
+    ghost(
+      new Vector3(a.x, WALL_M, a.z), new Vector3(b.x, WALL_M, b.z), 0.8, houseDepth - 1);
+    // The corner post between them.
+    ghost(a, new Vector3(a.x, WALL_M, a.z), 0.8, houseDepth - 1);
+  }
+  // A ridge down the long axis, with a rafter to each gable corner: the least
+  // that reads unmistakably as a roof.
+  const mid = (p: Vector3, q: Vector3, y: number): Vector3 =>
+    new Vector3((p.x + q.x) / 2, y, (p.z + q.z) / 2);
+  const ridgeA = mid(corners[0], corners[3], RIDGE_M);
+  const ridgeB = mid(corners[1], corners[2], RIDGE_M);
+  ghost(ridgeA, ridgeB, 0.9, houseDepth - 2);
+  for (const [c, r] of [
+    [corners[0], ridgeA], [corners[3], ridgeA],
+    [corners[1], ridgeB], [corners[2], ridgeB],
+  ] as [Vector3, Vector3][]) {
+    ghost(new Vector3(c.x, WALL_M, c.z), r, 0.7, houseDepth - 2);
   }
 
   // --- grade, as a hairline, so "buried" reads as buried ------------------

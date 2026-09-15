@@ -357,6 +357,16 @@ export function drawSystem(
   };
 
   const haloPad = options.haloPad ?? HALO_PAD_PX;
+
+  // A DRAWING THAT IS FADING SHOULD THIN, NOT ONLY PALE.
+  //
+  // Halfway through the hand-over to the feeder the transmission lines were
+  // still at full width, so a 500 kV pair came out as two forty-pixel grey
+  // bands crossing a page whose subject was three kilometres of street. Pale
+  // wide bands read as damage. Narrowing them as they go — and collapsing the
+  // gap between parallel circuits at the same time — makes the transition read
+  // as one drawing dissolving into another, which is what it is.
+  const fadeWeight = 0.35 + 0.65 * (options.opacity ?? 1);
   for (const c of geometry.circuits) {
     if (options.onlyKV != null && Math.abs(c.kV - options.onlyKV) > 1) continue;
     if (offScreen(c.a, c.b)) continue;
@@ -372,7 +382,7 @@ export function drawSystem(
     // not perpendicular to it on the page, and the circuits fan out instead of
     // running parallel. Project the route, take the perpendicular there, then
     // map that screen offset back to the ground through the camera basis.
-    const offPx = circuitOffsetPx(c.index, c.total);
+    const offPx = circuitOffsetPx(c.index, c.total) * fadeWeight;
     let ox = 0;
     let oz = 0;
     if (offPx !== 0) {
@@ -396,7 +406,7 @@ export function drawSystem(
     const isHovered = hovered === c.branch.id;
 
     const color = over || isOut ? SIGNAL.alarm : isSelected ? SELECTION.stroke : INK.ink;
-    const width = cls.weightPx * (isSelected || isHovered ? 1.7 : 1);
+    const width = cls.weightPx * fadeWeight * (isSelected || isHovered ? 1.7 : 1);
     // An out-of-service circuit is drawn as a fine dotted line: still there,
     // plainly not carrying anything.
     const dash: [number, number] | undefined =

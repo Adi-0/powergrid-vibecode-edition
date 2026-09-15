@@ -471,7 +471,21 @@ export function drawFeeder(
     }
 
     // --- labels -------------------------------------------------------------
+    //
+    // Detail waits until there is room for it. Far out, the whole feeder is a
+    // smudge a hundred pixels across and naming all twenty poles produces six
+    // captions on long leaders reaching into empty paper — which is what made
+    // the approach to the feeder look broken. Only the pieces of equipment
+    // keep a name until the poles are far enough apart to point at.
+    const spacious = camera.metresPerPixel < 8;
     if (!bus) continue;
+    if (!spacious && !kit && !isSelected && !isHovered && node.id !== 'SVC_LV') {
+      picks.push({
+        id: node.id, kind: 'site', world: top.clone(),
+        radiusPx: LAYOUT.pickRadiusPx * 0.9,
+      });
+      continue;
+    }
     const km = node.distanceKm ?? 0;
     const live = node.id === 'SVC_LV'
       ? `${(bus.vpu * 240).toFixed(1)} V · ${bus.vpu.toFixed(4)} pu`

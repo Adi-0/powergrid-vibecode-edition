@@ -216,6 +216,10 @@ html, body {
   grid-row: 3;
   display: flex;
   align-items: center;
+  /* On a narrow window the buttons drop to their own row rather than
+     squeezing the day into a stub. The day is a control; they are doors. */
+  flex-wrap: wrap;
+  row-gap: 7px;
   gap: 14px;
   padding: 7px var(--pad);
   border-top: var(--rule-strong);
@@ -418,7 +422,11 @@ button, select, input {
 
 .scrub__track {
   position: relative;
-  flex: 1;
+  /* The day is the one control that must never be squeezed out. With six
+     buttons in the footer a plain flex:1 let it collapse to a stub, which is
+     the difference between a scrubbable day and a decoration. */
+  flex: 1 1 420px;
+  min-width: 400px;
   height: 60px;
   cursor: ew-resize;
   touch-action: none;
@@ -625,7 +633,15 @@ button, select, input {
 /* Footer controls and scrubber extras                                    */
 /* --------------------------------------------------------------------- */
 
-.footer__controls { display: flex; gap: 6px; align-items: center; }
+.footer__controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
 
 .scrub__play {
   width: 30px;
@@ -639,7 +655,8 @@ button, select, input {
   font-size: 10.5px;
   color: var(--ink-muted);
   flex: 0 1 auto;
-  min-width: 190px;
+  /* Shrinkable: the price-setting note is useful but it is not the day. */
+  min-width: 120px;
   max-width: 340px;
   line-height: 1.35;
   letter-spacing: 0.01em;
