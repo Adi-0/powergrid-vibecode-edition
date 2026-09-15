@@ -16,6 +16,7 @@ import { APPLIANCES } from '../data/california/service.js';
 import { FaultKind } from '../core/fault.js';
 import { feederBusId } from '../data/california/feeder.js';
 import { SceneId } from './scenes.js';
+import { LevelId } from '../render/style.js';
 import {
   MotorState, MotorStudy, MOTOR_SITES, CHERRY_LANE_MOTOR, LOAD_BREAKAWAY_TORQUE_PU,
   fullLoadAmps, lockedRotorAmps,
@@ -33,6 +34,7 @@ export interface LevelBarHost {
   onMotor: (state: MotorState, method: StartMethod, site: string) => void;
   onMotorWorking?: () => void;
   onFactorsWorking?: () => void;
+  onRestoreAll?: () => void;
   onExplain?: (title: string, text: string, el: HTMLElement) => void;
   onDismiss?: () => void;
 }
@@ -41,6 +43,7 @@ export class LevelBar {
   readonly element: HTMLElement;
   private readonly host: LevelBarHost;
   private scene: SceneId | null = null;
+  private level: LevelId = 'system';
   private morph = 0;
   private protection = false;
   private appliance: string | null = null;
@@ -52,6 +55,7 @@ export class LevelBar {
   private motorSite = MOTOR_SITES[0].id;
   private motor: MotorStudy | null = null;
   private factors: FactorSet | null = null;
+  private tripped = 0;
 
   constructor(host: LevelBarHost) {
     this.host = host;
@@ -109,6 +113,8 @@ export class LevelBar {
         this.host.onMotorWorking?.();
       } else if (b.dataset.role === 'factors-working') {
         this.host.onFactorsWorking?.();
+      } else if (b.dataset.role === 'restore') {
+        this.host.onRestoreAll?.();
       } else if (b.dataset.appliance !== undefined) {
         const id = b.dataset.appliance || null;
         this.appliance = this.appliance === id ? null : id;
@@ -129,10 +135,18 @@ export class LevelBar {
     return this.morph;
   }
 
-  /** Show the controls for whichever scene is dominant, or nothing. */
-  setScene(scene: SceneId | null): void {
-    if (scene === this.scene) return;
+  /**
+   * Show the controls for whichever scene is dominant.
+   *
+   * `level` is passed as well because the two answer different questions.
+   * Between the whole state and one feeder there is no scene of its own — the
+   * transmission drawing carries both — but the reader is somewhere quite
+   * different at 1,200 m/px and at 140, and the panel has to say so.
+   */
+  setScene(scene: SceneId | null, level: LevelId = 'system'): void {
+    if (scene === this.scene && level === this.level) return;
     this.scene = scene;
+    this.level = level;
     this.render();
   }
 
@@ -161,6 +175,13 @@ export class LevelBar {
     this.faultBus = busId;
     this.faultKind = kind;
     if (this.scene === 'feeder' || this.scene === 'substation') this.render();
+  }
+
+  /** How many circuits the reader has taken out, for the region panel. */
+  setTripped(n: number): void {
+    if (n === this.tripped) return;
+    this.tripped = n;
+    if (this.scene === null) this.render();
   }
 
   /** The planning factors for the day, computed by the state. */
@@ -410,6 +431,57 @@ export class LevelBar {
             `${term('device-number', 'device numbers')}</button></div>`) +
         this.faultControls();
       if (!isFeeder) this.updateMorphReadout();
+      return;
+    }
+
+    if (this.scene === 'plant') {
+      this.element.style.display = '';
+      title.textContent = 'Metcalf Energy Center';
+      sub.textContent = 'a combined-cycle power station';
+      body.innerHTML =
+        `<p class="note">Gas burns in a turbine. Its exhaust is still hot ` +
+        `enough to boil water, so a second turbine runs on the steam. Together ` +
+        `they get about half the energy in the fuel out as electricity, which ` +
+        `is as good as burning anything gets.</p>` +
+        `<p class="note">The streams are drawn at widths proportional to the ` +
+        `energy in them. The widest one goes to the condenser: that is the heat ` +
+        `no engine can use, leaving.</p>` +
+        `<p class="note">Select any piece of it for the working.</p>`;
+      return;
+    }
+
+    if (this.scene === 'machine') {
+      this.element.style.display = '';
+      title.textContent = 'One generator';
+      sub.textContent = 'in cross-section';
+      body.innerHTML =
+        `<p class="note">Three windings 120° apart in the stator, and a rotor ` +
+        `turning inside them at 3,600 rev/min — two poles at 60 Hz, so the ` +
+        `rotor IS the frequency.</p>` +
+        `<p class="note">The rotor is drawn at the ` +
+        `${term('load-angle', 'load angle')} it is actually running at: how far ` +
+        `the torque on its shaft has dragged it ahead of the voltage at its ` +
+        `terminals. Open the fuel valve and that angle grows.</p>`;
+      return;
+    }
+
+    if (this.scene === null && this.level === 'region') {
+      this.element.style.display = '';
+      title.textContent = 'The Bay Area';
+      sub.textContent = 'one corner of the network';
+      body.innerHTML =
+        `<p class="note">Closer in, the network stops being a shape and becomes ` +
+        `circuits between places. Each line here is a real circuit; parallel ` +
+        `ones are drawn side by side because that is how they are built and how ` +
+        `they share the load.</p>` +
+        `<p class="note">Click any circuit to see what it is carrying, and to ` +
+        `take it out of service. The flows redistribute through what is left, ` +
+        `by an actual re-solve.</p>` +
+        (this.tripped > 0
+          ? `<div class="inspect__actions">` +
+            `<button class="btn" data-role="restore">Put ` +
+            `${this.tripped === 1 ? 'it' : 'them'} back</button></div>`
+          : '');
       return;
     }
 

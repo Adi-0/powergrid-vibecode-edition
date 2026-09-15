@@ -157,6 +157,7 @@ const levelBar = new LevelBar({
   onStorage: (on) => state.setStorageInService(on),
   onFault: (busId, kind) => state.setFault(busId, kind),
   onMotor: (motorState, method, site) => state.setMotor(motorState, method, site),
+  onRestoreAll: () => state.restoreAll(),
   onFactorsWorking: () => {
     const snap = state.current;
     // The example is the unit whose capacity factor is most worth explaining:
@@ -381,6 +382,7 @@ state.subscribe((snap) => {
   if (reliabilityPanel.isOpen) reliabilityPanel.render();
   levelBar.setMotor(snap.motor);
   levelBar.setFactors(snap.factors);
+  levelBar.setTripped(snap.tripped.size);
   renderTcc(snap);
   if (math.isOpen && mathTarget) {
     math.update(derivationsFor(
@@ -416,7 +418,7 @@ function onCamera(mpp: number, level: LevelId): void {
   renderBreadcrumb(here);
   side.setScope(here as ScopeId);
 
-  levelBar.setScene(scene);
+  levelBar.setScene(scene, here);
 
   renderTcc(state.current);
 

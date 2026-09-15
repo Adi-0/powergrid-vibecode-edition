@@ -223,6 +223,20 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // follows the same bounds tests the drawing does.
   let floorScale = Infinity;
 
+  /**
+   * Take a scene's labels at the scene's own strength.
+   *
+   * Below a third they are dropped outright: a caption at ten per cent is not
+   * a faint caption, it is unreadable grey text sitting on top of the drawing
+   * that replaced it.
+   */
+  const addLabels = (from: LabelSpec[], alpha: number): void => {
+    if (alpha >= 0.999) { labels.push(...from); return; }
+    if (alpha < 0.34) return;
+    const o = (alpha - 0.34) / 0.66;
+    for (const l of from) labels.push({ ...l, opacity: o * o * (3 - 2 * o) });
+  };
+
   const include = (scene: SceneId, bounds: Box | null): number => {
     const near = !bounds || !view || overlaps(bounds, view);
     // Stop a little ABOVE where the scene vanishes, not exactly at it: the last
@@ -238,7 +252,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // --- the ground, before anything electrical -------------------------------
   const aGround = include('ground', groundBounds());
   if (aGround > 0) {
-    const r = drawGround({ opacity: aGround, camera: input.camera });
+    const r = drawGround({ opacity: aGround, camera: input.camera, view });
     segments.push(...r.segments);
   }
 
@@ -258,7 +272,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       onlyKV: input.onlyKV ?? null,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aSystem);
     picks.push(...r.picks);
   }
 
@@ -279,7 +293,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       motor: input.motor ?? null,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aFeeder);
     picks.push(...r.picks);
   }
 
@@ -292,7 +306,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aSub,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aSub);
     picks.push(...r.picks);
   }
 
@@ -304,7 +318,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aService,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aService);
     picks.push(...r.picks);
   }
 
@@ -317,7 +331,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aPlant,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aPlant);
     picks.push(...r.picks);
   }
 
@@ -330,7 +344,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aMachine,
     });
     segments.push(...r.segments);
-    labels.push(...r.labels);
+    addLabels(r.labels, aMachine);
     picks.push(...r.picks);
     machine = r.generator;
   }

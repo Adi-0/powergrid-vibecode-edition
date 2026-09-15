@@ -48,8 +48,15 @@ const EXTENT_M = 620;
 
 export interface GroundDrawOptions {
   opacity?: number;
-  /** Drawn only when a house is at least this many pixels across. */
   camera: IsoCamera;
+  /**
+   * The ground rectangle the camera can see.
+   *
+   * Without it the neighbourhood draws every street and every house whether or
+   * not it is on the page, which at feeder scale is thirteen thousand line
+   * segments for a few hundred visible ones.
+   */
+  view?: { min: { x: number; z: number }; max: { x: number; z: number } } | null;
 }
 
 interface Basis {
@@ -114,6 +121,18 @@ export function drawGround(options: GroundDrawOptions): GroundDrawResult {
   const segments: LineSegment[] = [];
   if (alpha <= 0.004) return { segments, bounds: groundBounds() };
 
+  // Anything further than this from the middle of the window is off the page.
+  const cull = options.view ? (() => {
+    const cx = (options.view.min.x + options.view.max.x) / 2;
+    const cz = (options.view.min.z + options.view.max.z) / 2;
+    const reach = 0.5 * Math.hypot(
+      options.view.max.x - options.view.min.x,
+      options.view.max.z - options.view.min.z) + 60;
+    return { cx, cz, reach };
+  })() : null;
+  const visible = (p: Vector3): boolean =>
+    !cull || Math.hypot(p.x - cull.cx, p.z - cull.cz) <= cull.reach;
+
   // How present the ground is at a point, 0 at the edges of the neighbourhood
   // and 1 through the middle of it.
   //
@@ -140,6 +159,7 @@ export function drawGround(options: GroundDrawOptions): GroundDrawResult {
       if (f <= 0.02) continue;
       const a = at(u0 + (u1 - u0) * t0, v0 + (v1 - v0) * t0);
       const b = at(u0 + (u1 - u0) * t1, v0 + (v1 - v0) * t1);
+      if (!visible(a) && !visible(b)) continue;
       segments.push({
         a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
         widthPx, color: INK.inkGhost, opacity: alpha * f,
@@ -166,12 +186,14 @@ export function drawGround(options: GroundDrawOptions): GroundDrawResult {
   }
 
   // --- the buildings -------------------------------------------------------
-  // Only once a house would be more than about six pixels across. Below that
-  // they are indistinguishable from noise and cost thousands of segments.
+  // Detail arrives as you approach. Below about seven pixels a house is a
+  // smudge indistinguishable from noise, and there are several thousand of
+  // them, so the whole neighbourhood is streets only until it is worth drawing
+  // the buildings on it.
   const housePx = BLOCK.houseM[0] / mpp;
-  if (housePx < 3.5) return { segments, bounds: groundBounds() };
+  if (housePx < 7) return { segments, bounds: groundBounds() };
 
-  const houseAlpha = alpha * Math.min(1, (housePx - 3.5) / 5);
+  const houseAlpha = alpha * Math.min(1, (housePx - 7) / 6);
   const rect = (centre: Vector3, halfU: number, halfV: number, f: number): void => {
     const p = [
       centre.clone().addScaledVector(BASIS.along, -halfU).addScaledVector(BASIS.across, -halfV),
@@ -202,7 +224,9 @@ export function drawGround(options: GroundDrawOptions): GroundDrawResult {
         if (nearCross) continue;
         const f = presence(u, vHouse);
         if (f <= 0.05) continue;
-        rect(at(u, vHouse), BLOCK.houseM[0] / 2, BLOCK.houseM[1] / 2, f);
+        const centre = at(u, vHouse);
+        if (!visible(centre)) continue;
+        rect(centre, BLOCK.houseM[0] / 2, BLOCK.houseM[1] / 2, f);
       }
     }
   }
