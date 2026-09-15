@@ -36,7 +36,7 @@ export interface InspectorHost {
   onClose: () => void;
   onTrip: (branchId: string) => void;
   onSelect: (kind: Selection['kind'], id: string) => void;
-  onShowMath: (kind: 'branch' | 'bus', id: string) => void;
+  onShowMath: (kind: Selection['kind'], id: string) => void;
 }
 
 export class Inspector {
@@ -69,7 +69,7 @@ export class Inspector {
       const { action, id, kind } = t.dataset;
       if (action === 'trip' && id) this.host.onTrip(id);
       if (action === 'select' && id && kind) this.host.onSelect(kind as Selection['kind'], id);
-      if (action === 'math' && id && kind) this.host.onShowMath(kind as 'branch' | 'bus', id);
+      if (action === 'math' && id && kind) this.host.onShowMath(kind as Selection['kind'], id);
     });
   }
 
@@ -145,6 +145,11 @@ export class Inspector {
         `</section>`
       );
     }
+    rows.push(
+      `<div class="inspect__actions">` +
+      `<button class="btn" data-action="math" data-kind="site" ` +
+      `data-id="${escapeHtml(id)}">Show the working</button></div>`
+    );
     this.body.innerHTML = rows.join('');
   }
 
@@ -194,6 +199,11 @@ export class Inspector {
         `draw on its own, which is what ${term('coincidence', 'coincident demand')} means.`
       ));
     }
+    rows.push(
+      `<div class="inspect__actions">` +
+      `<button class="btn" data-action="math" data-kind="site" ` +
+      `data-id="${escapeHtml(id)}">Show the working</button></div>`
+    );
     this.body.innerHTML = rows.join('');
   }
 
@@ -248,6 +258,11 @@ export class Inspector {
         kv('Drawing now', quantity(svc.branchCurrentA.toFixed(2), { symbol: 'I', unit: 'A' })),
       ]));
     }
+    rows.push(
+      `<div class="inspect__actions">` +
+      `<button class="btn" data-action="math" data-kind="site" ` +
+      `data-id="${escapeHtml(id)}">Show the working</button></div>`
+    );
     this.body.innerHTML = rows.join('');
   }
 
@@ -367,7 +382,7 @@ export class Inspector {
       `<div class="inspect__actions">` +
       `<button class="btn" data-action="trip" data-id="${escapeHtml(br.id)}">` +
       `${snap.tripped.has(br.id) ? 'Put back in service' : 'Trip this circuit'}</button>` +
-      `<button class="btn btn--quiet" data-action="math" data-kind="branch" ` +
+      `<button class="btn btn--quiet" data-action="math" data-kind="circuit" ` +
       `data-id="${escapeHtml(br.id)}">Show the working</button>` +
       `</div>`
     );
@@ -474,6 +489,12 @@ export class Inspector {
         );
       })));
     }
+
+    rows.push(
+      `<div class="inspect__actions">` +
+      `<button class="btn" data-action="math" data-kind="site" ` +
+      `data-id="${escapeHtml(node.site.id)}">Show the working</button></div>`
+    );
 
     void snap;
     this.body.innerHTML = rows.join('');

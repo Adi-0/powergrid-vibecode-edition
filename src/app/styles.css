@@ -801,3 +801,170 @@ button, select, input {
   letter-spacing: 0.01em;
   color: var(--ink);
 }
+
+/* --------------------------------------------------------------------- */
+/* The math panel                                                          */
+/* --------------------------------------------------------------------- */
+
+/* Wider than the inspector, because a line of arithmetic is longer than a
+   label, and a derivation that wraps in the middle of an expression is
+   harder to read than one that scrolls. */
+.panel--math {
+  right: var(--pad);
+  top: var(--pad);
+  width: 430px;
+  max-height: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--math .panel__body { overflow-y: auto; }
+
+/* With the math panel open, the inspector steps aside rather than stacking
+   on top of it: they are two halves of one answer and are read together. */
+.stage.has-math .panel--inspect {
+  right: calc(var(--pad) + 430px + 9px);
+}
+
+.math__tabs {
+  display: flex;
+  border-bottom: var(--rule);
+}
+.math__tab {
+  flex: 1;
+  border: 0;
+  border-right: var(--rule);
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.math__tab:last-child { border-right: 0; }
+.math__tab[aria-pressed='true'] { color: var(--ink); background: var(--ground-shade); }
+
+.math__standard {
+  margin: 0 0 9px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+
+.math__convention { margin-bottom: 11px; }
+.math__diagram {
+  margin-top: 7px;
+  padding: 4px 0;
+  border-top: var(--rule);
+  border-bottom: var(--rule);
+}
+
+.math__bases {
+  margin-bottom: 12px;
+  padding-bottom: 9px;
+  border-bottom: var(--rule);
+}
+.math__base {
+  display: grid;
+  grid-template-columns: 52px 92px 1fr;
+  gap: 7px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.math__base-symbol { font-size: 11.5px; font-weight: 500; }
+.math__base-value { font-size: 11.5px; text-align: right; }
+.math__base-note { font-size: 10px; color: var(--ink-muted); line-height: 1.35; }
+
+.math__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+}
+.math__step + .math__step {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: var(--rule);
+}
+.math__label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 5px;
+}
+/* The step number is a drafting mark, not a bullet: a hairline box with the
+   figure in it, the way a detail callout is numbered on a drawing. */
+.math__index {
+  display: inline-block;
+  min-width: 15px;
+  margin-right: 6px;
+  padding: 0 3px;
+  border: 1px solid var(--ink-ghost);
+  text-align: center;
+  font-size: 9px;
+  line-height: 13px;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+/* The general form is the equation as the field writes it, and it is the
+   line a reader should be able to find in a textbook. Set apart from the
+   arithmetic beneath it by weight, not by colour. */
+.math__general {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  margin-bottom: 3px;
+}
+.math__work {
+  font-size: 12px;
+  color: var(--ink-muted);
+  letter-spacing: 0.005em;
+  word-break: break-word;
+  padding-left: 9px;
+  border-left: 1px solid var(--ink-ghost);
+  margin: 3px 0;
+}
+.math__result {
+  font-size: 14px;
+  font-weight: 500;
+  padding-left: 9px;
+  border-left: 1px solid var(--ink);
+  margin: 3px 0 4px;
+}
+.math__unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  margin-left: 5px;
+  letter-spacing: 0.03em;
+}
+
+/* Agreement with the solver is stated plainly and quietly. It is the panel's
+   whole claim, so it must be visible; it is not an alarm, so it is not loud. */
+.math__check {
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+  margin: 2px 0 3px;
+}
+
+.math__closing {
+  margin: 13px 0 0;
+  padding-top: 10px;
+  border-top: var(--rule-strong);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* With both right-hand panels open the profile plot gives up the middle of the
+   page rather than sliding underneath them. */
+.stage.has-math .panel--profile {
+  left: calc(var(--pad) + 236px + 9px);
+  right: calc(var(--pad) + 430px + 9px + var(--panel-w) + 9px);
+  transform: none;
+  width: auto;
+}

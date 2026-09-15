@@ -21,6 +21,8 @@ import { Scrubber } from './scrubber.js';
 import { SidePanel } from './honesty.js';
 import { LevelBar } from './levelbar.js';
 import { VoltageProfile } from './profile.js';
+import { MathPanel } from './mathpanel.js';
+import { derivationsFor } from '../math/for-selection.js';
 import { Tooltip, term } from './tooltip.js';
 import { composeFrame, destinations, sceneAlpha, SceneId, Destination } from './scenes.js';
 import {
@@ -86,17 +88,32 @@ const inspector = new Inspector({
   onClose: () => state.select('none', null),
   onTrip: (id) => state.toggleTrip(id),
   onSelect: (kind, id) => state.select(kind, id),
-  onShowMath: () => {
-    // The math panel arrives in phase 5. Until then, say so plainly rather
-    // than silently doing nothing.
-    window.alert(
-      'The full worked derivation panel is the next phase of this build. ' +
-      'Every number you can see already comes from the solver — the panel ' +
-      'will show the arithmetic that produced it.'
-    );
-  },
+  onShowMath: (kind, id) => openMath(kind, id),
 });
 stage.appendChild(inspector.element);
+
+const math = new MathPanel({
+  onClose: () => stage.classList.remove('has-math'),
+});
+stage.appendChild(math.element);
+
+/** Open the working for one selected object. */
+function openMath(kind: Parameters<typeof derivationsFor>[0], id: string): void {
+  const snap = state.current;
+  const derivations = derivationsFor(kind, id, snap.solved, snap.service);
+  if (derivations.length === 0) return;
+  mathTarget = { kind, id };
+  stage.classList.add('has-math');
+  math.show(derivations);
+}
+
+/**
+ * What the math panel is currently showing, so it can be re-derived when the
+ * network is re-solved. A derivation is a photograph of one solution; leaving
+ * one on screen beside a drawing of a different solution would be the worst
+ * thing this app could do.
+ */
+let mathTarget: { kind: Parameters<typeof derivationsFor>[0]; id: string } | null = null;
 
 const side = new SidePanel(() => side.close());
 stage.appendChild(side.element);
@@ -209,6 +226,9 @@ state.subscribe((snap) => {
   renderStats();
   inspector.render(snap, geometry);
   profile.render(snap.solved, snap.selection.id);
+  if (math.isOpen && mathTarget) {
+    math.update(derivationsFor(mathTarget.kind, mathTarget.id, snap.solved, snap.service));
+  }
   scrubber.update(state.dispatchDayResults, snap.hour, snap.dispatch);
   (controls.querySelector('[data-action="restore"]') as HTMLElement).style.display =
     snap.tripped.size > 0 ? '' : 'none';
@@ -324,6 +344,6 @@ viewport.start();
 // Exposed for debugging and for the screenshot harness.
 (window as unknown as Record<string, unknown>).gridAtlas = {
   state, viewport, debug, frameAll, side, inspector, goTo, view, levelBar,
-  levelForScale, ZOOM,
+  levelForScale, ZOOM, math, openMath,
   get geometry() { return geometry; },
 };

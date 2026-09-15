@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phases 1–4 complete.
+**Last updated:** phases 1–5 complete.
 
 ---
 
@@ -14,7 +14,7 @@ An isometric, zoomable, explorable model of the California power grid.
 | 2 | System view — isometric rendering, real flows, pan and zoom | **complete** |
 | 3 | Time scrubber, line tripping, seasons, inspector, glossary | **complete** |
 | 4 | Substation → distribution feeder → service | **complete** |
-| 5 | Math panel with full worked derivations | not started |
+| 5 | Math panel with full worked derivations | **complete** |
 | 6 | Plant and machine branch | not started |
 | 7 | Faults and protection | not started |
 | 8 | Breadth: remaining generation types, regions, guided path | not started |
@@ -250,11 +250,87 @@ advancing. Four things were rebuilt on the evidence of a screenshot:
 
 ---
 
+## Phase 5 — complete
+
+**The working, in full, for whatever is selected.** This is the panel the whole
+project is an argument for: everything else shows a reader what the system is
+doing, and this shows why that is the answer, in the form they would have to
+write it down themselves.
+
+### The one architectural decision
+
+**The substituted line is not a description of the arithmetic. It is the
+arithmetic.** A derivation step holds one string of numbers and operators, which
+is evaluated to produce the value printed beneath it. There is no second
+computation in TypeScript to drift out of step with the prose, because there is
+no prose — and `test/math-panel.test.ts` takes the same string off the page and
+checks it against the solver. The string a reader sees and the string the test
+checks are the same string. Decision **0012**.
+
+### What exists
+
+**`src/math/expr.ts`** — a deliberately tiny infix parser: arithmetic,
+parentheses, and the functions power engineering uses. `ln` is natural and `log`
+is base ten, as the field writes them; `sind`/`cosd` take degrees, as angles are
+quoted. No variables, no assignment, no way to reach outside the expression.
+
+**`src/math/derive.ts`** — the derivations. Per-unit bases; a bus; a branch, in
+sixteen steps from impedance in ohms to complex power, with the series
+admittance, the voltage difference, the series current and the charging current
+all on the page; where a line's impedance came from, in conductor geometry; a
+transformer's impedance from its nameplate, with the base change; the service
+voltage drop; and the whole system as one equation.
+
+**`src/math/for-selection.ts`** — which derivations belong to what is selected. A
+current transformer's working is the working for the circuit it is measuring,
+which is also the honest answer to "what is this for".
+
+**`src/app/mathpanel.ts`** — the panel. Sign convention first and drawn, then the
+bases, then numbered steps: general form, the arithmetic, the result with units,
+and where a step reproduces something the solver computed, the two side by side.
+
+### The two tests the brief asks for by name
+
+**Every math panel's arithmetic is internally consistent** —
+`test/math-panel.test.ts`, 104 tests. It evaluates every step of every
+derivation the app can show, checks the printed result is what the printed
+working produces, and checks agreement with the solver wherever a step claims it.
+
+**No displayed quantity is a hardcoded constant** —
+`test/no-hardcoded-quantities.test.ts`. Every scene returns its labels as data,
+so the test collects literally every string the drawing shows, across five
+states of the system, and requires every number that does not move to be
+explicitly accounted for in a register of genuine constants with reasons.
+Verified non-vacuous by breaking the thing it guards. Decision **0013**.
+
+### What the tests caught
+
+| Defect | How it was found |
+|---|---|
+| Bundle radius formula carried a spurious factor of n | Checked against the model's own `bundleRadius` |
+| Loading computed at the from end, not the end working hardest | Disagreed with the solver by 2.2 % on a tapped transformer |
+| Line-geometry derivation offered for cables, whose phases are concentric | Per-unit reactance came out 160× the branch's own |
+| A second copy of the voltage-to-tower mapping, with the wrong ids | Returned null for every line in the case |
+| `^(1/3)` rendered as a superscript 1 followed by `/3)` | Reading the screenshot |
+| Operands printed as `2500.000000`, and `1000 · 7.6` tightened so it read as binding first | Reading the screenshot |
+
+### What it does
+
+| Check | Result |
+|---|---|
+| Derivations checked step by step | every one the app can show |
+| Steps whose printed result is not what their printed working produces | 0 |
+| Steps disagreeing with the solver beyond their stated rounding | 0 |
+| Displayed numbers that do not move and are not accounted for | 0 |
+| Tests | 287 passing |
+
+---
+
 ## Running it
 
 ```
 npm install
-npm test          # 170 tests
+npm test          # 287 tests
 npm run typecheck
 npm run dev
 ```
