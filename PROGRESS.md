@@ -543,15 +543,16 @@ leaves the app where the path got to.
 
 ---
 
-## Quality, in two passes
+## Quality, in three passes
 
 The eight phases were all built and all tested and the result was still, in the
 reviewer's words, "a bit of a mess". Two review passes follow, each recorded in
-full: [0017](docs/decisions/0017-the-quality-pass.md) and
-[0018](docs/decisions/0018-the-second-quality-pass.md).
+full: [0017](docs/decisions/0017-the-quality-pass.md),
+[0018](docs/decisions/0018-the-second-quality-pass.md) and
+[0019](docs/decisions/0019-less-at-once-more-on-demand.md).
 
-The method in both was to instrument the app rather than squint at it. Four
-tools live in `tools/`:
+The method in all three was to instrument the app rather than squint at it.
+Five tools live in `tools/`:
 
 | Tool | What it answers |
 |---|---|
@@ -578,6 +579,22 @@ tools live in `tools/`:
 | A fault on a busbar was drawn nowhere | The feeder marked its faults and the substation did not, so 23 kA in the panel sat beside a drawing with nothing wrong in it |
 | The panel explaining a circuit covered the circuit | Nothing panned when a panel opened over the subject |
 | Captions behind panels | The layout knew about the drawing and nothing about what was lying over it |
+
+### What the third pass changed
+
+The judgement was that there is a LOT thrown at the reader at once, and that
+some of the map's names looked like they were pointing outside California.
+
+| Symptom | What it became |
+|---|---|
+| Names out at sea and over Mexico — 11 of 33 | Candidates grouped so a caption goes inward first, at arm's length inward next, and outward only as a last resort. 3 of 36 |
+| Everything on the page at once | `TEXT · Least · Normal · All` in the footer. Type only: the same drawing, differently annotated |
+| Quiet would mean hidden | Every pickable thing carries its own two-line readout, supplied by the scene that drew it. A pole with no caption still answers |
+| No way to isolate one voltage class | The legend is the filter: click a class and it is held against the rest, which recede rather than vanish |
+| Three paragraphs before you can look at the drawing | Each level leads with one line; the rest is behind a summary phrased as the question it answers |
+| Eight fault buttons always open | A disclosure reading "Put a fault somewhere" — as discoverable, one line instead of two hundred pixels |
+| A crowded corner drops names entirely | Every caption tried twice, the second time without its number |
+| Nothing said which places open up | Eden Vale and Metcalf say so when pointed at |
 
 ---
 
