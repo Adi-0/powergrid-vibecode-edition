@@ -19,6 +19,10 @@ Two more tools now live beside it:
 - **`crop.mjs`** renders one view at three times device scale and cuts out a
   rectangle, because line weights, dash patterns and whether a transformer reads
   as a transformer cannot be judged from a 1440-pixel screenshot.
+- **`states.mjs`** captures the app in the states a reader can put it in — a
+  tripped backbone, a fault on a busbar, a car charger at one house, a motor
+  starting at the end of the feeder — because that is where the one signal
+  colour earns its place and audit.mjs never visits any of them.
 
 ## The zoom really was broken, and this is what was wrong with it
 
@@ -124,6 +128,35 @@ now, which is a property of the place, and the hour decides only how many dots
 are drawn. Each site also decides whether it is close enough to be worth drawing
 at all.
 
+## What the states found
+
+`audit.mjs` captures every view with nothing wrong, which is half the app. The
+other half is what happens when a circuit is out, a bus is over its limit or a
+fault is on the feeder — where the one signal colour earns its place, and where
+a drawing is most likely to be quietly wrong. `tools/states.mjs` captures four
+of those, and found two things in its first run:
+
+- **A fault on a substation busbar was drawn nowhere.** Twenty-three thousand
+  amps in the coordination panel, beside a drawing with nothing wrong in it.
+  The feeder had always marked its faults; the yard now does too.
+- **The panel explaining a thing was covering the thing.** Selecting a 500 kV
+  circuit and opening the working put a four-hundred-pixel panel and a
+  six-hundred-pixel one over the map. The camera now pans by the smallest
+  amount that brings the subject back into the paper still showing — never
+  zooms, because the scale is the reader's.
+
+Two related fixes followed from the same look:
+
+- **No caption is written under a panel.** The layout knew about the drawing
+  and nothing about the panels lying over it, so a name could be placed behind
+  the legend and the reader saw a leader line emerging from under a panel
+  pointing at nothing. The panels' rectangles are measured from the DOM on each
+  rebuild and passed to the layout as obstacles.
+- **The appliance buttons did not follow the state.** The guided path switches
+  everything off at 14 Cherry Lane on its way past, and the buttons went on
+  showing whatever was last pressed. The motor controls have taken their state
+  from the state since they were written; the appliances now do too.
+
 ## What is still not right
 
 Carried forward from 0017, honestly:
@@ -137,3 +170,10 @@ Carried forward from 0017, honestly:
 - **The plant is composed along one diagonal.** A 260 × 170 m site drawn
   isometrically has two large empty corners and the energy chain runs along the
   axis between them. The scenery fills one; the other is honest empty tarmac.
+- **Two identical trains lose one of their two identical numbers.** "The
+  drawing never writes the same number twice" is the right rule for a series
+  chain, where four devices carrying the same current were captioned with it
+  four times. Applied to a plant with two identical gas turbines it leaves one
+  of them captioned `205 MW` and the other captioned nothing, which reads as an
+  asymmetry that is not there. The rule stays, because the case it was written
+  for is much commoner and much worse.

@@ -165,6 +165,14 @@ paper to prefer.
 What this fixed was not the NUMBER of labels. It was a caption landing in the
 middle of a five-circuit corridor with a hand's width of empty paper beside it.
 
+**No caption is ever written under a panel.** The panels' rectangles are
+measured from the page on each rebuild and given to the layout as obstacles; a
+label with nowhere left to go is dropped, which is what the layout does with
+everything it cannot place legibly. A caption behind a panel is not a faint
+caption — it is an absent one that took the space another caption could have
+used, and it leaves a leader line emerging from under a panel pointing at
+nothing.
+
 A label may also state which side of its subject it belongs on. That is what
 turns the service view from scattered annotation into a labelled diagram: the
 equipment named above the chain, the wires between them below. It is a

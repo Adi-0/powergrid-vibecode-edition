@@ -347,7 +347,11 @@ footerEl.appendChild(scrubber.element);
 const controls = document.createElement('div');
 controls.className = 'footer__controls';
 controls.innerHTML =
-  `<button class="btn btn--quiet" data-action="guide" aria-pressed="false">Show me around</button>` +
+  // NOT QUIET. Everything else along this row is reference a reader goes to
+  // when they already have a question; this is the one for a reader who does
+  // not yet know what to be curious about, and among six identical grey
+  // buttons it was invisible.
+  `<button class="btn" data-action="guide" aria-pressed="false">Show me around</button>` +
   `<button class="btn btn--quiet" data-panel="glossary">Glossary</button>` +
   `<button class="btn btn--quiet" data-panel="honesty">What this leaves out</button>` +
   `<button class="btn btn--quiet" data-panel="solver">How it was solved</button>` +

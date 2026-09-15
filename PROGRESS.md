@@ -559,6 +559,7 @@ tools live in `tools/`:
 | `navigate.mjs` | Does getting there work? All forty-two journeys between the seven levels, failing if a destination is reached at a different scale depending on where you started |
 | `guide-walk.mjs` | Does the fourteen-step path land where it says? |
 | `crop.mjs` | Does it hold up at print scale? One view at three times device scale, cropped |
+| `states.mjs` | Does it hold up when something is wrong? A tripped backbone, a fault on a busbar, an overloaded pad-mount, a motor starting |
 
 ### What the second pass found
 
@@ -573,6 +574,9 @@ tools live in `tools/`:
 | Three kilometres of empty ruled paper at the feeder | Houses waited until seven pixels; at the scale the level is FOR they are four |
 | 500 kV corridors read as barber's poles | Flow marks at a 15 px pitch, four tenths as long and nearly as wide as the conductor |
 | The demand scatter re-rolled every hour | Its extent came from the load on show rather than from the site's annual peak |
+| A fault on a busbar was drawn nowhere | The feeder marked its faults and the substation did not, so 23 kA in the panel sat beside a drawing with nothing wrong in it |
+| The panel explaining a circuit covered the circuit | Nothing panned when a panel opened over the subject |
+| Captions behind panels | The layout knew about the drawing and nothing about what was lying over it |
 
 ---
 

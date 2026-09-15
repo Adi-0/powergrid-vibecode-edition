@@ -513,6 +513,10 @@ export class LevelBar {
         `<p class="note">On a spring afternoon the sun makes more than the ` +
         `state uses. The surplus goes into batteries. Take them out and watch ` +
         `the ${term('duck-curve', 'price')} for the day change shape.</p>` +
+        // The one instruction a reader arriving cold needs, and the level that
+        // was not giving it: everything on the drawing answers when asked.
+        `<p class="note">Click any circuit or any site to see what it is ` +
+        `doing, and the working behind it.</p>` +
         `<div class="inspect__actions">` +
         `<button class="btn" data-role="storage" aria-pressed="${!this.storage}">` +
         `${this.storage ? 'Take the batteries out of service' : 'Put the batteries back'}` +
