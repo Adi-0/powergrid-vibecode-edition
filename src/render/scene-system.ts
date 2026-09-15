@@ -24,6 +24,7 @@ import { Vector2, Vector3 } from 'three';
 import { SolvedCase, BranchFlow } from '../core/results.js';
 import { Branch } from '../core/network.js';
 import { SITES, Site } from '../data/california/sites.js';
+import { PEAK_LOAD_MW } from '../data/california/network.js';
 import { CALIFORNIA_OUTLINE } from '../data/california/outline.js';
 import { project } from '../data/california/geography.js';
 import { LineSegment } from './line-batch.js';
@@ -49,7 +50,14 @@ export interface SiteNode {
   buses: { id: string; kV: number }[];
   /** Generation at this site, MW of capacity by kind. */
   generation: { kind: GenKind; capacityMW: number }[];
-  /** Peak load at this site, MW. */
+  /**
+   * Load at this site at the hour being drawn, MW — what the solver was given.
+   */
+  loadMW: number;
+  /**
+   * Load at this site at ANNUAL PEAK, MW — a property of the place, not of the
+   * hour. Anything whose size should hold still while the clock runs uses this.
+   */
   peakLoadMW: number;
 }
 
@@ -100,6 +108,7 @@ export function buildSystemGeometry(solved: SolvedCase): SystemGeometry {
         ground: toWorld(project(site.lat, site.lon), 0),
         buses: [],
         generation: [],
+        loadMW: 0,
         peakLoadMW: 0,
       };
       sites.set(siteId, node);
@@ -109,7 +118,9 @@ export function buildSystemGeometry(solved: SolvedCase): SystemGeometry {
 
   for (const b of solved.net.buses) {
     const node = ensure(siteOfBus(b.id));
-    if (node) node.buses.push({ id: b.id, kV: b.baseKV });
+    if (!node) continue;
+    node.buses.push({ id: b.id, kV: b.baseKV });
+    node.peakLoadMW += PEAK_LOAD_MW.get(b.id) ?? 0;
   }
   for (const g of solved.net.generators) {
     const node = sites.get(siteOfBus(g.bus));
@@ -117,7 +128,7 @@ export function buildSystemGeometry(solved: SolvedCase): SystemGeometry {
   }
   for (const l of solved.net.loads) {
     const node = sites.get(siteOfBus(l.bus));
-    if (node) node.peakLoadMW += l.pMW;
+    if (node) node.loadMW += l.pMW;
   }
 
   // Group parallel circuits so they can be drawn side by side.
@@ -457,7 +468,8 @@ export function drawSystem(
             (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2) - 1e-3,
           seg: {
           a, b,
-          widthPx: Math.max(0.8, width - FLOW.coreInsetPx),
+          widthPx: Math.max(
+            0.55, Math.min(width - FLOW.coreInsetPx, width * FLOW.maxCoreFraction)),
           color: INK.occluder,
           opacity: FLOW.opacity,
           dash: [
@@ -556,7 +568,25 @@ export function drawSystem(
     });
 
     // --- 6. Labels --------------------------------------------------------
-    const value = siteReadout(node, solved);
+    //
+    // A NUMBER UNDER EVERY NAME IS NOT MORE INFORMATION, IT IS LESS.
+    //
+    // Forty-three sites each captioned with a name AND a live megawatt figure
+    // put eighty-six lines of type over a drawing of a state, and the type won:
+    // the map read as a list with some wires behind it. At the whole-state
+    // scale the reader is asking where things are and which ones are big, and
+    // the symbol already answers the second question by its size. So only the
+    // gigawatt sites — the ones whose names anybody would recognise from a
+    // news story about the grid — carry their number that far out, along with
+    // whatever the reader has pointed at.
+    //
+    // Come closer and the threshold drops to nothing: by the time a region
+    // fills the page there is room for every number, and that is exactly the
+    // detail-on-approach rule the rest of the drawing follows.
+    const throughputMW = Math.max(capacityMW, node.loadMW);
+    const showValue =
+      isSelected || isHovered || mpp < 600 || throughputMW >= 1000;
+    const value = showValue ? siteReadout(node, solved) : undefined;
     labels.push({
       id: `site:${node.site.id}`,
       world: node.ground,

@@ -376,8 +376,12 @@ function servicePriority(n: ServiceNode): number {
 }
 
 /** Bounds of the service drawing, for framing. */
+/** Ridge of the house, metres — the tallest thing in the service drawing. */
+export const SERVICE_HEIGHT_M = 4.6;
+
 export function serviceBounds(): {
-  min: { x: number; z: number }; max: { x: number; z: number };
+  min: { x: number; z: number; y?: number };
+  max: { x: number; z: number; y?: number };
 } {
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   const consider = (x: number, z: number) => {
@@ -391,7 +395,7 @@ export function serviceBounds(): {
   for (const [x, y] of HOUSE) consider(SERVICE_ORIGIN.x + x, SERVICE_ORIGIN.z - y);
   const pad = 3;
   return {
-    min: { x: minX - pad, z: minZ - pad },
-    max: { x: maxX + pad, z: maxZ + pad },
+    min: { x: minX - pad, z: minZ - pad, y: 0 },
+    max: { x: maxX + pad, z: maxZ + pad, y: SERVICE_HEIGHT_M },
   };
 }

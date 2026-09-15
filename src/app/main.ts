@@ -313,8 +313,10 @@ function goTo(id: LevelId): void {
     // transient panel is open trades a permanent loss for a temporary gain.
     // The point-and-scale path below still pans for them, which is the part
     // that matters — it keeps what you flew to out from under the panel.
+    const inset = insetsOnArrival(id);
     viewport.camera.frame(box.min, box.max, 56, {
-      left: 300, bottom: profileInsetPx(),
+      left: 300, bottom: inset.bottom,
+      ...(dest.tight ? { right: inset.right } : {}),
     });
     const after = { target: viewport.camera.target.clone(), mpp: viewport.camera.metresPerPixel };
     viewport.camera.target.copy(before.target);
@@ -325,7 +327,8 @@ function goTo(id: LevelId): void {
     // Shift the destination so the drawing lands in the space that is actually
     // visible rather than behind the panels sitting over the canvas.
     viewport.flyTo(
-      offsetForPanels(target, metresPerPixel), metresPerPixel, 900, afterTravel
+      offsetForPanels(target, metresPerPixel, insetsOnArrival(id)),
+      metresPerPixel, 900, afterTravel
     );
   }
 }
@@ -337,7 +340,10 @@ function goTo(id: LevelId): void {
  * camera itself, so this works at any zoom and under the isometric shear
  * without a fudge factor.
  */
-function offsetForPanels(target: Vector3, mpp: number): Vector3 {
+function offsetForPanels(
+  target: Vector3, mpp: number,
+  insets?: { bottom: number; right: number }
+): Vector3 {
   const before = viewport.camera.metresPerPixel;
   viewport.camera.setZoom(mpp);
   const b = viewport.camera.groundBasis();
@@ -347,8 +353,8 @@ function offsetForPanels(target: Vector3, mpp: number): Vector3 {
   // the solver, the capability curve. Travelling to a fault only to park it
   // underneath the panel explaining the fault is the kind of thing that makes
   // an app feel like it is not paying attention.
-  const right = rightPanelInsetPx();
-  const bottom = profileInsetPx();
+  const right = insets?.right ?? rightPanelInsetPx();
+  const bottom = insets?.bottom ?? profileInsetPx();
   const dxPx = -(left - right) / 2;
   const dyPx = bottom / 2;
   return target.clone().add(new Vector3(
@@ -399,6 +405,32 @@ function rightPanelInsetPx(): number {
 /** How much of the bottom of the stage the profile plot is covering. */
 const profileInsetPx = (): number =>
   profile.element.style.display === 'none' ? 0 : 186;
+
+/**
+ * Width of the capability-curve panel, which opens by itself at the machine.
+ * Matches `.panel--machine` in the stylesheet; a test keeps the two together.
+ */
+const MACHINE_PANEL_PX = 430 + 18;
+
+/**
+ * The insets the destination will have ONCE IT HAS ARRIVED.
+ *
+ * Framing has to answer "how much page will there be when I get there", not
+ * "how much is there now". Asking the second question meant that flying from
+ * the service back up to the substation framed the yard around a voltage-profile
+ * plot that was about to close, so the same journey landed at two different
+ * sizes depending on where it started — the kind of inconsistency that makes an
+ * interface feel unreliable without ever being obviously wrong.
+ */
+function insetsOnArrival(id: LevelId): { bottom: number; right: number } {
+  return {
+    bottom: id === 'feeder' || id === 'service' ? 186 : 0,
+    right: id === 'machine'
+      ? MACHINE_PANEL_PX
+      // Panels that belong to a selection, not to a level, stay where they are.
+      : rightPanelInsetPx(),
+  };
+}
 
 // --- state plumbing -------------------------------------------------------
 

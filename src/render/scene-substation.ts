@@ -68,7 +68,7 @@ export const SUBSTATION_CENTRE: Vector3 = (() => {
  * the same size on the page as the yard it describes, which is what makes the
  * morph read as one object changing rather than two drawings swapping.
  */
-const SCHEMATIC_UNIT_M = 8.0;
+const SCHEMATIC_UNIT_M = 6.2;
 
 /** Centre of the schematic in its own units, so it sits over the yard centre. */
 const SCHEMATIC_CENTRE: [number, number] = [4.4, 5.0];
@@ -479,6 +479,66 @@ export function drawSubstation(
       text: 'Eden Vale substation', value: `${YARD.widthM} × ${YARD.depthM} m`,
       priority: 940, tone: 'muted',
     });
+
+    // --- the things in the yard that carry no current ---------------------
+    //
+    // THE ONE-LINE HAS NO PLACE FOR THESE, WHICH IS THE POINT.
+    //
+    // A single-line diagram draws what the current flows through, so there is
+    // no symbol on it for the building the protection lives in or the road the
+    // crew drives in on — and a yard drawn only from the one-line comes out as
+    // equipment standing in an empty field, with a quarter of the fenced area
+    // conspicuously containing nothing. They appear as the diagram stands up
+    // into a yard and fade with it, which is a fair statement of what they are:
+    // real, necessary, and not electrical.
+    const yardLine = (
+      a: [number, number, number], b: [number, number, number],
+      widthPx: number, opacity: number
+    ): void => {
+      const pa = frame.place([-3, -3], a);
+      const pb = frame.place([-3, -3], b);
+      mark({
+        a: [pa.x, pa.y, pa.z], b: [pb.x, pb.y, pb.z],
+        widthPx, color: INK.inkFaint, opacity: opacity * t,
+      }, depthOf(pa) - 0.5);
+    };
+
+    // The control house: relays, batteries, the SCADA link to the control
+    // centre. Everything the protection view talks about is inside it.
+    const house = { x: 60, y: 38, w: 9, d: 6.5, h: 3.4 };
+    const hx0 = house.x - house.w / 2, hx1 = house.x + house.w / 2;
+    const hy0 = house.y - house.d / 2, hy1 = house.y + house.d / 2;
+    for (const hgt of [0, house.h]) {
+      yardLine([hx0, hy0, hgt], [hx1, hy0, hgt], 1.0, 0.95);
+      yardLine([hx1, hy0, hgt], [hx1, hy1, hgt], 1.0, 0.95);
+      yardLine([hx1, hy1, hgt], [hx0, hy1, hgt], 1.0, 0.95);
+      yardLine([hx0, hy1, hgt], [hx0, hy0, hgt], 1.0, 0.95);
+    }
+    for (const [cx, cy] of [[hx0, hy0], [hx1, hy0], [hx1, hy1], [hx0, hy1]]) {
+      yardLine([cx, cy, 0], [cx, cy, house.h], 1.0, 0.95);
+    }
+    // A door on the side facing the equipment, so the building has a front.
+    yardLine([hx0, house.y - 0.5, 0], [hx0, house.y - 0.5, 2.1], 0.8, 0.8);
+    yardLine([hx0, house.y + 0.5, 0], [hx0, house.y + 0.5, 2.1], 0.8, 0.8);
+    yardLine([hx0, house.y - 0.5, 2.1], [hx0, house.y + 0.5, 2.1], 0.8, 0.8);
+
+    // The cable trench: every current transformer and every breaker in the
+    // yard is wired back to this building through it.
+    yardLine([hx0, house.y, 0.05], [24, house.y, 0.05], 0.8, 0.5);
+    yardLine([24, house.y, 0.05], [24, 6, 0.05], 0.8, 0.5);
+
+    // The access road and the gate in the south fence.
+    yardLine([70, 0, 0], [70, 34, 0], 0.8, 0.45);
+    yardLine([76, 0, 0], [76, 42, 0], 0.8, 0.45);
+    yardLine([70, 34, 0], [hx1, house.y - 2, 0], 0.8, 0.45);
+
+    labels.push({
+      id: 'sub:control-house',
+      world: frame.place([-3, -3], [house.x, house.y + 4, house.h]),
+      text: 'Control house',
+      value: 'relays, batteries, the link to the control centre',
+      priority: 880, tone: 'muted',
+    });
   } else {
     labels.push({
       id: 'sub:fence',
@@ -760,15 +820,44 @@ function labelPriority(e: SubstationElement, emphasised: boolean): number {
 }
 
 /** Bounds of the substation at a given morph, for framing and culling. */
+/**
+ * How far the yard stands up, metres.
+ *
+ * Taken from the elements themselves — the tallest thing in an eleven-kilovolt
+ * distribution yard is the take-off structure the incoming line lands on — plus
+ * the insulator strings and the conductor that hangs above it. The camera needs
+ * this to frame the yard as the solid it is rather than as its own footprint.
+ */
+export const YARD_HEIGHT_M =
+  Math.max(...ELEMENTS.map((e) => e.yard[2])) + 3;
+
 export function substationBounds(_morph: number): {
-  min: { x: number; z: number }; max: { x: number; z: number };
+  min: { x: number; z: number; y?: number };
+  max: { x: number; z: number; y?: number };
 } {
-  // Both frames are centred on the yard centre and neither is much larger than
-  // the yard, so one box covers the whole morph without needing the camera.
-  const half = Math.max(YARD.widthM, YARD.depthM) * 0.9;
+  // THE FENCE, PLUS A COUPLE OF PACES OUTSIDE IT.
+  //
+  // This box is what the camera frames and what the compositor culls against,
+  // so it has to be the size of the subject. It used to be a square as wide as
+  // the yard is long, with a further tenth on top, which is more than twice the
+  // area of the station — and framing that box is what left the yard sitting
+  // small in the corner of an empty page.
+  //
+  // The schematic frame is scaled to land inside the same box, because the
+  // morph between the two is meant to read as one station changing rather than
+  // as two drawings of different sizes swapping over.
+  const pad = 7;
   return {
-    min: { x: SUBSTATION_CENTRE.x - half, z: SUBSTATION_CENTRE.z - half },
-    max: { x: SUBSTATION_CENTRE.x + half, z: SUBSTATION_CENTRE.z + half },
+    min: {
+      x: SUBSTATION_CENTRE.x - YARD.widthM / 2 - pad,
+      z: SUBSTATION_CENTRE.z - YARD.depthM / 2 - pad,
+      y: 0,
+    },
+    max: {
+      x: SUBSTATION_CENTRE.x + YARD.widthM / 2 + pad,
+      z: SUBSTATION_CENTRE.z + YARD.depthM / 2 + pad,
+      y: YARD_HEIGHT_M,
+    },
   };
 }
 

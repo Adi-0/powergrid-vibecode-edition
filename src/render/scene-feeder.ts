@@ -486,15 +486,33 @@ export function drawFeeder(
       });
       continue;
     }
+    // A VOLTAGE UNDER EVERY POLE IS THE PLOT, WRITTEN OUT BADLY.
+    //
+    // Twenty poles each captioned "1.0287 pu · 1.87 km" is forty lines of type
+    // laid over three kilometres of street, and the reader cannot do anything
+    // with them: four decimal places at twenty scattered points is not a
+    // profile. The profile is the plot underneath, where the drop along the
+    // feeder, the step at the regulator and the lift at the capacitor are all
+    // visible at once and in order.
+    //
+    // So the drawing names things, and shows the number for the piece of
+    // equipment that has a setting worth reading, for whatever the reader is
+    // pointing at, and for anything outside its limits. An ordinary pole keeps
+    // its name and nothing else.
     const km = node.distanceKm ?? 0;
     const live = node.id === 'SVC_LV'
       ? `${(bus.vpu * 240).toFixed(1)} V · ${bus.vpu.toFixed(4)} pu`
       : `${bus.vpu.toFixed(4)} pu · ${km.toFixed(2)} km`;
+    const wantsNumber =
+      isSelected || isHovered || violation || kit !== undefined
+      || node.id === 'SVC_LV';
     labels.push({
       id: `feeder:${node.id}`,
       world: top,
       text: node.name,
-      value: kit ? `${live} · ${kit.label}` : live,
+      ...(wantsNumber
+        ? { value: kit ? `${live} · ${kit.label}` : live }
+        : {}),
       priority: labelPriority(node, kit !== undefined, isSelected || isHovered),
       tone: isSelected ? 'selected' : violation ? 'alarm' : 'normal',
     });

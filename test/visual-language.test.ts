@@ -322,3 +322,27 @@ describe('saturated colour means exactly one thing', () => {
     }
   });
 });
+
+/**
+ * The framing code has to know how wide the capability-curve panel is BEFORE
+ * it opens, because it frames the machine around the space that panel will
+ * take. That makes one number live in two files, which is exactly the kind of
+ * pair that drifts silently: the panel gets wider, the drawing goes back to
+ * being framed for the old width, and nothing fails.
+ */
+describe('the machine panel width the camera assumes', () => {
+  const css = readFileSync(
+    new URL('../src/app/styles.css', import.meta.url), 'utf8');
+  const main = readFileSync(
+    new URL('../src/app/main.ts', import.meta.url), 'utf8');
+
+  it('matches the stylesheet', () => {
+    const rule = css.split('.panel--machine {')[1];
+    expect(rule, '.panel--machine is gone from the stylesheet').toBeTruthy();
+    const width = Number(/width:\s*(\d+)px/.exec(rule.split('}')[0])?.[1]);
+    expect(Number.isFinite(width)).toBe(true);
+    const assumed = Number(/MACHINE_PANEL_PX = (\d+)/.exec(main)?.[1]);
+    expect(assumed, 'main.ts no longer states the width it assumes').toBeTruthy();
+    expect(assumed).toBe(width);
+  });
+});

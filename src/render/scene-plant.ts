@@ -473,12 +473,24 @@ function plantPriority(i: PlantItem): number {
 }
 
 /** Bounds of the plant site, for framing and culling. */
+/**
+ * How far the plant stands up, metres: the top of the stacks, which is the
+ * tallest thing on the site and the part of it you can see from the motorway.
+ */
+export const PLANT_HEIGHT_M = Math.max(...PLANT_ITEMS.map((i) => i.at[2]));
+
 export function plantBounds(): {
-  min: { x: number; z: number }; max: { x: number; z: number };
+  min: { x: number; z: number; y?: number };
+  max: { x: number; z: number; y?: number };
 } {
   const pad = 20;
   return {
-    min: { x: PLANT_ORIGIN.x - pad, z: PLANT_ORIGIN.z - PLANT_SITE.depthM - pad },
-    max: { x: PLANT_ORIGIN.x + PLANT_SITE.widthM + pad, z: PLANT_ORIGIN.z + pad },
+    min: {
+      x: PLANT_ORIGIN.x - pad, z: PLANT_ORIGIN.z - PLANT_SITE.depthM - pad, y: 0,
+    },
+    max: {
+      x: PLANT_ORIGIN.x + PLANT_SITE.widthM + pad, z: PLANT_ORIGIN.z + pad,
+      y: PLANT_HEIGHT_M,
+    },
   };
 }

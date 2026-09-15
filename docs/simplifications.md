@@ -350,7 +350,7 @@ Severity is how badly a simplification would change an answer:
 
 *Applies to: system, region* · `demand-dots`
 
-**What the model does.** Each dot is a fixed quantity of peak demand, scattered at random within a radius of the substation that carries it. The COUNT is real — it comes from the model’s own load data and counting the dots gives the megawatts back. The positions are not.
+**What the model does.** Each dot is a fixed quantity of demand, scattered at random within a radius of the substation that carries it. The COUNT is real — it follows the model’s own load at the hour on show, and counting the dots gives the megawatts back. The positions are not: they are drawn once, out to a radius set by the site’s annual peak, so that the scatter fills in and empties as the day runs instead of re-rolling.
 
 **What the full treatment would involve.** A real map of demand comes from census and land-use data, or from the utility’s own meter density, and has boundaries: this block is residential, that one is a data centre.
 

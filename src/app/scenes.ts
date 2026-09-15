@@ -78,7 +78,12 @@ const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   // on: arriving at a street and then seeing the wires along it is the right
   // order, and the reverse — wires in a void that later acquire a street — is
   // the one that felt broken.
-  ground:     [0.02, 0.05, 26, 55],
+  // The near edge is not "as close as you can get" but "as close as a STREET
+  // still means anything": inside a substation fence the block grid is one
+  // faint diamond wider than the page, which reads as a stray construction
+  // line across the drawing rather than as a neighbourhood. The yard draws its
+  // own ground — gravel, fence, access road — and does not want this one.
+  ground:     [0.30, 0.55, 26, 55],
   feeder:     [0.22, 0.55, 20, 45],
   substation: [0.030, 0.050, 0.30, 0.75],
   service:    [0, 0, 0.055, 0.10],
@@ -129,7 +134,10 @@ function visibleGround(camera: IsoCamera, w: number, h: number): {
   };
 }
 
-type Box = { min: { x: number; z: number }; max: { x: number; z: number } };
+type Box = {
+  min: { x: number; z: number; y?: number };
+  max: { x: number; z: number; y?: number };
+};
 
 const overlaps = (a: Box, b: Box): boolean =>
   a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.z <= b.max.z && a.max.z >= b.min.z;
@@ -260,18 +268,21 @@ export function composeFrame(input: ComposeInput): ComposeResult {
 
     // Where the demand is, as a dot-density map. It answers the question the
     // transmission drawing raises and cannot answer on its own: why the network
-    // is shaped the way it is. Faded out once the whole state no longer fits,
-    // where individual dots would be kilometres apart and say nothing.
-    const dotAlpha = near * Math.min(1, Math.max(0, (2600 - mpp) / 900));
-    if (dotAlpha > 0.01) {
-      segments.push(...drawDemandDots(
-        [...input.systemGeometry.sites.values()].map((n) => ({
-          id: n.site.id, ground: n.ground, peakLoadMW: n.peakLoadMW,
-        })),
-        dotAlpha * 0.62,
-        view
-      ));
-    }
+    // is shaped the way it is.
+    //
+    // Each site decides for itself whether it is close enough to be worth
+    // drawing — a scatter narrower than about forty pixels is a smudge, not a
+    // map — so approaching the Bay Area the cities bloom one after another,
+    // biggest first, instead of the whole state speckling at once.
+    segments.push(...drawDemandDots(
+      [...input.systemGeometry.sites.values()].map((n) => ({
+        id: n.site.id, ground: n.ground,
+        loadMW: n.loadMW, peakLoadMW: n.peakLoadMW,
+      })),
+      near * 0.62,
+      view,
+      mpp
+    ));
   }
 
   // --- the ground, before anything electrical -------------------------------
@@ -400,6 +411,16 @@ export interface Destination {
   /** Where to put the camera. Either a box to frame or a point and a scale. */
   frame?: () => Box;
   at?: () => { target: Vector3; metresPerPixel: number };
+  /**
+   * Whether framing should keep clear of the panels on the RIGHT as well as the
+   * permanent ones on the left.
+   *
+   * On the map levels it should not: shrinking the whole state by half because
+   * a panel happens to be open trades a permanent loss for a temporary gain.
+   * Inside a substation or a power station it should, because those drawings
+   * are small enough that a panel over one end hides a third of the subject.
+   */
+  tight?: boolean;
 }
 
 /**
@@ -443,15 +464,18 @@ export function destinations(
       frame: bayBox,
     },
     {
+      // FRAMED, NOT PLACED AT A FIXED SCALE.
+      //
+      // A magic metres-per-pixel is a guess at how big the subject is, and it
+      // was wrong: the yard came out filling less than half the width of an
+      // otherwise empty page, sitting in the top right of it. Framing the box —
+      // now that the box knows how tall the yard stands — puts the subject on
+      // the page at the size the page allows, and keeps doing so if the yard,
+      // the window or the panels ever change.
       id: 'substation', name: 'Substation',
       blurb: 'Inside the fence at Eden Vale: two incoming circuits, two transformers, four feeders.',
-      at: () => {
-        const b = substationBounds(1);
-        return {
-          target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
-          metresPerPixel: ZOOM.substation,
-        };
-      },
+      frame: () => substationBounds(1),
+      tight: true,
     },
     {
       id: 'feeder', name: 'Feeder',
@@ -470,25 +494,15 @@ export function destinations(
     {
       id: 'service', name: 'Service',
       blurb: '14 Cherry Lane: the transformer on the verge, the meter, the panel, one socket.',
-      at: () => {
-        const b = serviceBounds();
-        return {
-          target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
-          metresPerPixel: ZOOM.service,
-        };
-      },
+      frame: () => serviceBounds(),
+      tight: true,
     },
     {
       id: 'plant', name: 'Plant',
       blurb: 'Metcalf Energy Center: where the gas goes in, and where all of it comes out.',
       branch: 'generation',
-      at: () => {
-        const b = plantBounds();
-        return {
-          target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
-          metresPerPixel: ZOOM.plant,
-        };
-      },
+      frame: () => plantBounds(),
+      tight: true,
     },
     {
       id: 'machine', name: 'Machine',

@@ -201,15 +201,24 @@ export class IsoCamera {
   }
 
   /**
-   * Frame a bounding box on the ground plane.
+   * Frame a bounding box.
    *
    * Insets let the framing account for panels sitting over the canvas: without
    * them the drawing is centred on the whole viewport and then half of it hides
    * behind the legend.
+   *
+   * HEIGHT IS PART OF THE BOX. A ground rectangle is the right description of a
+   * map and the wrong description of a substation: the yard is eighty metres
+   * across and the take-off structures stand twelve metres up, and in an
+   * isometric projection that height is most of what the drawing occupies on
+   * the page. Framing on the ground alone put the whole yard in the top-right
+   * quarter of an otherwise empty page — the drawing was too small AND too
+   * high, and both came from the same missing dimension. Pass `minY`/`maxY`
+   * for anything that stands up, and the box is framed as the solid it is.
    */
   frame(
-    min: { x: number; z: number },
-    max: { x: number; z: number },
+    min: { x: number; z: number; y?: number },
+    max: { x: number; z: number; y?: number },
     marginPx = 64,
     inset: { left?: number; right?: number; top?: number; bottom?: number } = {}
   ): void {
@@ -221,13 +230,24 @@ export class IsoCamera {
     const cz = (min.z + max.z) / 2;
     this.target.set(cx, 0, cz);
 
+    const y0 = min.y ?? 0;
+    const y1 = max.y ?? 0;
+    const cornersOf = (): Vector3[] => {
+      const out: Vector3[] = [];
+      for (const x of [min.x, max.x]) {
+        for (const z of [min.z, max.z]) {
+          for (const y of y0 === y1 ? [y0] : [y0, y1]) {
+            out.push(new Vector3(x, y, z));
+          }
+        }
+      }
+      return out;
+    };
+
     // Project the box corners at unit scale and see how many pixels they span.
     this.metresPerPixel = 1;
     this.apply();
-    const corners = [
-      new Vector3(min.x, 0, min.z), new Vector3(max.x, 0, min.z),
-      new Vector3(min.x, 0, max.z), new Vector3(max.x, 0, max.z),
-    ].map((c) => this.worldToScreen(c));
+    const corners = cornersOf().map((c) => this.worldToScreen(c));
     const spanX = Math.max(...corners.map((c) => c.x)) - Math.min(...corners.map((c) => c.x));
     const spanY = Math.max(...corners.map((c) => c.y)) - Math.min(...corners.map((c) => c.y));
 
@@ -235,10 +255,18 @@ export class IsoCamera {
     const availH = Math.max(1, this.viewportHeight - top - bottom - marginPx * 2);
     this.setZoom(Math.max(spanX / availW, spanY / availH, ZOOM.min));
 
-    // Shift the centre so the box lands in the middle of the space that is
-    // actually visible, not the middle of the canvas.
-    const dxPx = (left - right) / 2;
-    const dyPx = (top - bottom) / 2;
+    // Centre what is actually drawn, in the space that is actually visible.
+    //
+    // The target sits on the ground, so at this point the GROUND centre is in
+    // the middle of the canvas and everything standing on it is above that.
+    // Measuring the projected solid and pushing the difference back is what
+    // puts the drawing in the middle of the page rather than the plot it
+    // stands on.
+    const now = cornersOf().map((c) => this.worldToScreen(c));
+    const boxCx = (Math.max(...now.map((c) => c.x)) + Math.min(...now.map((c) => c.x))) / 2;
+    const boxCy = (Math.max(...now.map((c) => c.y)) + Math.min(...now.map((c) => c.y))) / 2;
+    const dxPx = (left - right) / 2 + (this.viewportWidth / 2 - boxCx);
+    const dyPx = (top - bottom) / 2 + (this.viewportHeight / 2 - boxCy);
     if (dxPx !== 0 || dyPx !== 0) {
       this.panByPixels(dxPx, dyPx);
     }

@@ -186,15 +186,42 @@ export function drawGround(options: GroundDrawOptions): GroundDrawResult {
   }
 
   // --- the buildings -------------------------------------------------------
-  // Detail arrives as you approach. Below about seven pixels a house is a
-  // smudge indistinguishable from noise, and there are several thousand of
-  // them, so the whole neighbourhood is streets only until it is worth drawing
-  // the buildings on it.
+  //
+  // A STREET GRID WITH NOTHING ON IT IS NOT A NEIGHBOURHOOD, IT IS GRAPH PAPER.
+  //
+  // Houses used to wait until they were seven pixels across, which sounds like
+  // the detail-on-approach rule but was the wrong reading of it. At the scale
+  // where the whole feeder fits the page — the scale this level is FOR — a
+  // house is four pixels, so the rule meant the one view most people will
+  // spend their time in showed three kilometres of empty ruled paper.
+  //
+  // The fix is not to draw a four-pixel house badly. It is to draw the thing
+  // that is actually legible at four pixels, which is a FOOTPRINT: one stroke
+  // as wide as the building, exactly as an engraved town map fills its
+  // buildings solid. Closer in, where the outline can be read as an outline,
+  // it becomes one — the same object, drawn the way its size allows.
   const housePx = BLOCK.houseM[0] / mpp;
-  if (housePx < 7) return { segments, bounds: groundBounds() };
+  if (housePx < 2.2) return { segments, bounds: groundBounds() };
 
-  const houseAlpha = alpha * Math.min(1, (housePx - 7) / 6);
+  const houseAlpha = alpha * Math.min(1, (housePx - 2.2) / 2.2);
+  const outlined = housePx >= 9;
+
   const rect = (centre: Vector3, halfU: number, halfV: number, f: number): void => {
+    if (!outlined) {
+      // One stroke along the building's long axis, as wide as it is wide: the
+      // capsule the line batch already draws is a rounded rectangle of exactly
+      // the right size on the ground. World-sized, so the width is computed
+      // from the scale rather than held constant like every line that means a
+      // voltage class.
+      const a = centre.clone().addScaledVector(BASIS.across, -(halfV - halfU));
+      const b = centre.clone().addScaledVector(BASIS.across, halfV - halfU);
+      segments.push({
+        a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
+        widthPx: (halfU * 2) / mpp, color: INK.inkGhost,
+        opacity: houseAlpha * f * 0.7,
+      });
+      return;
+    }
     const p = [
       centre.clone().addScaledVector(BASIS.along, -halfU).addScaledVector(BASIS.across, -halfV),
       centre.clone().addScaledVector(BASIS.along, halfU).addScaledVector(BASIS.across, -halfV),

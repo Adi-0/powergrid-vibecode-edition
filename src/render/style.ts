@@ -172,16 +172,31 @@ export function voltageClass(kV: number): VoltageClassStyle {
  * cannot carry two meanings.
  */
 export const FLOW = {
-  /** Screen-space spacing between flow marks, px. */
-  markSpacingPx: 15,
+  /**
+   * Screen-space spacing between flow marks, px.
+   *
+   * THIS IS THE NUMBER THAT DECIDES WHETHER THE MAP READS AS A DRAWING. At a
+   * 15 px pitch with marks four-tenths as long, a 500 kV corridor of three
+   * parallel circuits came out as three black-and-white barber's poles, and a
+   * page of them looked like hatching rather than like wires. Widely spaced
+   * beads say the same thing — something is moving, this way, this fast — and
+   * leave the conductor looking like a conductor.
+   */
+  markSpacingPx: 26,
   /** Length of each mark as a fraction of the spacing. */
-  markLengthFraction: 0.40,
+  markLengthFraction: 0.17,
   /**
    * How much narrower the travelling mark is than the conductor it runs inside.
    * This is what leaves a hairline of ink on each side, so the conductor still
    * reads as one continuous line of its own weight rather than as a dashed one.
    */
   coreInsetPx: 1.5,
+  /**
+   * The mark is never wider than this fraction of the conductor, whatever the
+   * inset would allow. On the heaviest lines the inset alone left a bead almost
+   * as wide as the line, which is what turned a conductor into a chain.
+   */
+  maxCoreFraction: 0.46,
   /** Screen pixels per second at 100 % loading. */
   maxSpeedPxPerSec: 46,
   /** Screen pixels per second at the lowest loading that still animates. */
@@ -189,7 +204,7 @@ export const FLOW = {
   /** Loading below which flow is not animated at all — it would be noise. */
   minLoadingToAnimate: 0.015,
   /** Opacity of the flow marks against the conductor. */
-  opacity: 0.9,
+  opacity: 0.8,
 } as const;
 
 // ---------------------------------------------------------------------------

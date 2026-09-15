@@ -722,6 +722,22 @@ function buildLoads(): Load[] {
 }
 
 /**
+ * Annual-peak real demand by bus, MW, before any daily profile is applied.
+ *
+ * The loads inside a SolvedCase have already been scaled by the hour, so they
+ * answer "how much is this place taking right now" and cannot answer "how big
+ * is this place". Anything drawn at a size that should hold still while the
+ * clock runs — a site symbol, the extent of a dot scatter — needs the second
+ * question, and this is where it is answered. Built from the same buildLoads()
+ * the case itself is built from, so it cannot drift away from it.
+ */
+export const PEAK_LOAD_MW: ReadonlyMap<string, number> = (() => {
+  const out = new Map<string, number>();
+  for (const l of buildLoads()) out.set(l.bus, (out.get(l.bus) ?? 0) + l.pMW);
+  return out;
+})();
+
+/**
  * Fraction of connected line charging that shunt reactors absorb at EHV buses.
  *
  * A long extra-high-voltage line is an enormous capacitor: its conductors and

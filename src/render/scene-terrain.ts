@@ -170,39 +170,82 @@ function hashed(seed: string): () => number {
 export interface DemandSite {
   id: string;
   ground: Vector3;
+  /** Demand at the hour being drawn, MW. Decides HOW MANY dots are drawn. */
+  loadMW: number;
+  /** Demand at annual peak, MW. Decides HOW FAR the scatter reaches. */
   peakLoadMW: number;
 }
 
+/**
+ * Every dot a site will ever need, in the order they fill in.
+ *
+ * The scatter has to be STABLE. Load varies through the day, and generating it
+ * from the megawatts on show re-rolled the dice every hour: the dots jittered
+ * like static as the reader scrubbed, and every still frame of it looked
+ * perfect. So the extent comes from the site's ANNUAL PEAK, which is a property
+ * of the place and does not move; the positions are generated once and sorted
+ * from the centre outward; and the hour decides only how many of them are
+ * drawn.
+ *
+ * A city then grows and shrinks with demand through the day, from the middle,
+ * which is both steady to look at and the right thing for a dot-density map to
+ * do when the quantity it is drawing changes.
+ */
 const dotCache = new Map<string, Vector3[]>();
 
+/** Up to this many dots per site, so one huge load cannot swamp a frame. */
+const MAX_DOTS = 420;
+
 function dotsFor(site: DemandSite): Vector3[] {
-  const key = `${site.id}:${Math.round(site.peakLoadMW)}`;
-  const hit = dotCache.get(key);
+  const hit = dotCache.get(site.id);
   if (hit) return hit;
 
-  const n = Math.min(400, Math.round(site.peakLoadMW / MW_PER_DOT));
-  // Bigger loads spread further, because a bigger load is a bigger place —
-  // but a load centre is compact, and too wide a scatter turns a city into a
-  // haze that says nothing.
-  const radius = 1_800 + 520 * Math.sqrt(Math.max(0, site.peakLoadMW));
+  const radius = scatterRadiusM(site.peakLoadMW);
   const rand = hashed(site.id);
-  const out: Vector3[] = [];
-  for (let i = 0; i < n; i++) {
+  const out: { p: Vector3; r: number }[] = [];
+  for (let i = 0; i < MAX_DOTS; i++) {
     const angle = rand() * Math.PI * 2;
     // Square root of a uniform gives an even areal density rather than a
     // clump at the centre.
     const r = radius * Math.sqrt(rand());
-    out.push(new Vector3(
-      site.ground.x + r * Math.cos(angle), 0, site.ground.z + r * Math.sin(angle)));
+    out.push({
+      p: new Vector3(
+        site.ground.x + r * Math.cos(angle), 0, site.ground.z + r * Math.sin(angle)),
+      r,
+    });
   }
-  dotCache.set(key, out);
-  return out;
+  out.sort((a, b) => a.r - b.r);
+  const points = out.map((o) => o.p);
+  dotCache.set(site.id, points);
+  return points;
+}
+
+/**
+ * The scatter of one site, in screen pixels across, below which it is not drawn.
+ *
+ * A dot map only says anything if the dots are separate. Seen from far enough
+ * away that a whole city is twenty pixels wide, four hundred dots land on top of
+ * each other, the site's own symbol sits over the middle of them, and the result
+ * is a smudge that carries no count and no shape — while still costing a
+ * thousand primitives a frame. So a place's demand appears only once there is
+ * room to read it, which is the same rule the houses and the pole names follow.
+ */
+const DOTS_MIN_RADIUS_PX = 42;
+const DOTS_FULL_RADIUS_PX = 88;
+
+/** How far the scatter for a site reaches, world metres. */
+function scatterRadiusM(peakLoadMW: number): number {
+  // Bigger loads spread further, because a bigger load is a bigger place —
+  // but a load centre is compact, and too wide a scatter turns a city into a
+  // haze that says nothing.
+  return 1_800 + 520 * Math.sqrt(Math.max(0, peakLoadMW));
 }
 
 export function drawDemandDots(
   sites: Iterable<DemandSite>,
   opacity: number,
-  view: { min: { x: number; z: number }; max: { x: number; z: number } } | null
+  view: { min: { x: number; z: number }; max: { x: number; z: number } } | null,
+  metresPerPixel: number
 ): LineSegment[] {
   const segments: LineSegment[] = [];
   if (opacity <= 0.004) return segments;
@@ -216,16 +259,26 @@ export function drawDemandDots(
   })() : null;
 
   for (const site of sites) {
-    if (site.peakLoadMW < MW_PER_DOT) continue;
+    if (site.loadMW < MW_PER_DOT) continue;
     if (cull && Math.hypot(site.ground.x - cull.cx, site.ground.z - cull.cz)
       > cull.reach + 40_000) continue;
-    for (const d of dotsFor(site)) {
+
+    const radiusPx = scatterRadiusM(site.peakLoadMW) / metresPerPixel;
+    const near = Math.min(1, Math.max(0,
+      (radiusPx - DOTS_MIN_RADIUS_PX)
+      / (DOTS_FULL_RADIUS_PX - DOTS_MIN_RADIUS_PX)));
+    if (near <= 0.02) continue;
+
+    const want = Math.min(MAX_DOTS, Math.round(site.loadMW / MW_PER_DOT));
+    const all = dotsFor(site);
+    for (let i = 0; i < want && i < all.length; i++) {
+      const d = all[i];
       if (cull && Math.hypot(d.x - cull.cx, d.z - cull.cz) > cull.reach) continue;
       // A dot is a zero-length stroke, which the line batch renders as a round
       // cap — one primitive, no special case.
       segments.push({
         a: [d.x, 0, d.z], b: [d.x, 0, d.z],
-        widthPx: 1.6, color: INK.inkFaint, opacity,
+        widthPx: 1.6, color: INK.inkFaint, opacity: opacity * near,
       });
     }
   }
