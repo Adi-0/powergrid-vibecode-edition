@@ -156,6 +156,10 @@ const legend = new Legend({
     tooltip.show(`<div class="tooltip__term">${name}</div>` +
       `<div class="tooltip__short">${text}</div>`, el),
   onDismiss: () => tooltip.hide(),
+  onPickClass: (kV) => {
+    debug.onlyKV = kV;
+    viewport.invalidate();
+  },
 });
 // The left column: the controls for the level you are on, and under them the
 // legend.

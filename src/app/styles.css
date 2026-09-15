@@ -316,6 +316,11 @@ html, body {
   cursor: help;
 }
 .legend__row:hover { background: var(--ground-shade); }
+.legend__row--pick { cursor: pointer; }
+.legend__row--pick[aria-pressed='true'] {
+  background: var(--ground-shade);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
 .legend__swatch {
   height: 16px;
   display: flex;

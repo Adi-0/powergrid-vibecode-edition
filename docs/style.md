@@ -219,6 +219,21 @@ worth keeping when there is room for one.
 
 What makes *Least* quiet rather than lossy is the rule below.
 
+## The legend is the filter
+
+A key that explains an encoding is the obvious place to ask for one part of it:
+it is already on the page, it already names every class, and it needs no second
+control to be discovered. Clicking **500 kV** in the legend is the natural way
+to ask "so where does the backbone actually go".
+
+**It recedes the rest, it does not delete them.** Hiding the other classes
+answers that question and destroys the one worth asking, which is where the
+backbone runs RELATIVE TO everything else — the whole point of a backbone is
+what it is the backbone of. Kept at two thirds of its weight in the faintest
+ink, the rest of the network stays as the ground the chosen class is read
+against. The travelling flow marks stop on the recessive classes, so motion
+belongs to the class being held up.
+
 ## Everything answers when pointed at
 
 Every pickable thing carries a two-line readout — its name and one live value —

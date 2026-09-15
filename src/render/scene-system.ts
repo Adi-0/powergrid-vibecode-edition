@@ -242,6 +242,16 @@ export interface SystemDrawOptions {
    */
   view?: { min: { x: number; z: number }; max: { x: number; z: number } } | null;
   /** Debug: draw only this voltage class. */
+  /**
+   * One voltage class the reader has asked to see.
+   *
+   * IT RECEDES THE REST, IT DOES NOT DELETE THEM. Hiding the other classes
+   * answers "where does the 500 kV network go" and destroys the question worth
+   * asking, which is where it goes RELATIVE TO everything else — the whole
+   * point of a backbone is what it is the backbone OF. Kept at a tenth of its
+   * weight, the rest of the network stays as the ground the chosen class is
+   * read against.
+   */
   onlyKV?: number | null;
   /** How much type to carry. See TextDetail. */
   detail?: TextDetail;
@@ -408,9 +418,10 @@ export function drawSystem(
   // gap between parallel circuits at the same time — makes the transition read
   // as one drawing dissolving into another, which is what it is.
   const fadeWeight = 0.35 + 0.65 * (options.opacity ?? 1);
+  const picked = options.onlyKV ?? null;
   for (const c of geometry.circuits) {
-    if (options.onlyKV != null && Math.abs(c.kV - options.onlyKV) > 1) continue;
     if (offScreen(c.a, c.b)) continue;
+    const recessive = picked != null && Math.abs(c.kV - picked) > 1;
     const flowData = solved.branchById.get(c.branch.id);
     const cls = voltageClass(c.kV);
     const h = heightFor(c.kV);
@@ -446,8 +457,10 @@ export function drawSystem(
     const isSelected = selected === c.branch.id;
     const isHovered = hovered === c.branch.id;
 
-    const color = over || isOut ? SIGNAL.alarm : isSelected ? SELECTION.stroke : INK.ink;
-    const width = cls.weightPx * fadeWeight * (isSelected || isHovered ? 1.7 : 1);
+    const color = recessive ? INK.inkGhost
+      : over || isOut ? SIGNAL.alarm : isSelected ? SELECTION.stroke : INK.ink;
+    const width = cls.weightPx * fadeWeight
+      * (isSelected || isHovered ? 1.7 : 1) * (recessive ? 0.7 : 1);
     // An out-of-service circuit is drawn as a fine dotted line: still there,
     // plainly not carrying anything.
     const dash: [number, number] | undefined =
@@ -456,7 +469,7 @@ export function drawSystem(
     const seg: LineSegment = {
       a, b, widthPx: width, color,
       ...(dash ? { dash } : {}),
-      ...(isOut ? { opacity: 0.75 } : {}),
+      ...(isOut ? { opacity: 0.75 } : recessive ? { opacity: 0.5 } : {}),
     };
     // The halo is the paper showing through where one conductor passes in front
     // of another. Just wide enough to leave a visible break; much wider and the
@@ -470,13 +483,14 @@ export function drawSystem(
       for (const end of [a, b]) {
         mark({
           a: [end[0], 0, end[2]], b: [end[0], h, end[2]],
-          widthPx: 0.85, color: INK.inkFaint, opacity: 0.9,
+          widthPx: 0.85, color: recessive ? INK.inkGhost : INK.inkFaint,
+          opacity: recessive ? 0.4 : 0.9,
         }, haloPad * 0.6);
       }
     }
 
     // --- 4. Flow marks ----------------------------------------------------
-    if (showFlow && flowData && flowData.inService) {
+    if (showFlow && flowData && flowData.inService && !recessive) {
       const loading = loadingOf(flowData);
       if (loading > FLOW.minLoadingToAnimate) {
         const speed =

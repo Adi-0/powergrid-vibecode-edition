@@ -20,6 +20,15 @@ export interface LegendHost {
   /** Called when the reader hovers a row, so a definition can be shown. */
   onExplain?: (term: string, text: string, el: HTMLElement) => void;
   onDismiss?: () => void;
+  /**
+   * Called when the reader picks a voltage class to look at, or clears one.
+   *
+   * THE LEGEND IS THE FILTER. A key that explains an encoding is the obvious
+   * place to ask for one part of it — it is already on the page, already names
+   * every class, and needs no second control to be discovered. Clicking 500 kV
+   * is the natural way to ask "so where does the backbone actually go".
+   */
+  onPickClass?: (kV: number | null) => void;
 }
 
 /** The flow encoding: a solid conductor with light marks running inside it. */
@@ -75,6 +84,8 @@ export class Legend {
   private exaggerationRow: HTMLElement | null = null;
   private machineGroup: HTMLElement | null = null;
   private readonly voltageRows = new Map<number, HTMLElement>();
+  /** The class the reader is holding up, if any. */
+  private picked: number | null = null;
   private dotGroup: HTMLElement | null = null;
   private sizeGroup: HTMLElement | null = null;
   private exaggerationGroup: HTMLElement | null = null;
@@ -126,14 +137,26 @@ export class Legend {
     // --- Voltage classes: weight and dash, never hue ------------------------
     const v = this.group('Voltage class — by line weight');
     for (const c of VOLTAGE_CLASSES) {
-      this.voltageRows.set(
-        c.kV, this.row(v, strokeSwatch(c.weightPx, c.dashPx), c.label, c.blurb));
+      const row = this.row(v, strokeSwatch(c.weightPx, c.dashPx), c.label, c.blurb);
+      row.classList.add('legend__row--pick');
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-pressed', 'false');
+      row.title = `Show ${c.label} against the rest`;
+      row.addEventListener('click', () => {
+        this.picked = this.picked === c.kV ? null : c.kV;
+        for (const [kV, r] of this.voltageRows) {
+          r.setAttribute('aria-pressed', String(kV === this.picked));
+        }
+        this.host.onPickClass?.(this.picked);
+      });
+      this.voltageRows.set(c.kV, row);
     }
+
     const note = document.createElement('p');
     note.className = 'note';
     note.textContent =
-      'Weight, never colour — so the drawing photocopies, and colour is left ' +
-      'free to mean one thing.';
+      'Weight, never colour — so the drawing photocopies. Click a class to ' +
+      'hold it against the rest.';
     v.appendChild(note);
 
     // --- What the size of a symbol means -----------------------------------
@@ -238,6 +261,12 @@ export class Legend {
     // everything is shown rather than nothing.
     for (const [kV, row] of this.voltageRows) {
       row.hidden = shown.kV.length > 0 && !shown.kV.includes(kV);
+      // A class that has left the page cannot go on being held up.
+      if (row.hidden && this.picked === kV) {
+        this.picked = null;
+        row.setAttribute('aria-pressed', 'false');
+        this.host.onPickClass?.(null);
+      }
     }
     if (this.machineGroup) this.machineGroup.hidden = !shown.machineMarks;
     if (this.dotGroup) this.dotGroup.hidden = !shown.dots;
