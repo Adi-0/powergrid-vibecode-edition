@@ -177,8 +177,11 @@ const STEPS: GuideStep[] = [
     enter: (h) => {
       h.openPanel(null);
       h.setMotor('off', 'across-the-line', 'industrial');
-      h.goTo('feeder');
+      // The fault first, so the coordination panel is already open when the
+      // flight works out how far to shift for it. Otherwise the app flies to
+      // the fault and then covers it up.
       h.setFault('FDR_L3B', 'single-line-to-ground');
+      h.goTo('feeder');
     },
     text: () => `One phase touching earth on Cherry Lane. The curves show ` +
       `which device gets there first. The lateral fuse clears it and nobody ` +

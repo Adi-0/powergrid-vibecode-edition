@@ -335,7 +335,11 @@ function offsetForPanels(target: Vector3, mpp: number): Vector3 {
   const b = viewport.camera.groundBasis();
   viewport.camera.setZoom(before);
   const left = 300;                    // the level controls and the legend
-  const right = 0;
+  // Whatever is open on the right — the inspector, the coordination curves,
+  // the solver, the capability curve. Travelling to a fault only to park it
+  // underneath the panel explaining the fault is the kind of thing that makes
+  // an app feel like it is not paying attention.
+  const right = rightPanelInsetPx();
   const bottom = profileInsetPx();
   const dxPx = -(left - right) / 2;
   const dyPx = bottom / 2;
@@ -364,6 +368,24 @@ function refreshForScene(): void {
   }
   lastScene = scene;
   onCamera(viewport.camera.metresPerPixel, viewport.level);
+}
+
+/**
+ * How much of the right-hand side is covered by a panel, in pixels.
+ *
+ * The panels are all anchored to the same edge and overlap each other, so the
+ * inset is the widest one that is actually on screen, not their sum.
+ */
+function rightPanelInsetPx(): number {
+  let widest = 0;
+  for (const el of document.querySelectorAll<HTMLElement>(
+    '.panel--inspect, .panel--tcc, .panel--solver, .panel--reliability, ' +
+    '.panel--machine, .panel--math'
+  )) {
+    if (el.style.display === 'none' || el.offsetParent === null) continue;
+    widest = Math.max(widest, el.getBoundingClientRect().width);
+  }
+  return widest > 0 ? widest + 18 : 0;
 }
 
 /** How much of the bottom of the stage the profile plot is covering. */
