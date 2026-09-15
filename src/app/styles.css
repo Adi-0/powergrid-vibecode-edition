@@ -968,3 +968,46 @@ button, select, input {
   transform: none;
   width: auto;
 }
+
+/* The generation branch is set off from the distribution path rather than
+   appended to it: power comes out of a machine into the system, so a single
+   chain reading "…Service › Plant" would draw a line that does not exist. */
+.header__branch {
+  color: var(--ink-ghost);
+  margin: 0 3px;
+}
+
+/* --------------------------------------------------------------------- */
+/* The machine panel                                                       */
+/* --------------------------------------------------------------------- */
+
+.panel--machine {
+  right: var(--pad);
+  top: var(--pad);
+  width: 430px;
+  max-height: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--machine .panel__body { overflow-y: auto; }
+.panel--machine svg { display: block; margin-bottom: 4px; }
+
+.stage.has-machine .panel--inspect {
+  right: calc(var(--pad) + 430px + 9px);
+}
+
+.machine__section + .machine__section {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: var(--rule);
+}
+.machine__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+}
+.machine__label { font-size: 12px; }
+.machine__value { font-size: 12px; font-weight: 500; text-align: right; }
+.machine__note { margin: 1px 0 5px; }

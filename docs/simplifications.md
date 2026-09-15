@@ -42,6 +42,16 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** Steady-state answers — flows, voltages, losses, who is marginal — are right. What happens in the first few seconds after a trip is not shown here, and that is exactly when a system either recovers or does not. The machine view demonstrates the swing equation on its own.
 
+### Rate of change of frequency counts only California’s own rotors
+
+*Applies to: machine, system* · `inertia-stops-at-the-state-line`
+
+**What the model does.** The frequency figure shown with the machine is what the modelled network’s own spinning mass would give if that unit tripped.
+
+**What the full treatment would involve.** California is synchronously connected to the whole Western Interconnection, and every rotor from British Columbia to New Mexico resists a frequency change here. The real denominator is several times larger than this one.
+
+**What that means for you.** The number shown is several times faster than what the real system would see, and the panel says so where it is shown. What it gets right is the COMPARISON: an hour with less synchronous plant online has less inertia, and that is the whole point of the readout.
+
 ## Modest
 
 ### Everything is balanced across the three phases
@@ -164,6 +174,36 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** This service’s own drop is right. The interaction between neighbours is missing, and it is real — it is why a cluster of car chargers on one transformer is a different problem from the same load spread out.
 
+### A power station is one generator in the network model
+
+*Applies to: plant, machine, system* · `plant-as-one-machine`
+
+**What the model does.** Metcalf appears in the power flow as a single machine with the whole station’s rating, inertia and reactance. The plant view shows its three real machines and splits the energy between them; the machine view draws the station’s equivalent machine in cross-section.
+
+**What the full treatment would involve.** A study of the plant itself models each gas turbine generator and the steam turbine generator separately, behind the station’s own switchyard, each with its own step-up transformer and its own excitation and governor controls.
+
+**What that means for you.** Nothing on the transmission system can tell the difference: the station is one injection at one bus either way. What is lost is the ability to lose one machine and keep the others, and the fact that the three do not share reactive output equally.
+
+### The split of fuel energy between the streams uses typical fractions
+
+*Applies to: plant* · `plant-energy-split`
+
+**What the model does.** The plant’s efficiency comes from its heat rate, which is in the network model because it sets the marginal cost. How the rest of the fuel divides between the stack, the condenser, the generators and the plant’s own auxiliaries uses fractions typical of a large combined cycle, and the condenser is computed as the remainder so that the chain closes exactly.
+
+**What the full treatment would involve.** A heat balance for a real station is computed from measured gas temperatures, steam conditions and cooling water flows at a stated ambient condition, and changes with the weather.
+
+**What that means for you.** The net output and the fuel burn are right, because they come from the heat rate. The individual streams are right in proportion and in order of magnitude. Do not quote the stack loss of this plant as a measurement.
+
+### Local reliability is one flag, not a security-constrained dispatch
+
+*Applies to: system, plant* · `must-run-not-security-constrained`
+
+**What the model does.** The plant inside the Bay Area is marked must-run, so it is committed at its minimum whatever the merit order says, and the economic stack fills in around it.
+
+**What the full treatment would involve.** A real dispatch is security-constrained: it solves the economics and the network together, subject to every credible single outage, and decides for itself which units must run and how hard.
+
+**What that means for you.** The result is right for this network at these hours — the plant runs, and the region is not left depending entirely on imports. What is missing is the mechanism: the model cannot discover that a unit is needed, it has to be told.
+
 ## Cosmetic
 
 ### One distribution feeder is modelled; the rest are lumped
@@ -206,6 +246,16 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** Nothing electrical depends on it: the solver never sees a yard coordinate. It matters only for the claim the drawing makes about what a station looks like, which is "like this sort of thing" rather than "like this".
 
+### The stator windings are drawn as three bands, not as they are wound
+
+*Applies to: machine* · `stator-winding-drawing`
+
+**What the model does.** Three phase bands 120° apart, each shown as a few coil sides either side of its axis, at a radius chosen so the arrangement can be seen.
+
+**What the full treatment would involve.** A real two-pole machine distributes each phase over many slots, with short-pitched coils and a fractional slot-per-pole-per-phase count, all chosen to suppress particular harmonics in the generated waveform.
+
+**What that means for you.** The thing the drawing is for — three windings in space, a field rotating past them, and the load angle between the rotor and the terminal voltage — is exactly right. The winding detail is not, and nothing in the app depends on it. The machine is also drawn far larger than its true 3 to 4 metres, because at true scale the air gap would be a hairline.
+
 ---
 
-*18 entries.*
+*23 entries.*

@@ -31,6 +31,15 @@ export interface ViewportEvents {
   onCameraChange?: (metresPerPixel: number, level: LevelId) => void;
   /** Called when a frame is about to be drawn; return the content to draw. */
   build: () => FrameContent;
+  /**
+   * Called just after content has been rebuilt.
+   *
+   * Panels that depend on WHAT WAS DRAWN rather than on where the camera is
+   * have to wait for this: at the moment a fly-to finishes, the frame for the
+   * new camera position has not been built yet, so asking then gets the answer
+   * for the previous position.
+   */
+  onContent?: () => void;
 }
 
 const CAPACITY = 24000;
@@ -119,6 +128,7 @@ export class Viewport {
       this.picks = content.picks;
       this.needsBuild = false;
       this.needsDraw = true;
+      this.events.onContent?.();
     }
 
     if (!this.needsDraw && !this.animating) return;

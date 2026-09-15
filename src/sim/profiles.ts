@@ -239,7 +239,15 @@ export const WINTER_DAY: DayProfile = {
 
 export const SPRING_DAY: DayProfile = {
   season: 'spring', demand: DEMAND_SPRING, solar: SOLAR_SPRING,
-  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY, peakScale: 0.72,
+  // 0.62 of the annual peak, not 0.72.
+  //
+  // California's annual peak is a little over 50 GW and its spring minimum is
+  // around 15 — a ratio closer to 0.3 at the trough of the day, with the
+  // daytime peak of a mild April day landing near 0.62 of the summer peak. The
+  // earlier 0.72 left the system just long enough to absorb its own midday
+  // solar by backing gas down and exporting, so no curtailment ever appeared,
+  // which is the opposite of what this day is famous for.
+  wind: WIND_TYPICAL, hydro: HYDRO_AVAILABILITY, peakScale: 0.62,
   blurb:
     'The lowest demand of the year meeting the best solar of the year. This ' +
     'is where oversupply, curtailment and near-zero prices actually happen.',

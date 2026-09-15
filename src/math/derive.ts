@@ -26,10 +26,12 @@
  */
 
 import { SolvedCase, BranchFlow } from '../core/results.js';
-import { Branch, Bus, NetworkCase } from '../core/network.js';
+import { Branch, Bus, Generator, NetworkCase } from '../core/network.js';
 import { lineParameters, LineParameters } from '../core/lines.js';
 import { CLASS_CONSTRUCTION } from '../data/california/build.js';
 import { DropStep } from '../data/california/service.js';
+import { PlantEnergyChain } from '../data/california/plant.js';
+import { MachineOperatingPoint, CapabilityCurve } from '../core/machine.js';
 import { evaluate, num } from './expr.js';
 
 export interface DerivationStep {
@@ -914,5 +916,210 @@ export function deriveSystemBalance(solved: SolvedCase): Derivation {
       'Every number on this page is downstream of that first line. The solver ' +
       'does not impose it — it falls out, which is how you know the solution is ' +
       'a solution.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The plant
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the fuel goes.
+ *
+ * The chain closes by construction — the condenser stream is computed as the
+ * remainder — so the last step here is not a coincidence, it is the statement
+ * that nothing has been left out.
+ */
+export function derivePlantEnergy(chain: PlantEnergyChain): Derivation {
+  const c = chain.flows;
+  const get = (id: string) => c.find((f) => f.id === id)?.mw ?? 0;
+
+  return {
+    id: 'plant:energy',
+    title: 'Where the fuel goes',
+    subtitle: `${chain.netMW.toFixed(0)} MW out of ${chain.fuelMW.toFixed(0)} MW of gas`,
+    standard: 'Heat rate in BTU/kWh; 1 kWh = 3,412.14 BTU',
+    convention:
+      'Every stream is measured as power — megawatts — whether it is chemical ' +
+      'energy in a pipe, hot gas in a duct, work on a shaft or electricity in a ' +
+      'cable. They are the same quantity in different forms, which is the whole ' +
+      'reason the chain can be added up at all.',
+    steps: [
+      step('Efficiency, from the heat rate', 'η = 3412.14 / HR',
+        `3412.142 / ${n(chain.heatRateBtuPerKWh)}`, '', {
+          decimals: 4,
+          note:
+            'Efficiency and heat rate are the same fact written two ways. The ' +
+            'heat rate form is used in the industry because it multiplies ' +
+            'straight by the fuel price to give the cost of a megawatt-hour.',
+          checkAgainst: { name: 'the plant’s efficiency', value: chain.efficiency, tolerance: 1e-6 },
+        }),
+      step('Fuel burning right now', 'P_fuel = P_net / η',
+        `${n(chain.netMW, 5)} / ${n(chain.efficiency)}`, 'MW thermal', {
+          decimals: 1,
+          note: 'Chemical energy arriving in a pipe, in the same units as everything else.',
+          checkAgainst: { name: 'the fuel stream', value: chain.fuelMW, tolerance: 1e-4 },
+        }),
+      step('In the units a gas contract is written in',
+        'MMBtu/h = P_fuel · 1000 · 3412.14 / 10⁶',
+        `${n(chain.fuelMW, 5)} * 1000 * 3412.142 / 1000000`, 'MMBtu/h', {
+          decimals: 1,
+          checkAgainst: {
+            name: 'the plant’s fuel burn', value: chain.fuelMMBtuPerHour, tolerance: 1e-6,
+          },
+        }),
+      step('Carbon dioxide', 'CO₂ = fuel · 53.06 kg/MMBtu',
+        `${n(chain.fuelMMBtuPerHour, 5)} * 53.06 / 1000`, 't/h', {
+          decimals: 1,
+          note:
+            'A property of the fuel’s chemistry — burning methane to carbon ' +
+            'dioxide and water — not of the plant. An efficient plant emits ' +
+            'less per megawatt-hour and exactly the same per unit of fuel.',
+          checkAgainst: {
+            name: 'the plant’s emissions', value: chain.co2TonnesPerHour, tolerance: 1e-6,
+          },
+        }),
+      step('Gross output, before the plant’s own consumption',
+        'P_gross = P_net / (1 − aux)',
+        `${n(chain.netMW, 5)} / (1 - ${n((chain.grossMW - chain.netMW) / chain.grossMW)})`,
+        'MW', {
+          decimals: 1,
+          note: 'Pumps, fans and the cooling tower. A large station is a substantial load in its own right.',
+          checkAgainst: { name: 'gross output', value: chain.grossMW, tolerance: 1e-3 },
+        }),
+      step('Everything that leaves, added up',
+        'P_elec + P_stack + P_condenser + losses',
+        `${n(get('gt-generator'), 5)} + ${n(get('st-generator'), 5)} + ` +
+        `${n(get('stack'), 5)} + ${n(get('condenser'), 5)} + ` +
+        `${n(chain.fuelMW - get('gt-generator') - get('st-generator') - get('stack') - get('condenser'), 5)}`,
+        'MW', {
+          decimals: 1,
+          note:
+            'Which is the fuel that went in. Not approximately — the condenser ' +
+            'stream is worked out as the remainder precisely so that this line ' +
+            'is an identity rather than a coincidence.',
+          checkAgainst: { name: 'the fuel that went in', value: chain.fuelMW, tolerance: 1e-6 },
+        }),
+      step('What the cooling tower has to get rid of',
+        'as a fraction of the fuel',
+        `${n(get('condenser'), 5)} / ${n(chain.fuelMW, 5)} * 100`, '%', {
+          decimals: 1,
+          note:
+            'More than the plant exports as electricity. A heat engine must ' +
+            'reject heat to a cold reservoir — that is the second law, not an ' +
+            'engineering shortcoming — and this is that reservoir.',
+        }),
+    ],
+    closing:
+      'Every megawatt on this page came from the plant’s dispatched output ' +
+      'and its heat rate, both of which are in the network case because they ' +
+      'are what put it where it is in the merit order.',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The machine
+// ---------------------------------------------------------------------------
+
+/**
+ * How a generator's internal EMF and load angle follow from what it is doing.
+ *
+ * The two equations at the top of `src/core/machine.ts`, run backwards: given
+ * the terminal voltage and the output, E and δ are determined.
+ */
+export function deriveMachine(
+  g: Generator, op: MachineOperatingPoint, c: CapabilityCurve
+): Derivation {
+  const base = g.mBaseMVA;
+  const xd = c.xd;
+  const iRe = op.vPU > 0 ? op.pPU / op.vPU : 0;
+  const iIm = op.vPU > 0 ? -op.qPU / op.vPU : 0;
+
+  return {
+    id: `machine:${g.id}`,
+    title: 'Inside the machine',
+    subtitle: `${g.name} — ${base.toFixed(0)} MVA, X_d = ${xd} pu`,
+    standard: 'Round-rotor synchronous machine: E∠δ = V∠0 + jX_d·I',
+    convention:
+      'The terminal voltage is the reference, so V sits at angle zero and δ is ' +
+      'measured from it. Current is positive OUT of the machine, so a positive ' +
+      'Q means the machine is producing reactive power and its internal EMF is ' +
+      'above its terminal voltage.',
+    bases: [
+      {
+        symbol: 'S_base', value: base, unit: 'MVA',
+        note: 'The MACHINE’s own base, not the system’s. Its reactance is quoted on this.',
+      },
+      {
+        symbol: 'X_d', value: xd, unit: 'pu',
+        note: 'Synchronous reactance. Around 2 for a large turbogenerator, which is far larger than any line.',
+      },
+      {
+        symbol: 'V', value: op.vPU, unit: 'pu',
+        note: 'Terminal voltage, solved. It is the reference the angle is measured from.',
+      },
+    ],
+    steps: [
+      step('Real power in per-unit', 'P_pu = P / S_base',
+        `${n(op.pMW, 5)} / ${n(base)}`, 'pu', { decimals: 5 }),
+      step('Reactive power in per-unit', 'Q_pu = Q / S_base',
+        `${n(op.qMVAr, 5)} / ${n(base)}`, 'pu', { decimals: 5 }),
+      step('Current, real part', 'Re(I) = P / V',
+        `${n(op.pPU)} / ${n(op.vPU)}`, 'pu', {
+          decimals: 5,
+          note: 'From I = S*/V*, with V taken as the reference so that V* = V.',
+        }),
+      step('Current, imaginary part', 'Im(I) = −Q / V',
+        `-${n(op.qPU)} / ${n(op.vPU)}`, 'pu', {
+          decimals: 5,
+          note: 'Negative when the machine is producing reactive power: the current lags the voltage.',
+        }),
+      step('Internal EMF, real part', 'Re(E) = V − X_d·Im(I)',
+        `${n(op.vPU)} - ${n(xd)} * ${n(iIm)}`, 'pu', { decimals: 5 }),
+      step('Internal EMF, imaginary part', 'Im(E) = X_d·Re(I)',
+        `${n(xd)} * ${n(iRe)}`, 'pu', {
+          decimals: 5,
+          note: 'The j in jX_d·I is what turns the current through a right angle.',
+        }),
+      step('Internal EMF', '|E| = √(Re(E)² + Im(E)²)',
+        `sqrt((${n(op.vPU - xd * iIm)})^2 + (${n(xd * iRe)})^2)`, 'pu', {
+          decimals: 4,
+          note:
+            'What the field current produces. Above the terminal voltage means ' +
+            'over-excited and producing reactive power; below means the opposite.',
+          checkAgainst: { name: 'the machine panel', value: op.ePU, tolerance: 1e-4 },
+        }),
+      step('Load angle', 'δ = atan(Im(E) / Re(E))',
+        `atan(${n(xd * iRe)} / ${n(op.vPU - xd * iIm)}) * 180 / pi`, '°', {
+          decimals: 3,
+          note:
+            'How far the rotor leads the terminal voltage. It is a real, ' +
+            'physical angle: the rotor really is at that position relative to ' +
+            'the rotating field the stator currents set up.',
+          checkAgainst: { name: 'the machine panel', value: op.deltaDeg, tolerance: 1e-4 },
+        }),
+      step('Real power, back from the angle', 'P = (V·E / X_d)·sin δ',
+        `${n(op.vPU)} * ${n(op.ePU)} / ${n(xd)} * sind(${n(op.deltaDeg)}) * ${n(base)}`,
+        'MW', {
+          decimals: 1,
+          note:
+            'The equation run forwards again. It closes, which is the check ' +
+            'that the phasor arithmetic above has not picked up a sign.',
+          checkAgainst: { name: 'the solved output', value: op.pMW, tolerance: 2e-3 },
+        }),
+      step('Stored kinetic energy', 'E_k = H · S_base',
+        `${n(g.inertiaH ?? 4)} * ${n(base)}`, 'MJ', {
+          decimals: 0,
+          note:
+            'H seconds is how long this rotor could supply the machine’s own ' +
+            'rated output from its rotation alone, with no fuel at all. It is a ' +
+            'real time, and for a large turbogenerator it is about five seconds.',
+        }),
+    ],
+    closing:
+      'Real power followed the ANGLE and reactive power followed the FIELD, and ' +
+      'the two barely interfered with each other. That near-independence is why ' +
+      'a plant has two separate controls and why the power flow can treat them ' +
+      'as separate knobs.',
   };
 }

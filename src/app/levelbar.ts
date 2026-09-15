@@ -20,6 +20,7 @@ export interface LevelBarHost {
   onMorph: (t: number) => void;
   onProtection: (on: boolean) => void;
   onAppliance: (id: string | null) => void;
+  onStorage: (inService: boolean) => void;
   onExplain?: (title: string, text: string, el: HTMLElement) => void;
   onDismiss?: () => void;
 }
@@ -31,6 +32,7 @@ export class LevelBar {
   private morph = 0;
   private protection = false;
   private appliance: string | null = null;
+  private storage = true;
 
   constructor(host: LevelBarHost) {
     this.host = host;
@@ -61,6 +63,10 @@ export class LevelBar {
       } else if (b.dataset.role === 'morph-end') {
         this.setMorph(b.dataset.value === '1' ? 1 : 0);
         this.host.onMorph(this.morph);
+      } else if (b.dataset.role === 'storage') {
+        this.storage = !this.storage;
+        this.host.onStorage(this.storage);
+        this.render();
       } else if (b.dataset.appliance !== undefined) {
         const id = b.dataset.appliance || null;
         this.appliance = this.appliance === id ? null : id;
@@ -86,6 +92,12 @@ export class LevelBar {
     if (scene === this.scene) return;
     this.scene = scene;
     this.render();
+  }
+
+  /** Keep the storage control in step with the state that owns the truth. */
+  setStorage(inService: boolean): void {
+    this.storage = inService;
+    if (this.scene === null) this.render();
   }
 
   private updateMorphReadout(): void {
@@ -159,6 +171,29 @@ export class LevelBar {
         `fuse. The plot below is the same information as a graph: voltage ` +
         `against distance, which is the shape everything on this feeder exists ` +
         `to manage.</p>`;
+      return;
+    }
+
+    if (this.scene === null) {
+      // The system level. Its perturbation is the one that explains the last
+      // decade of grid investment.
+      this.element.style.display = '';
+      title.textContent = 'The whole system';
+      sub.textContent = 'what absorbs the midday surplus';
+      body.innerHTML =
+        `<p class="note">On a mild spring afternoon the sun produces more than ` +
+        `the state consumes. Every fuel-burning unit backs down to its minimum, ` +
+        `the export ties fill up, and what is left has to go somewhere — into ` +
+        `several gigawatts of batteries, charging. Take them out and the price ` +
+        `stops being flat: it collapses towards nothing at midday and spikes in ` +
+        `the evening, because the energy that covered the evening peak was ` +
+        `stored at noon and is no longer there. That gap is what a battery ` +
+        `fleet is paid for, and what it does to ${term('curtailment', 'curtailment')} ` +
+        `and to the ${term('duck-curve', 'duck curve')} follows from it.</p>` +
+        `<div class="inspect__actions">` +
+        `<button class="btn" data-role="storage" aria-pressed="${!this.storage}">` +
+        `${this.storage ? 'Take the batteries out of service' : 'Put the batteries back'}` +
+        `</button></div>`;
       return;
     }
 

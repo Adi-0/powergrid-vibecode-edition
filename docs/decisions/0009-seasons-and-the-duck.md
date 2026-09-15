@@ -48,7 +48,42 @@ accurate:
 
 ## Consequences
 
-The price range is now roughly $14–$46 across the three days, the marginal unit
-changes from an intertie to a gas plant and back, and curtailment appears where
-oversupply genuinely bites. None of it is scripted: it is what the merit order
-returns when it is run against the three shapes.
+The price range is now roughly $14–$46 across the three days and the marginal
+unit changes from an intertie to a gas plant and back. None of it is scripted:
+it is what the merit order returns when it is run against the three shapes.
+
+## Amended in phase 6
+
+Two things in this record did not survive contact with the plant view, and both
+corrections made the model better rather than worse. They are recorded here
+rather than quietly edited out, because the original claim was wrong.
+
+**Curtailment does not appear, and that is the finding.** The sentence above
+claimed it did. Once the dispatch was corrected to back down fuel-burning plant
+*before* throwing away free energy — which is what an operator does, and the
+opposite of what the code did — this fleet turns out to absorb its entire spring
+surplus: about three gigawatts of batteries charging, a gigawatt of pumped
+hydro, and exports on the Northwest tie. The curtailment the original version
+displayed was largely an artefact of the order the stack happened to be walked
+in, not of oversupply.
+
+That is a more interesting result than the one it replaced, and it is what the
+system-level control now exists to demonstrate: take the batteries out of
+service and the price stops being flat — it collapses to zero at midday and
+spikes in the evening, because the energy that covered the evening peak was
+stored at noon and is no longer there.
+
+**The spring day was too shallow.** 0.72 of the annual peak left the system just
+long enough to absorb its own midday solar without strain. California's spring
+minimum sits nearer 0.62 of the summer peak, and at that depth the midday price
+reaches the floor.
+
+The price range across the three days is now $9–$46 with storage, and $0–$46
+without it.
+
+**And a bug the amendment exposed.** "No unit was marginal" was being read as
+scarcity, and it happens for two opposite reasons: the stack ran out before
+demand was met, or the stack was never needed because the must-take resources
+alone exceeded demand. One means the price is at the cap, the other that it is
+at the floor. Until phase 6 the sunniest, longest hour of the spring was priced
+at the most expensive unit in the fleet.

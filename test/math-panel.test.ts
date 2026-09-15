@@ -30,8 +30,10 @@ import { evaluate, pretty, num, ExpressionError } from '../src/math/expr.js';
 import {
   deriveBases, deriveBus, deriveBranch, deriveLineGeometry,
   deriveTransformerImpedance, deriveServiceDrop, deriveSystemBalance,
-  Derivation,
+  derivePlantEnergy, deriveMachine, Derivation,
 } from '../src/math/derive.js';
+import { energyChain } from '../src/data/california/plant.js';
+import { operatingPoint, capabilityCurve, solvedOutput } from '../src/core/machine.js';
 import { californiaCase, SLACK_BUS } from '../src/data/california/network.js';
 import { operate } from '../src/sim/operate.js';
 import { DAY_PROFILES } from '../src/sim/profiles.js';
@@ -158,6 +160,24 @@ function allDerivations(): Derivation[] {
     TRANSFORMER_CLASSES.dist115_12.xOverR,
     TRANSFORMER_CLASSES.dist115_12.mvaPerBank
   ));
+
+  // The generation branch.
+  {
+    const g = solved.net.generators.find(
+      (x) => x.bus.startsWith('METCALF') && x.kind === 'gas-cc');
+    if (g) {
+      for (const mw of [g.pMinMW, g.pMaxMW]) {
+        out.push(derivePlantEnergy(energyChain(g, mw)));
+      }
+      const bus = solved.busById.get(g.bus);
+      const o = solvedOutput(
+        g, bus, solved.net.generators.filter((x) => x.bus === g.bus));
+      for (const [p, q] of [[o.pMW, o.qMVAr], [g.pMaxMW, 200], [500, -150]]) {
+        const op = operatingPoint(g, bus?.vpu ?? 1, p, q);
+        out.push(deriveMachine(g, op, capabilityCurve(g, bus?.vpu ?? 1)));
+      }
+    }
+  }
 
   for (const appliance of [null, APPLIANCES[3], APPLIANCES[5]]) {
     const svc = solveService(243.97, 3200, 650, appliance);

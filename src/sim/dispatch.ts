@@ -254,6 +254,25 @@ function dispatchHour(
   let marginalUnit: string | null = null;
   let marginalCost = 0;
 
+  // COMMITMENT COMES BEFORE ECONOMICS. A reliability must-run unit is committed
+  // FIRST, at its minimum, and the economic stack then fills in around it. Left
+  // to the end of the merit order instead, an expensive must-run unit would be
+  // reached with almost nothing left to serve, overshoot by its whole minimum,
+  // and force renewables to be curtailed at the evening peak — which is not
+  // what happens and not what the flag is for.
+  //
+  // Above its minimum a must-run unit competes like any other, in its proper
+  // place in the stack.
+  const mustRunBase = new Map<string, number>();
+  for (const g of dispatchable) {
+    if (!g.mustRun) continue;
+    const maxAvail = g.pMaxMW * availabilityFactor(g, profile, hour);
+    if (maxAvail <= 0) continue;
+    const base = Math.max(0, Math.min(g.pMinMW, maxAvail));
+    mustRunBase.set(g.id, base);
+    toServe -= base;
+  }
+
   // Import ties can run BACKWARDS: when California is long, power flows out of
   // the state rather than in. Their negative minimum is what allows that, and
   // it is why an oversupplied system exports before it curtails.
@@ -273,7 +292,21 @@ function dispatchHour(
     // below zero; everything else is either off or at its minimum.
     const canExport = g.kind === 'import' || g.pMinMW < 0;
     const minRun = canExport ? g.pMinMW : Math.max(0, Math.min(g.pMinMW, maxAvail));
+    const base = mustRunBase.get(g.id);
     let out: number;
+    if (base !== undefined) {
+      // Already committed above. Load it further only if the stack reaches it,
+      // and only above the minimum it is already running at.
+      const extra = Math.max(0, Math.min(maxAvail - base, toServe));
+      out = base + extra;
+      if (marginalUnit === null && toServe > 1e-6 && toServe < maxAvail - base) {
+        marginalUnit = g.id;
+        marginalCost = g.marginalCost ?? 0;
+      }
+      targets.set(g.id, out);
+      toServe -= extra;
+      continue;
+    }
     if (toServe <= 1e-6) {
       out = 0; // never started
     } else if (toServe >= maxAvail) {
@@ -288,17 +321,67 @@ function dispatchHour(
     targets.set(g.id, out);
     toServe -= out;
   }
-  // If the stack ran out before demand was met, the most expensive committed
-  // unit is marginal — the price is set by scarcity, not by that unit's cost.
+  // No unit was marginal. That happens for two opposite reasons and they must
+  // not be confused, because one of them means the price is at the cap and the
+  // other means it is at the floor.
+  //
+  //  - THE STACK RAN OUT before demand was met. The system is short, and the
+  //    price is set by scarcity rather than by any unit's fuel bill.
+  //  - THE STACK WAS NEVER NEEDED, because the must-take resources alone
+  //    exceeded demand. The system is long, and the next megawatt-hour is
+  //    worth nothing — somebody would pay to have it taken away.
+  //
+  // An earlier version had only the first branch, which priced the sunniest,
+  // longest hour of the spring at the most expensive unit in the fleet.
   if (marginalUnit === null && dispatchable.length > 0) {
-    const last = dispatchable[dispatchable.length - 1];
-    marginalUnit = last.id;
-    marginalCost = last.marginalCost ?? 0;
+    if (toServe > 1e-6) {
+      const last = dispatchable[dispatchable.length - 1];
+      marginalUnit = last.id;
+      marginalCost = last.marginalCost ?? 0;
+    } else {
+      // Long. The marginal resource is whatever is being backed down or
+      // curtailed to keep the books, and its energy costs nothing to make.
+      const surplusResource = net.generators.find(
+        (g) => g.inService && resourceRole(g, slackBus) === 'must-take' &&
+          (targets.get(g.id) ?? 0) > 0
+      );
+      marginalUnit = surplusResource?.id ?? null;
+      marginalCost = 0;
+    }
   }
 
   // Anything still unserved means the system is short of capacity.
   const unservedMW = Math.max(0, toServe);
-  // A negative remainder means more must-run output than demand: curtailment.
+  // A negative remainder means more output than demand.
+  //
+  // THE ORDER IN WHICH THAT IS RESOLVED MATTERS, and getting it wrong makes the
+  // model curtail wind at the evening peak. An overshoot arises because the
+  // last unit the stack reached had to be loaded to its own MINIMUM, which was
+  // more than was left to serve. An operator's first move is not to throw away
+  // free energy: it is to back down whatever is burning fuel, most expensive
+  // first, as far as each unit's own minimum allows. Only what cannot be
+  // absorbed that way falls on the zero-cost resources — and when it does, that
+  // is genuine minimum-generation curtailment rather than an artefact of the
+  // order the stack happened to be walked in.
+  if (toServe < 0) {
+    let surplus = -toServe;
+    const backDownOrder = [...dispatchable]
+      .sort((a, b) => (b.marginalCost ?? 0) - (a.marginalCost ?? 0));
+    for (const g of backDownOrder) {
+      if (surplus <= 1e-9) break;
+      const cur = targets.get(g.id) ?? 0;
+      const floor = g.kind === 'import' || g.pMinMW < 0
+        ? g.pMinMW
+        : Math.max(0, Math.min(g.pMinMW, g.pMaxMW * availabilityFactor(g, profile, hour)));
+      const room = cur - floor;
+      if (room <= 1e-9) continue;
+      const cut = Math.min(room, surplus);
+      targets.set(g.id, cur - cut);
+      surplus -= cut;
+    }
+    toServe = -surplus;
+  }
+
   if (toServe < 0) {
     curtailedMW = -toServe;
     // Curtailment falls on zero-cost resources first — that is what happens in

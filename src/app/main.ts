@@ -22,9 +22,12 @@ import { SidePanel } from './honesty.js';
 import { LevelBar } from './levelbar.js';
 import { VoltageProfile } from './profile.js';
 import { MathPanel } from './mathpanel.js';
+import { MachinePanel } from './machine-panel.js';
 import { derivationsFor } from '../math/for-selection.js';
 import { Tooltip, term } from './tooltip.js';
-import { composeFrame, destinations, sceneAlpha, SceneId, Destination } from './scenes.js';
+import {
+  composeFrame, destinations, SceneId, Destination, ComposeResult,
+} from './scenes.js';
 import {
   buildSystemGeometry, formatMW, SystemGeometry,
 } from '../render/scene-system.js';
@@ -50,6 +53,9 @@ const view = { substationMorph: 0, showProtection: false };
 
 const tooltip = new Tooltip();
 
+/** The last frame's composition, so the panels know what is actually on screen. */
+let lastFrame: ComposeResult | null = null;
+
 const viewport: Viewport = new Viewport(stage, {
   build: (): FrameContent => {
     const snap = state.current;
@@ -67,11 +73,15 @@ const viewport: Viewport = new Viewport(stage, {
       showFlow: true,
       onlyKV: debug.onlyKV,
     });
+    lastFrame = r;
     return { segments: r.segments, labels: r.labels, picks: r.picks };
   },
   onPick: (id, kind) => state.select(kind ?? 'none', id),
   onHover: (id) => state.hover(id),
   onCameraChange: (mpp, level) => onCamera(mpp, level),
+  // The contextual panels ask "what is on screen", which only the frame that
+  // was just built can answer.
+  onContent: () => refreshForScene(),
 });
 
 // --- panels ---------------------------------------------------------------
@@ -123,6 +133,7 @@ const levelBar = new LevelBar({
   onMorph: (t) => { view.substationMorph = t; viewport.invalidate(); },
   onProtection: (on) => { view.showProtection = on; viewport.invalidate(); },
   onAppliance: (id) => state.setAppliance(id),
+  onStorage: (on) => state.setStorageInService(on),
 });
 stage.appendChild(levelBar.element);
 
@@ -130,6 +141,11 @@ const profile = new VoltageProfile({
   onSelect: (nodeId) => state.select('site', nodeId),
 });
 stage.appendChild(profile.element);
+
+const machinePanel = new MachinePanel({
+  onClose: () => stage.classList.remove('has-machine'),
+});
+stage.appendChild(machinePanel.element);
 
 const scrubber = new Scrubber({
   onChange: (hour) => state.setHour(hour),
@@ -215,6 +231,24 @@ function afterTravel(): void {
   onCamera(viewport.camera.metresPerPixel, viewport.level);
 }
 
+/**
+ * Bring the contextual panels into line with whatever was just drawn.
+ *
+ * Kept separate from `onCamera` because it is driven by the render loop rather
+ * than by a camera event, and because it must be cheap: it runs on every frame
+ * that rebuilds content.
+ */
+let lastScene: SceneId | null | undefined;
+function refreshForScene(): void {
+  const scene = dominantScene();
+  if (scene === lastScene) {
+    if (scene === 'machine') machinePanel.render(state.current.solved, lastFrame?.machine);
+    return;
+  }
+  lastScene = scene;
+  onCamera(viewport.camera.metresPerPixel, viewport.level);
+}
+
 /** How much of the bottom of the stage the profile plot is covering. */
 const profileInsetPx = (): number =>
   profile.element.style.display === 'none' ? 0 : 186;
@@ -226,6 +260,7 @@ state.subscribe((snap) => {
   renderStats();
   inspector.render(snap, geometry);
   profile.render(snap.solved, snap.selection.id);
+  if (machinePanel.isOpen) machinePanel.render(snap.solved, lastFrame?.machine);
   if (math.isOpen && mathTarget) {
     math.update(derivationsFor(mathTarget.kind, mathTarget.id, snap.solved, snap.service));
   }
@@ -246,11 +281,23 @@ state.subscribe((snap) => {
  */
 function onCamera(mpp: number, level: LevelId): void {
   legend.update(mpp);
-  renderBreadcrumb(level);
-  side.setScope(level as ScopeId);
+  // On the generation branch the scene decides; on the distribution branch the
+  // scale does, because there the two agree.
+  const scene = dominantScene();
+  const here: LevelId =
+    scene === 'plant' || scene === 'machine' ? scene : level;
+  renderBreadcrumb(here);
+  side.setScope(here as ScopeId);
 
-  const scene = dominantScene(mpp);
   levelBar.setScene(scene);
+
+  // The capability curve belongs to the machine and to nothing else.
+  const wantMachine = scene === 'machine';
+  if (machinePanel.isOpen !== wantMachine) {
+    machinePanel.setVisible(wantMachine);
+    stage.classList.toggle('has-machine', wantMachine);
+  }
+  if (wantMachine) machinePanel.render(state.current.solved, lastFrame?.machine);
 
   // The voltage profile belongs to the feeder and to the service at the end of
   // it — the two places where "how far along the wire" is a meaningful axis.
@@ -265,13 +312,21 @@ function onCamera(mpp: number, level: LevelId): void {
   if (scene === 'substation') levelBar.setMorph(view.substationMorph);
 }
 
-function dominantScene(mpp: number): SceneId | null {
-  const candidates: SceneId[] = ['system', 'feeder', 'substation', 'service'];
+/**
+ * Which drawing the reader is actually looking at.
+ *
+ * Taken from the last composed frame rather than from scale alone, because the
+ * plant and the substation are legible at overlapping scales and are three
+ * hundred kilometres apart. The compositor has already culled whichever one the
+ * camera cannot see, so its own account of what it drew is the only honest
+ * answer.
+ */
+function dominantScene(): SceneId | null {
+  if (!lastFrame) return null;
   let best: SceneId | null = null;
   let bestAlpha = 0.35;
-  for (const c of candidates) {
-    const a = sceneAlpha(c, mpp);
-    if (a > bestAlpha) { bestAlpha = a; best = c; }
+  for (const a of lastFrame.active) {
+    if (a.alpha > bestAlpha) { bestAlpha = a.alpha; best = a.scene; }
   }
   return best === 'system' ? null : best;
 }
@@ -310,15 +365,27 @@ function renderStats(): void {
  * wrong thing about what contains what.
  */
 function renderBreadcrumb(level: LevelId): void {
-  const order: LevelId[] = ['system', 'region', 'substation', 'feeder', 'service'];
-  const idx = order.indexOf(level);
-  crumbEl.innerHTML = PLACES
-    .map((d, i) => {
-      const cls = i === idx ? 'is-here' : i < idx ? 'is-past' : '';
-      return `<button class="crumb ${cls}" data-go="${d.id}" title="${escapeAttr(d.blurb)}">` +
-        `${i === idx ? `<b>${d.name}</b>` : d.name}</button>`;
-    })
+  const distribution = PLACES.filter((d) => d.branch === undefined);
+  const generation = PLACES.filter((d) => d.branch === 'generation');
+  const idx = distribution.findIndex((d) => d.id === level);
+
+  const crumb = (d: Destination, state: string): string =>
+    `<button class="crumb ${state}" data-go="${d.id}" title="${escapeAttr(d.blurb)}">` +
+    `${state === 'is-here' ? `<b>${d.name}</b>` : d.name}</button>`;
+
+  const main = distribution
+    .map((d, i) => crumb(d, i === idx ? 'is-here' : i < idx && idx >= 0 ? 'is-past' : ''))
     .join('<span class="header__sep">›</span>');
+
+  // The generation branch is set off rather than appended: power comes OUT of
+  // a machine into the system, so putting it after "Service" would draw a line
+  // that does not exist.
+  const branch = generation
+    .map((d) => crumb(d, d.id === level ? 'is-here' : ''))
+    .join('<span class="header__sep">›</span>');
+
+  crumbEl.innerHTML =
+    `${main}<span class="header__branch">·</span>${branch}`;
 }
 
 crumbEl.addEventListener('click', (e) => {
@@ -344,6 +411,7 @@ viewport.start();
 // Exposed for debugging and for the screenshot harness.
 (window as unknown as Record<string, unknown>).gridAtlas = {
   state, viewport, debug, frameAll, side, inspector, goTo, view, levelBar,
-  levelForScale, ZOOM, math, openMath,
+  levelForScale, ZOOM, math, openMath, machinePanel,
+  get lastFrame() { return lastFrame; },
   get geometry() { return geometry; },
 };

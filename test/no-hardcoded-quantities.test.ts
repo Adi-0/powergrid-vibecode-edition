@@ -38,6 +38,8 @@ import { buildSystemGeometry, drawSystem } from '../src/render/scene-system.js';
 import { buildFeederGeometry, drawFeeder } from '../src/render/scene-feeder.js';
 import { drawSubstation } from '../src/render/scene-substation.js';
 import { drawService, SERVICE_ORIGIN } from '../src/render/scene-service.js';
+import { drawPlant, plantBounds } from '../src/render/scene-plant.js';
+import { drawMachine, machineBounds } from '../src/render/scene-machine.js';
 import { solveService, ServiceSolution } from '../src/data/california/service.js';
 import { derivationsFor } from '../src/math/for-selection.js';
 
@@ -120,6 +122,28 @@ const GENUINE_CONSTANTS: { why: string; test: RegExp }[] = [
   {
     why: 'The name of the drawing the reader is looking at.',
     test: /^single-line diagram$/,
+  },
+  {
+    why:
+      'Where a stator winding sits around the machine. It is a fact about how ' +
+      'the copper was wound, and the 120° between them is the reason the ' +
+      'system is three-phase at all.',
+    test: /^\d+° around the stator$/,
+  },
+  {
+    why:
+      'Synchronous speed, fixed by the number of poles and the system ' +
+      'frequency. A two-pole machine on a 60 Hz system turns at 3,600 rev/min ' +
+      'and cannot turn at anything else while it is synchronised.',
+    test: /two poles at \d+ Hz/,
+  },
+  {
+    why: 'Plant equipment nameplates and the physical arrangement of the site.',
+    test: /^(F-class|Triple pressure|\d+ m$|~?\d+ (MW|mbar)|\d+ bar|Mechanical draught|Interstate pipeline|\d+ mbar)/,
+  },
+  {
+    why: 'The reference the load angle is measured from, which is a definition.',
+    test: /^the reference the angle is measured from$/,
   },
   {
     why:
@@ -251,6 +275,16 @@ function labelsFor(s: Snapshot): Map<string, LabelSpec> {
 
   const serviceCamera = cameraAt(SERVICE_ORIGIN, 0.042);
   add(drawService(s.solved, s.service, serviceCamera, {}).labels);
+
+  const pb = plantBounds();
+  const plantCamera = cameraAt(
+    new Vector3((pb.min.x + pb.max.x) / 2, 0, (pb.min.z + pb.max.z) / 2), 0.35);
+  add(drawPlant(s.solved, plantCamera, {}).labels);
+
+  const mb = machineBounds();
+  const machineCamera = cameraAt(
+    new Vector3((mb.min.x + mb.max.x) / 2, 0, (mb.min.z + mb.max.z) / 2), 0.05);
+  add(drawMachine(s.solved, machineCamera, {}).labels);
   return out;
 }
 
@@ -266,8 +300,16 @@ describe('every displayed quantity comes from the solver', () => {
   it('collects enough labels to be worth checking', () => {
     // If the scenes ever stop returning labels as data, this check silently
     // becomes vacuous, which would be worse than it failing.
-    expect(LABELS[0].size).toBeGreaterThan(80);
-    for (const set of LABELS) expect(set.size).toBeGreaterThan(80);
+    expect(LABELS[0].size).toBeGreaterThan(120);
+    for (const set of LABELS) expect(set.size).toBeGreaterThan(120);
+    // Every branch of the zoom tree must actually be represented, or the
+    // check below quietly stops covering half the app.
+    for (const prefix of ['feeder:', 'sub:', 'svc:', 'plant:', 'machine:']) {
+      expect(
+        [...LABELS[0].keys()].some((k) => k.startsWith(prefix)),
+        `no labels from ${prefix}`
+      ).toBe(true);
+    }
   });
 
   it('shows numbers that move when the system moves', () => {
@@ -345,6 +387,8 @@ describe('every derivation the math panel can show is live too', () => {
     { kind: 'site', id: 'F08' },
     { kind: 'site', id: 'OUTLET' },
     { kind: 'site', id: 'edenvale' },
+    { kind: 'site', id: 'GT1' },
+    { kind: 'site', id: 'GEN_ST' },
   ];
 
   for (const t of targets) {

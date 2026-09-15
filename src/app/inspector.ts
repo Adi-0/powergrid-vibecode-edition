@@ -28,6 +28,7 @@ import {
 import {
   serviceNodeById, SERVICE_RUNS, C84_1, DropStep,
 } from '../data/california/service.js';
+import { plantItemById, energyChain } from '../data/california/plant.js';
 import { Selection, AppSnapshot } from './state.js';
 import { term, quantity, escapeHtml } from './tooltip.js';
 import { voltageClass } from '../render/style.js';
@@ -98,6 +99,8 @@ export class Inspector {
       if (pole) return this.renderFeederNode(selection.id, solved, snap);
       const svc = serviceNodeById.get(selection.id);
       if (svc) return this.renderServiceNode(selection.id, snap);
+      const plant = plantItemById.get(selection.id);
+      if (plant) return this.renderPlantItem(selection.id, solved);
     }
     this.element.style.display = 'none';
   }
@@ -145,6 +148,55 @@ export class Inspector {
         `</section>`
       );
     }
+    rows.push(
+      `<div class="inspect__actions">` +
+      `<button class="btn" data-action="math" data-kind="site" ` +
+      `data-id="${escapeHtml(id)}">Show the working</button></div>`
+    );
+    this.body.innerHTML = rows.join('');
+  }
+
+  // -----------------------------------------------------------------------
+  // One thing in the power station
+  // -----------------------------------------------------------------------
+
+  private renderPlantItem(id: string, solved: SolvedCase): void {
+    const item = plantItemById.get(id)!;
+    const g = solved.net.generators.find(
+      (x) => x.bus.startsWith('METCALF') && x.kind === 'gas-cc');
+    const chain = g ? energyChain(g, g.pMW) : null;
+    const stream = chain && item.stage
+      ? chain.flows.find((f) => f.id === item.stage)
+      : undefined;
+
+    this.title.textContent = 'Plant';
+    this.sub.textContent = item.kind.replace(/-/g, ' ');
+
+    const rows: string[] = [`<h3 class="inspect__name">${escapeHtml(item.name)}</h3>`];
+    rows.push(note(escapeHtml(item.note)));
+
+    if (stream && chain) {
+      rows.push(section('Energy through it now', [
+        kv('Power in this stream', quantity(
+          stream.mw.toFixed(0), { unit: stream.kind === 'electrical' ? 'MW' : 'MW thermal' })),
+        kv('Fraction of the fuel', quantity(
+          (stream.fraction * 100).toFixed(1), { unit: '%' })),
+        kv(term('heat-rate', 'Station heat rate'), quantity(
+          chain.heatRateBtuPerKWh.toFixed(0), { unit: 'BTU/kWh' })),
+        kv('Station efficiency', quantity(
+          (chain.efficiency * 100).toFixed(1), { unit: '%' })),
+      ]));
+      rows.push(note(escapeHtml(stream.note)));
+    }
+
+    if (item.rating) {
+      rows.push(
+        `<section class="inspect__section">` +
+        `<h4 class="inspect__heading">Nameplate</h4>` +
+        `<p class="nameplate num">${escapeHtml(item.rating)}</p></section>`
+      );
+    }
+
     rows.push(
       `<div class="inspect__actions">` +
       `<button class="btn" data-action="math" data-kind="site" ` +

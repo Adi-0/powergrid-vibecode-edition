@@ -265,6 +265,8 @@ interface GenSpec {
   heatRateBtuPerKWh?: number;
   xd?: number;
   xdpp?: number;
+  /** Committed whatever the merit order says. See `Generator.mustRun`. */
+  mustRun?: boolean;
   note: string;
 }
 
@@ -379,8 +381,14 @@ export const GENERATION: GenSpec[] = [
     note: 'Combined cycle serving the capital region.' },
   { site: 'metcalf', kV: 230, kind: 'gas-cc', name: 'Metcalf combined cycle',
     capacityMW: 1000, pMinMW: 300, qRange: [-0.4, 0.5], marginalCost: 46, inertiaH: 5.0,
-    rampMWPerMin: 30, heatRateBtuPerKWh: 7300, xd: 1.9, xdpp: 0.18,
-    note: 'The only large plant inside the Bay Area, which is why the region depends on imports.' },
+    rampMWPerMin: 30, heatRateBtuPerKWh: 7300, xd: 1.9, xdpp: 0.18, mustRun: true,
+    note:
+      'The only large plant inside the Bay Area, which is why the region ' +
+      'depends on imports — and why this unit runs even when it is the most ' +
+      'expensive combined cycle in the fleet. A purely economic stack would ' +
+      'switch it off; no operator would, because the cheap generation that ' +
+      'would replace it is two hundred kilometres away behind a transmission ' +
+      'corridor that is already full.' },
   { site: 'escondido', kV: 230, kind: 'gas-cc', name: 'Escondido combined cycle',
     capacityMW: 900, pMinMW: 270, qRange: [-0.4, 0.5], marginalCost: 47, inertiaH: 4.9,
     rampMWPerMin: 27, heatRateBtuPerKWh: 7400, xd: 1.9, xdpp: 0.18,
@@ -690,6 +698,7 @@ function buildGenerators(): Generator[] {
     ...(g.heatRateBtuPerKWh !== undefined ? { heatRateBtuPerKWh: g.heatRateBtuPerKWh } : {}),
     ...(g.xd !== undefined ? { xd: g.xd } : {}),
     ...(g.xdpp !== undefined ? { xdpp: g.xdpp } : {}),
+    ...(g.mustRun ? { mustRun: true } : {}),
   }));
 }
 

@@ -43,13 +43,17 @@ import { PickTarget, SystemGeometry, drawSystem } from '../render/scene-system.j
 import { drawSubstation, substationBounds } from '../render/scene-substation.js';
 import { FeederGeometry, drawFeeder } from '../render/scene-feeder.js';
 import { drawService, serviceBounds } from '../render/scene-service.js';
+import { drawPlant, plantBounds } from '../render/scene-plant.js';
+import { drawMachine, machineBounds } from '../render/scene-machine.js';
+import { Generator } from '../core/network.js';
 import { ServiceSolution } from '../data/california/service.js';
 import { SITES } from '../data/california/sites.js';
 import { project } from '../data/california/geography.js';
 import { toWorld } from '../render/world.js';
 import { ZOOM, LevelId } from '../render/style.js';
 
-export type SceneId = 'system' | 'feeder' | 'substation' | 'service';
+export type SceneId =
+  | 'system' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine';
 
 /**
  * Where each scene is legible, in metres per pixel.
@@ -70,6 +74,11 @@ const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   feeder:     [0.22, 0.55, 26, 70],
   substation: [0.030, 0.050, 0.30, 0.75],
   service:    [0, 0, 0.055, 0.10],
+  // The generation branch. These overlap the distribution ones in SCALE but
+  // never on the page, because they are three hundred kilometres away and the
+  // compositor culls a scene whose bounds the camera cannot see.
+  plant:      [0.045, 0.09, 0.70, 1.6],
+  machine:    [0, 0, 0.055, 0.12],
 };
 
 /** How strongly a scene is drawn at a given scale: 0 hidden, 1 full. */
@@ -130,6 +139,8 @@ export interface ComposeResult {
   picks: PickTarget[];
   /** Which scenes contributed, and how strongly, for the breadcrumb to say so. */
   active: { scene: SceneId; alpha: number }[];
+  /** The machine the machine view drew, if it drew one, for the panels. */
+  machine?: Generator | undefined;
 }
 
 /**
@@ -216,7 +227,34 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     picks.push(...r.picks);
   }
 
-  return { segments, labels, picks, active };
+  // --- the generation branch ------------------------------------------------
+  const aPlant = include('plant', plantBounds());
+  if (aPlant > 0) {
+    const r = drawPlant(input.solved, input.camera, {
+      selectedId: input.selectedId,
+      hoveredId: input.hoveredId,
+      opacity: aPlant,
+    });
+    segments.push(...r.segments);
+    labels.push(...r.labels);
+    picks.push(...r.picks);
+  }
+
+  let machine: Generator | undefined;
+  const aMachine = include('machine', machineBounds());
+  if (aMachine > 0) {
+    const r = drawMachine(input.solved, input.camera, {
+      selectedId: input.selectedId,
+      hoveredId: input.hoveredId,
+      opacity: aMachine,
+    });
+    segments.push(...r.segments);
+    labels.push(...r.labels);
+    picks.push(...r.picks);
+    machine = r.generator;
+  }
+
+  return { segments, labels, picks, active, machine };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +264,12 @@ export function composeFrame(input: ComposeInput): ComposeResult {
 export interface Destination {
   id: LevelId;
   name: string;
+  /**
+   * Which branch of the zoom tree this is on. The distribution branch runs
+   * system → region → substation → feeder → service; the generation branch runs
+   * plant → machine, and joins the first at the system view.
+   */
+  branch?: 'generation';
   /** One line explaining what the reader will be looking at. */
   blurb: string;
   /** Where to put the camera. Either a box to frame or a point and a scale. */
@@ -306,6 +350,30 @@ export function destinations(
         return {
           target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
           metresPerPixel: ZOOM.service,
+        };
+      },
+    },
+    {
+      id: 'plant', name: 'Plant',
+      blurb: 'Metcalf Energy Center: where the gas goes in, and where all of it comes out.',
+      branch: 'generation',
+      at: () => {
+        const b = plantBounds();
+        return {
+          target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
+          metresPerPixel: ZOOM.plant,
+        };
+      },
+    },
+    {
+      id: 'machine', name: 'Machine',
+      blurb: 'One generator in cross-section: three windings, a rotating field, and the load angle.',
+      branch: 'generation',
+      at: () => {
+        const b = machineBounds();
+        return {
+          target: new Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2),
+          metresPerPixel: ZOOM.machine,
         };
       },
     },

@@ -257,7 +257,7 @@ export const LAYOUT = {
  */
 export const ZOOM: {
   system: number; region: number; substation: number; feeder: number;
-  service: number; min: number; max: number;
+  service: number; plant: number; machine: number; min: number; max: number;
 } = {
   /** Whole state in view: about a thousand kilometres across. */
   system: 1150,
@@ -280,12 +280,35 @@ export const ZOOM: {
    * the isometric projection covers roughly 860 by 700 pixels here.
    */
   service: 0.042,
+  /**
+   * One power station: a site 260 by 170 metres, which under the isometric
+   * projection covers about 860 by 700 pixels here.
+   */
+  plant: 0.35,
+  /**
+   * One machine, in cross-section. The drawing is screen-aligned rather than
+   * laid on the ground, so its size on the page is simply its radius over this.
+   */
+  machine: 0.05,
   /** Hard limits on the camera. */
   min: 0.004,
   max: 4200,
 };
 
-export type LevelId = 'system' | 'region' | 'substation' | 'feeder' | 'service';
+/**
+ * The named places a reader can be.
+ *
+ * The first five are the brief's zoom tree, in electrical order. `plant` and
+ * `machine` are a SECOND BRANCH off the system rather than a continuation of
+ * the first: power comes out of a machine, through a plant, into the system,
+ * and then down through substation, feeder and service to a socket. Which
+ * branch the reader is on is a fact about where they went, not about how far
+ * they have zoomed, so it is decided by which drawing is actually being
+ * rendered rather than by scale alone.
+ */
+export type LevelId =
+  | 'system' | 'region' | 'substation' | 'feeder' | 'service'
+  | 'plant' | 'machine';
 
 /**
  * Which level of the zoom tree a given scale corresponds to.

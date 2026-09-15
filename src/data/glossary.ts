@@ -867,6 +867,105 @@ export const GLOSSARY: GlossaryEntry[] = [
       'figure, which is why the system is affordable at all.',
     see: ['coincidence-factor', 'demand-factor', 'load-factor'],
   },
+
+  // --- generation: the plant and the machine --------------------------------
+  {
+    id: 'heat-rate', term: 'Heat rate', symbol: 'HR', unit: 'BTU/kWh',
+    category: 'economics',
+    short: 'How much fuel energy a power station burns for each unit of electricity it sends out.',
+    long:
+      'Efficiency and heat rate are the same fact written two ways, because a ' +
+      'kilowatt-hour is 3,412 BTU: η = 3412 / HR. It is stated as a heat rate ' +
+      'rather than as an efficiency because that is the form that multiplies ' +
+      'directly by the fuel price to give the cost of a megawatt-hour, which ' +
+      'is what decides where the plant sits in the merit order.',
+    scale: '6,900 BTU/kWh is a good combined cycle (49 %); 10,500 is an old simple-cycle machine (32 %).',
+    see: ['combined-cycle', 'merit-order', 'marginal-cost'],
+  },
+  {
+    id: 'combined-cycle', term: 'Combined cycle', aliases: ['CCGT', 'gas-cc'],
+    category: 'equipment',
+    short: 'A gas turbine whose exhaust raises steam for a second turbine, so the same fuel does work twice.',
+    long:
+      'A gas turbine throws away about sixty per cent of its fuel energy as ' +
+      'exhaust at around 600 °C. A combined cycle puts a boiler in that exhaust ' +
+      'path — a heat recovery steam generator — and runs a steam turbine on ' +
+      'heat that was already paid for. Roughly two thirds of the output comes ' +
+      'from the gas turbine and one third from the steam turbine.',
+    scale: 'About 60 % efficient in the best modern plant. Nothing else that burns anything comes close.',
+    see: ['hrsg', 'heat-rate', 'condenser'],
+  },
+  {
+    id: 'hrsg', term: 'Heat recovery steam generator', aliases: ['HRSG'],
+    category: 'equipment',
+    short: 'A boiler with no burner, heated entirely by the exhaust of a gas turbine.',
+    long:
+      'Banks of tubes at three different pressures sit in the flue gas path. ' +
+      'Three pressures rather than one because the gas cools as it gives up ' +
+      'heat, and each stage can then be matched to the temperature still ' +
+      'available where it sits.',
+    see: ['combined-cycle'],
+  },
+  {
+    id: 'condenser', term: 'Condenser', category: 'equipment',
+    short: 'Where the steam leaving a turbine is turned back into water, rejecting the heat that could not be used.',
+    long:
+      'It is the largest single energy stream leaving a thermal power station ' +
+      'and it is unavoidable: a heat engine must reject heat to a cold ' +
+      'reservoir. That is the second law of thermodynamics, not an engineering ' +
+      'shortcoming. The condenser also maintains a near vacuum, and that vacuum ' +
+      'is worth as much work as the pressure at the hot end, because it is the ' +
+      'pressure RATIO across the turbine that does the work.',
+    scale: 'A combined cycle sends about 40 % of its fuel energy here — more than it exports as electricity.',
+    see: ['combined-cycle', 'hrsg'],
+  },
+  {
+    id: 'load-angle', term: 'Load angle', aliases: ['power angle', 'delta', 'torque angle'],
+    symbol: 'δ', unit: 'degrees', category: 'quantity',
+    short: 'How far a generator’s rotor has been dragged ahead of the system’s voltage by the torque on its shaft.',
+    long:
+      'P = (V·E / X_d)·sin δ. Open the fuel valve and the rotor advances; δ ' +
+      'grows and real power grows with it, without anything about the field ' +
+      'changing. It is the quantity real power actually follows, and it is the ' +
+      'one thing about a machine that cannot be seen by looking at a meter.',
+    scale: 'Twenty to thirty degrees at full load. At ninety the machine cannot hold synchronism at all.',
+    see: ['capability-curve', 'excitation', 'swing-equation'],
+  },
+  {
+    id: 'rocof', term: 'Rate of change of frequency', aliases: ['RoCoF', 'df/dt'],
+    symbol: 'df/dt', unit: 'Hz/s', category: 'operation',
+    short: 'How fast the system frequency falls in the first seconds after a generator trips, before anything has time to respond.',
+    long:
+      'df/dt = −f₀·ΔP / (2·Σ H·S). The denominator is the system’s total ' +
+      'stored rotational energy, so the same loss moves the frequency faster ' +
+      'on a system with less spinning mass online. It is why an interconnection ' +
+      'full of inverters and short of rotors is a harder system to operate.',
+    scale: 'Under about 0.5 Hz/s is comfortable. Above 1 Hz/s the protection starts disconnecting things.',
+    see: ['inertia', 'swing-equation', 'frequency'],
+  },
+  {
+    id: 'must-run', term: 'Reliability must-run', aliases: ['RMR', 'must-run'],
+    category: 'operation',
+    short: 'A plant kept running for local reliability even when cheaper generation is available elsewhere.',
+    long:
+      'A real dispatch is security-constrained, not purely economic. A plant ' +
+      'inside a load pocket with little transmission into it is committed for ' +
+      'local voltage support and reliability, because the cheaper generation ' +
+      'that would replace it cannot physically get there. A purely economic ' +
+      'merit order switches such a plant off, which no operator would do.',
+    see: ['merit-order', 'marginal-unit'],
+  },
+  {
+    id: 'auxiliary-load', term: 'Auxiliary load', aliases: ['station service', 'house load'],
+    category: 'operation',
+    short: 'The electricity a power station consumes to run itself — pumps, fans, cooling.',
+    long:
+      'Gross output is what the generators make; net output is what leaves ' +
+      'through the step-up transformers. The difference is a few per cent, and ' +
+      'a large station is a substantial electrical load in its own right.',
+    scale: 'About 2 % of gross for a combined cycle; nearer 7 % for a coal plant with its mills and precipitators.',
+    see: ['combined-cycle'],
+  },
 ];
 
 const INDEX = new Map<string, GlossaryEntry>();

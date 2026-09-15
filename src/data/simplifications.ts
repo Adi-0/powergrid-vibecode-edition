@@ -343,6 +343,106 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'transformer is a different problem from the same load spread out.',
     severity: 'modest',
   },
+  {
+    id: 'plant-as-one-machine',
+    scope: ['plant', 'machine', 'system'],
+    title: 'A power station is one generator in the network model',
+    whatWeDo:
+      'Metcalf appears in the power flow as a single machine with the whole ' +
+      'station\u2019s rating, inertia and reactance. The plant view shows its ' +
+      'three real machines and splits the energy between them; the machine ' +
+      'view draws the station\u2019s equivalent machine in cross-section.',
+    fullTreatment:
+      'A study of the plant itself models each gas turbine generator and the ' +
+      'steam turbine generator separately, behind the station\u2019s own ' +
+      'switchyard, each with its own step-up transformer and its own excitation ' +
+      'and governor controls.',
+    consequence:
+      'Nothing on the transmission system can tell the difference: the station ' +
+      'is one injection at one bus either way. What is lost is the ability to ' +
+      'lose one machine and keep the others, and the fact that the three do not ' +
+      'share reactive output equally.',
+    severity: 'modest',
+  },
+  {
+    id: 'plant-energy-split',
+    scope: ['plant'],
+    title: 'The split of fuel energy between the streams uses typical fractions',
+    whatWeDo:
+      'The plant\u2019s efficiency comes from its heat rate, which is in the ' +
+      'network model because it sets the marginal cost. How the rest of the ' +
+      'fuel divides between the stack, the condenser, the generators and the ' +
+      'plant\u2019s own auxiliaries uses fractions typical of a large combined ' +
+      'cycle, and the condenser is computed as the remainder so that the chain ' +
+      'closes exactly.',
+    fullTreatment:
+      'A heat balance for a real station is computed from measured gas ' +
+      'temperatures, steam conditions and cooling water flows at a stated ' +
+      'ambient condition, and changes with the weather.',
+    consequence:
+      'The net output and the fuel burn are right, because they come from the ' +
+      'heat rate. The individual streams are right in proportion and in order ' +
+      'of magnitude. Do not quote the stack loss of this plant as a measurement.',
+    severity: 'modest',
+  },
+  {
+    id: 'inertia-stops-at-the-state-line',
+    scope: ['machine', 'system'],
+    title: 'Rate of change of frequency counts only California’s own rotors',
+    whatWeDo:
+      'The frequency figure shown with the machine is what the modelled ' +
+      'network\u2019s own spinning mass would give if that unit tripped.',
+    fullTreatment:
+      'California is synchronously connected to the whole Western ' +
+      'Interconnection, and every rotor from British Columbia to New Mexico ' +
+      'resists a frequency change here. The real denominator is several times ' +
+      'larger than this one.',
+    consequence:
+      'The number shown is several times faster than what the real system ' +
+      'would see, and the panel says so where it is shown. What it gets right ' +
+      'is the COMPARISON: an hour with less synchronous plant online has less ' +
+      'inertia, and that is the whole point of the readout.',
+    severity: 'material',
+  },
+  {
+    id: 'stator-winding-drawing',
+    scope: ['machine'],
+    title: 'The stator windings are drawn as three bands, not as they are wound',
+    whatWeDo:
+      'Three phase bands 120° apart, each shown as a few coil sides either ' +
+      'side of its axis, at a radius chosen so the arrangement can be seen.',
+    fullTreatment:
+      'A real two-pole machine distributes each phase over many slots, with ' +
+      'short-pitched coils and a fractional slot-per-pole-per-phase count, all ' +
+      'chosen to suppress particular harmonics in the generated waveform.',
+    consequence:
+      'The thing the drawing is for — three windings in space, a field ' +
+      'rotating past them, and the load angle between the rotor and the ' +
+      'terminal voltage — is exactly right. The winding detail is not, and ' +
+      'nothing in the app depends on it. The machine is also drawn far larger ' +
+      'than its true 3 to 4 metres, because at true scale the air gap would be ' +
+      'a hairline.',
+    severity: 'cosmetic',
+  },
+  {
+    id: 'must-run-not-security-constrained',
+    scope: ['system', 'plant'],
+    title: 'Local reliability is one flag, not a security-constrained dispatch',
+    whatWeDo:
+      'The plant inside the Bay Area is marked must-run, so it is committed at ' +
+      'its minimum whatever the merit order says, and the economic stack fills ' +
+      'in around it.',
+    fullTreatment:
+      'A real dispatch is security-constrained: it solves the economics and ' +
+      'the network together, subject to every credible single outage, and ' +
+      'decides for itself which units must run and how hard.',
+    consequence:
+      'The result is right for this network at these hours — the plant runs, ' +
+      'and the region is not left depending entirely on imports. What is ' +
+      'missing is the mechanism: the model cannot discover that a unit is ' +
+      'needed, it has to be told.',
+    severity: 'modest',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>

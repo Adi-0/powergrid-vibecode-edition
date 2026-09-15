@@ -17,10 +17,13 @@
 import { SolvedCase } from '../core/results.js';
 import { ServiceSolution, serviceNodeById, SERVICE_RUNS } from '../data/california/service.js';
 import { elementById } from '../data/california/substation.js';
+import { plantItemById, energyChain } from '../data/california/plant.js';
+import { operatingPoint, capabilityCurve, solvedOutput } from '../core/machine.js';
 import { FEEDER_NODES, feederBusId } from '../data/california/feeder.js';
 import {
   Derivation, deriveBranch, deriveBus, deriveLineGeometry, deriveServiceDrop,
-  deriveSystemBalance, deriveTransformerImpedance,
+  deriveSystemBalance, deriveTransformerImpedance, derivePlantEnergy,
+  deriveMachine,
 } from './derive.js';
 
 export type SelectionKind = 'site' | 'circuit' | 'bus' | 'generator' | 'none';
@@ -72,6 +75,26 @@ export function derivationsFor(
     const branchId = branchForElement(id, solved);
     if (branchId) return branchDerivations(branchId, solved);
     return [];
+  }
+
+  // --- something inside the power station -----------------------------------
+  const plantItem = plantItemById.get(id);
+  if (plantItem) {
+    const g = solved.net.generators.find(
+      (x) => x.bus.startsWith('METCALF') && x.kind === 'gas-cc');
+    if (!g) return [];
+    const chain = energyChain(g, g.pMW);
+    const out: Derivation[] = [derivePlantEnergy(chain)];
+    // A generator inside the plant also has the machine derivation behind it,
+    // because that is what it is.
+    if (plantItem.kind === 'generator') {
+      const bus = solved.busById.get(g.bus);
+      const o = solvedOutput(
+        g, bus, solved.net.generators.filter((x) => x.bus === g.bus));
+      const op = operatingPoint(g, bus?.vpu ?? 1, o.pMW, o.qMVAr);
+      out.unshift(deriveMachine(g, op, capabilityCurve(g, bus?.vpu ?? 1)));
+    }
+    return out;
   }
 
   // --- a pole on the feeder -------------------------------------------------

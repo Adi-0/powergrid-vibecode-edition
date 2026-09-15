@@ -112,6 +112,21 @@ export interface Generator {
   xdpp?: number;
   /** Heat rate, BTU/kWh — only for thermal units. */
   heatRateBtuPerKWh?: number;
+  /**
+   * Committed whatever the merit order says.
+   *
+   * A real dispatch is SECURITY-constrained, not purely economic: a plant
+   * inside a load pocket with little transmission into it is kept running for
+   * local voltage support and reliability even when cheaper generation is
+   * available elsewhere, because the cheaper generation cannot physically get
+   * there. In California these are contracted as RELIABILITY MUST-RUN units,
+   * and this flag is that contract.
+   *
+   * Without it a purely economic stack switches off the only large plant inside
+   * the Bay Area on a summer evening — which no operator would ever do, and
+   * which is exactly the kind of thing a merit-order model gets wrong.
+   */
+  mustRun?: boolean;
 }
 
 export interface Load {

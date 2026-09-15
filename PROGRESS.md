@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phases 1–5 complete.
+**Last updated:** phases 1–6 complete.
 
 ---
 
@@ -15,7 +15,7 @@ An isometric, zoomable, explorable model of the California power grid.
 | 3 | Time scrubber, line tripping, seasons, inspector, glossary | **complete** |
 | 4 | Substation → distribution feeder → service | **complete** |
 | 5 | Math panel with full worked derivations | **complete** |
-| 6 | Plant and machine branch | not started |
+| 6 | Plant and machine branch | **complete** |
 | 7 | Faults and protection | not started |
 | 8 | Breadth: remaining generation types, regions, guided path | not started |
 
@@ -326,11 +326,75 @@ Verified non-vacuous by breaking the thing it guards. Decision **0013**.
 
 ---
 
+## Phase 6 — complete
+
+**The generation branch.** The brief's zoom tree has two: one ends at a socket,
+the other at a rotor. They meet at the system view, because that is where the
+power goes — out of a machine, through a plant, into the network.
+
+### What exists
+
+**Metcalf Energy Center** (`src/data/california/plant.ts`,
+`src/render/scene-plant.ts`). The only large plant inside the Bay Area, feeding
+the bus that feeds Eden Vale, which feeds Cherry Lane — so the whole application
+is one thread from gas burning to a kettle boiling.
+
+Its energy chain is worked from the heat rate already in the network model, and
+the condenser stream is computed as the remainder so that what goes in equals
+what comes out to the last decimal. At 300 MW out: 642 MW of gas in, 202 MW from
+each gas turbine, 104 MW from the steam turbine, 58 MW up the stack, and 270 MW
+— more than it exports — into the cooling tower.
+
+Thermal streams are drawn as **ducts** whose width is the power in them, so line
+weight stays reserved for voltage class on the conductors. The exhaust duct out
+of a gas turbine is visibly enormous and the pipe to the cooling tower is wider
+than everything electrical on the site. Decision **0014**.
+
+**One synchronous machine** (`src/core/machine.ts`,
+`src/render/scene-machine.ts`, `src/app/machine-panel.ts`). Three stator
+windings 120° apart, a rotor drawn at the load angle the solver found, and the
+terminal-voltage reference it is measured from. Beside it the **capability
+curve** — the armature circle, the field circle, the practical reactive limits
+and the δ = 90° stability limit, with the operating point moving around inside
+them — and the **phasor diagram** of E = V + jX_d·I as the triangle it is.
+
+Then inertia: H as the real time it is, the stored kinetic energy, the rate of
+change of frequency if this unit tripped, and how much of the fleet is actually
+spinning.
+
+### What the drawings caught
+
+| Defect | How |
+|---|---|
+| The only Bay Area plant was dispatched off at peak | The plant view was blank |
+| Committing it at the end of the stack curtailed wind at the evening peak | Curtailment appeared where none should be |
+| Free energy was thrown away before anything burning fuel was turned down | Curtailment at hours with gas still above its minimum |
+| The sunniest hour of the spring priced at the most expensive unit in the fleet | $96/MWh at midday oversupply |
+| A 300 MW machine showing exactly 0 MVAr at power factor 1.000 | Reading `generator.qMVAr`, a setpoint the solver never writes back |
+| A sagging terminal voltage appeared to *increase* reactive capability | The field circle was rebuilt at the wrong voltage |
+| The bundle radius formula carried a spurious factor of n | Checked against the model's own `bundleRadius` |
+| The rotation arrowhead pointed nowhere | It was built from a fixed offset, not from the tangent |
+
+### What it does
+
+| Check | Result |
+|---|---|
+| Plant energy chain residual | < 10⁻⁹ of the fuel stream, at every output |
+| Heat to the cooling tower | 42 % of fuel — more than the plant exports |
+| Machine equations inverted and re-solved | agree to 10⁻⁶ |
+| Reliability must-run unit committed | all 24 hours, every season |
+| Demand unserved | 0 MW, every hour, every season |
+| New model-honesty entries | 5 (23 in total) |
+| New glossary entries | 8 (89 in total) |
+| Tests | 368 passing |
+
+---
+
 ## Running it
 
 ```
 npm install
-npm test          # 287 tests
+npm test          # 368 tests
 npm run typecheck
 npm run dev
 ```

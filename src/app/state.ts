@@ -38,6 +38,8 @@ export interface AppSnapshot {
   demandFraction: number;
   /** Circuits the user has taken out of service. */
   tripped: ReadonlySet<string>;
+  /** Whether the battery fleet is available to charge and discharge. */
+  storageInService: boolean;
   selection: Selection;
   hovered: string | null;
   /** How long the last full re-solve took, milliseconds. */
@@ -60,6 +62,8 @@ type Listener = (snapshot: AppSnapshot) => void;
 
 export class AppState {
   private readonly base: NetworkCase;
+  /** The case the dispatch runs against — the base, minus anything switched out. */
+  private dispatchBase: NetworkCase;
   private day: DispatchResult[];
   private _season: Season = 'summer';
   private _hour = 18;
@@ -67,11 +71,13 @@ export class AppState {
   private _selection: Selection = { kind: 'none', id: null };
   private _hovered: string | null = null;
   private _appliance: Appliance | null = null;
+  private _storageInService = true;
   private snapshot: AppSnapshot;
   private readonly listeners = new Set<Listener>();
 
   constructor() {
     this.base = californiaCase();
+    this.dispatchBase = this.base;
     this.day = dispatchDay(this.base, this.profile, SLACK_BUS);
     this.snapshot = this.recompute();
   }
@@ -99,7 +105,7 @@ export class AppState {
     const t0 = performance.now();
     const hourIndex = Math.round(this._hour) % 24;
     const dispatch = this.day[hourIndex];
-    const net = applyDispatch(this.base, this.profile, this._hour, dispatch);
+    const net = applyDispatch(this.dispatchBase, this.profile, this._hour, dispatch);
 
     // Apply the user's switching: a tripped circuit is simply out of service,
     // and the solver knows nothing about why.
@@ -130,6 +136,7 @@ export class AppState {
       profile: this.profile,
       demandFraction: demandFactor(this.profile, this._hour),
       tripped: this._tripped,
+      storageInService: this._storageInService,
       selection: this._selection,
       hovered: this._hovered,
       lastSolveMs: performance.now() - t0,
@@ -159,8 +166,40 @@ export class AppState {
   setSeason(season: Season): void {
     if (season === this._season) return;
     this._season = season;
-    this.day = dispatchDay(this.base, this.profile, SLACK_BUS);
+    this.redispatch();
     this.emit(true);
+  }
+
+  /**
+   * Take the battery fleet out of service, or put it back.
+   *
+   * This is the system-level perturbation, and it is the one that explains why
+   * several gigawatts of batteries were built. With them in service the midday
+   * surplus is absorbed by charging; without them there is nowhere for it to go
+   * once every fuel-burning unit is at its minimum and the export ties are
+   * full, and the only remaining option is to curtail free energy.
+   */
+  setStorageInService(on: boolean): void {
+    if (on === this._storageInService) return;
+    this._storageInService = on;
+    this.redispatch();
+    this.emit(true);
+  }
+
+  get storageInService(): boolean {
+    return this._storageInService;
+  }
+
+  /** Re-run the whole day's dispatch for the present season and fleet. */
+  private redispatch(): void {
+    const base = cloneCase(this.base);
+    if (!this._storageInService) {
+      for (const g of base.generators) {
+        if (g.kind === 'battery') g.inService = false;
+      }
+    }
+    this.dispatchBase = base;
+    this.day = dispatchDay(base, this.profile, SLACK_BUS);
   }
 
   /** Take a circuit out of service, or put it back. */
