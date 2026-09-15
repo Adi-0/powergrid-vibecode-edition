@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phases 1–7 complete.
+**Last updated:** all eight phases complete.
 
 ---
 
@@ -17,7 +17,7 @@ An isometric, zoomable, explorable model of the California power grid.
 | 5 | Math panel with full worked derivations | **complete** |
 | 6 | Plant and machine branch | **complete** |
 | 7 | Faults and protection | **complete** |
-| 8 | Breadth: remaining generation types, regions, guided path | not started |
+| 8 | Breadth: the solver panel, reliability indices, motor starting, Ferranti, the planning factors, and the guided path | **complete** |
 
 ---
 
