@@ -119,6 +119,16 @@ const shots = [
       document.querySelector('[data-panel="glossary"]').click();
     });
   }],
+  ['15-solver', async () => {
+    await page.evaluate(() => {
+      document.querySelector('[data-panel="solver"]').click();
+    });
+  }],
+  ['16-reliability', async () => {
+    await page.evaluate(() => {
+      document.querySelector('[data-panel="reliability"]').click();
+    });
+  }],
 ];
 
 for (const [name, fn] of shots) {

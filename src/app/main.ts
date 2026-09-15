@@ -552,6 +552,7 @@ state.subscribe((snap) => {
   if (solver.isOpen) solver.render(snap.solved);
   if (reliabilityPanel.isOpen) reliabilityPanel.render();
   levelBar.setMotor(snap.motor);
+  levelBar.setAppliance(snap.appliance?.id ?? null);
   levelBar.setFactors(snap.factors);
   levelBar.setTripped(snap.tripped.size);
   renderTcc(snap);

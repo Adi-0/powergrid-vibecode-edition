@@ -151,6 +151,20 @@ export class LevelBar {
   }
 
   /**
+   * Which appliance is on, from the state rather than from the last click.
+   *
+   * The guided path switches everything off on its way past, and without this
+   * the buttons went on showing whatever was last pressed — a control saying
+   * the car charger is on beside a drawing of a house drawing nothing. Same
+   * rule as the motor below: the controls follow the state, never the reverse.
+   */
+  setAppliance(id: string | null): void {
+    if (this.appliance === id) return;
+    this.appliance = id;
+    if (this.scene === 'service') this.render();
+  }
+
+  /**
    * Take the motor study from the state, so the readout is solver output and
    * not something this panel worked out for itself.
    */
