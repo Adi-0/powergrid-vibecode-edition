@@ -273,9 +273,11 @@ html, body {
   left: var(--pad);
   bottom: var(--pad);
   width: 236px;
-  /* Always present and always complete, but never more than half the page:
-     beyond that the legend stops being a key and starts being the subject. */
-  max-height: min(45%, calc(100% - 2 * var(--pad)));
+  /* Always present and always complete, but never more than a third of the
+     page: beyond that the legend stops being a key and starts being the
+     subject. It is reference, so it scrolls; the controls above it are not,
+     so they get the room first. */
+  max-height: min(38%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
@@ -722,10 +724,14 @@ button, select, input {
   width: 268px;
   /* The legend owns the bottom half of this column and must never be
      covered: it is the one panel the brief requires to be always present. */
-  max-height: min(47%, calc(100% - 2 * var(--pad)));
+  max-height: min(56%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
+/* A little room at the foot of anything that scrolls, so a partly-scrolled
+   row is sliced through whitespace rather than through the middle of a digit. */
+.panel--level .panel__body,
+.panel--legend .panel__body { padding-bottom: 14px; }
 .panel--level .panel__body { overflow-y: auto; }
 
 .level__slider {
