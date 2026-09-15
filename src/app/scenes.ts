@@ -39,13 +39,19 @@ import { SolvedCase } from '../core/results.js';
 import { IsoCamera } from '../render/iso.js';
 import { LineSegment } from '../render/line-batch.js';
 import { LabelSpec } from '../render/labels.js';
-import { PickTarget, SystemGeometry, drawSystem } from '../render/scene-system.js';
-import { drawSubstation, substationBounds } from '../render/scene-substation.js';
-import { FeederGeometry, drawFeeder } from '../render/scene-feeder.js';
-import { drawService, serviceBounds } from '../render/scene-service.js';
+import {
+  PickTarget, SystemGeometry, drawSystem, SYSTEM_KV_DRAWN,
+} from '../render/scene-system.js';
+import {
+  drawSubstation, substationBounds, SUBSTATION_KV_DRAWN,
+} from '../render/scene-substation.js';
+import { FeederGeometry, drawFeeder, FEEDER_KV_DRAWN } from '../render/scene-feeder.js';
+import {
+  drawService, serviceBounds, SERVICE_KV_DRAWN,
+} from '../render/scene-service.js';
 import { drawGround, groundBounds } from '../render/scene-ground.js';
 import { drawTerrain, drawDemandDots } from '../render/scene-terrain.js';
-import { drawPlant, plantBounds } from '../render/scene-plant.js';
+import { drawPlant, plantBounds, PLANT_KV_DRAWN } from '../render/scene-plant.js';
 import { drawMachine, machineBounds } from '../render/scene-machine.js';
 import { Generator } from '../core/network.js';
 import { ServiceSolution } from '../data/california/service.js';
@@ -96,6 +102,22 @@ const ENVELOPE: Record<SceneId, [number, number, number, number]> = {
   // kilometre-long lines crossing the page at angles that mean nothing there.
   plant:      [0.058, 0.11, 0.70, 1.6],
   machine:    [0, 0, 0.055, 0.12],
+};
+
+/**
+ * Which voltage classes each scene puts on the page.
+ *
+ * Each scene declares its own, next to the code that draws them; this is only
+ * the index. The legend shows the union over the scenes currently drawn.
+ */
+const KV_DRAWN: Record<SceneId, readonly number[]> = {
+  system: SYSTEM_KV_DRAWN,
+  ground: [],
+  feeder: FEEDER_KV_DRAWN,
+  substation: SUBSTATION_KV_DRAWN,
+  service: SERVICE_KV_DRAWN,
+  plant: PLANT_KV_DRAWN,
+  machine: [],
 };
 
 /**
@@ -212,6 +234,18 @@ export interface ComposeResult {
    * the model ending.
    */
   floorScale: number;
+  /**
+   * Which of the legend's encodings this frame actually used.
+   *
+   * The legend has to be a key to the drawing on the page, and this is the one
+   * place that knows what went on it. Reported rather than inferred from the
+   * level, so the two cannot drift apart.
+   */
+  drew: {
+    machineMarks: boolean; dots: boolean; sizes: boolean;
+    /** Nominal voltages, kV, whose class appears in this frame. */
+    kV: number[];
+  };
 }
 
 /**
@@ -235,6 +269,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // actually under the camera. Accumulated as the scenes are considered, so it
   // follows the same bounds tests the drawing does.
   let floorScale = Infinity;
+  let drewDots = false;
 
   /**
    * Take a scene's labels at the scene's own strength.
@@ -278,7 +313,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     // drawing — a scatter narrower than about forty pixels is a smudge, not a
     // map — so approaching the Bay Area the cities bloom one after another,
     // biggest first, instead of the whole state speckling at once.
-    segments.push(...drawDemandDots(
+    const dots = drawDemandDots(
       [...input.systemGeometry.sites.values()].map((n) => ({
         id: n.site.id, ground: n.ground,
         loadMW: n.loadMW, peakLoadMW: n.peakLoadMW,
@@ -286,7 +321,9 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       near * 0.62,
       view,
       mpp
-    ));
+    );
+    drewDots = dots.length > 0;
+    segments.push(...dots);
   }
 
   // --- the ground, before anything electrical -------------------------------
@@ -394,7 +431,19 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // because that is genuinely as close as this model goes out there.
   if (!Number.isFinite(floorScale)) floorScale = ENVELOPE.system[0];
 
-  return { segments, labels, picks, active, machine, floorScale };
+  // The machine marks and the size scale belong to the transmission drawing:
+  // it is the only scene that draws a machine circle or scales a symbol by how
+  // much is there.
+  const aSystemDrawn = active.some((a) => a.scene === 'system');
+  const kV = new Set<number>();
+  for (const a of active) for (const v of KV_DRAWN[a.scene]) kV.add(v);
+  return {
+    segments, labels, picks, active, machine, floorScale,
+    drew: {
+      machineMarks: aSystemDrawn, dots: drewDots, sizes: aSystemDrawn,
+      kV: [...kV],
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

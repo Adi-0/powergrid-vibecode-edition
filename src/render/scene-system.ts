@@ -92,6 +92,18 @@ export interface SystemGeometry {
   outlineBounds: { min: { x: number; z: number }; max: { x: number; z: number } };
 }
 
+/**
+ * The voltage classes this drawing puts on the page.
+ *
+ * Declared beside the code that draws them, so the legend can be a key to what
+ * is visible rather than a catalogue of everything the renderer knows how to
+ * draw — at the whole-state scale it was listing the wire along a street and
+ * the drop into a house, neither of which is within four orders of magnitude
+ * of being on screen. A test checks that the scenes between them account for
+ * every class in the palette, so none can quietly become legend-only.
+ */
+export const SYSTEM_KV_DRAWN = [500, 230, 115];
+
 const siteOfBus = (busId: string): string => busId.split('_')[0].toLowerCase();
 
 /** Build the static geometry of the system view. Independent of any solution. */

@@ -270,14 +270,11 @@ html, body {
 .panel__body { padding: 9px 10px 11px; }
 
 .panel--legend {
-  left: var(--pad);
-  bottom: var(--pad);
-  width: 236px;
-  /* Always present and always complete, but never more than a third of the
-     page: beyond that the legend stops being a key and starts being the
-     subject. It is reference, so it scrolls; the controls above it are not,
-     so they get the room first. */
-  max-height: min(38%, calc(100% - 2 * var(--pad)));
+  /* Whatever the column has left, and it keeps it: the legend is the one panel
+     the brief requires to be always present, and a key the reader has to
+     discover is scrollable is not present in any sense that matters. */
+  flex: 1 1 auto;
+  min-height: 118px;
   display: flex;
   flex-direction: column;
 }
@@ -332,6 +329,23 @@ html, body {
   color: var(--ink-muted);
   font-size: 10px;
 }
+
+/* A group whose entries are a glyph and a word, laid out two to a line.
+   Seven machine marks one per row is a hundred and fifty pixels of legend
+   for seven small drawings; wrapped, it is forty. */
+.legend__tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 6px;
+}
+.legend__tiles .legend__row {
+  grid-template-columns: 24px 1fr;
+  gap: 4px;
+}
+.legend__tiles .legend__name { font-size: 10px; }
+.legend__tiles .legend__swatch { height: 14px; }
+
+.legend__group[hidden], .legend__row[hidden] { display: none; }
 
 /* --------------------------------------------------------------------- */
 /* Readouts and tables                                                     */
@@ -718,13 +732,31 @@ button, select, input {
 /* Level controls                                                          */
 /* --------------------------------------------------------------------- */
 
-.panel--level {
+/* The left column: level controls on top, legend under them, sharing the
+   height between them rather than each claiming a fixed fraction of it. */
+.column--left {
+  position: absolute;
   left: var(--pad);
   top: var(--pad);
+  bottom: var(--pad);
   width: 268px;
-  /* The legend owns the bottom half of this column and must never be
-     covered: it is the one panel the brief requires to be always present. */
-  max-height: min(56%, calc(100% - 2 * var(--pad)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad);
+  pointer-events: none;
+}
+.column--left > .panel {
+  position: static;
+  pointer-events: auto;
+}
+
+.panel--level {
+  /* Takes what it needs, up to two thirds, and never less than a third: the
+     legend under it must not be squeezed out of existence by a long caption,
+     and a long caption must not be squeezed out by the legend. */
+  flex: 0 1 auto;
+  max-height: 62%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

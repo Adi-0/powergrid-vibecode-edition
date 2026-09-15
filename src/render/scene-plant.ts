@@ -47,6 +47,9 @@ export const PLANT_ORIGIN: Vector3 = (() => {
 })();
 
 /** World position of a plant item. */
+/** The voltage classes this drawing puts on the page. See SYSTEM_KV_DRAWN. */
+export const PLANT_KV_DRAWN = [230, 18];
+
 export function plantItemPosition(i: PlantItem): Vector3 {
   return new Vector3(
     PLANT_ORIGIN.x + i.at[0],

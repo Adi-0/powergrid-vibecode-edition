@@ -68,6 +68,9 @@ export const SUBSTATION_CENTRE: Vector3 = (() => {
  * the same size on the page as the yard it describes, which is what makes the
  * morph read as one object changing rather than two drawings swapping.
  */
+/** The voltage classes this drawing puts on the page. See SYSTEM_KV_DRAWN. */
+export const SUBSTATION_KV_DRAWN = [115, 12.47];
+
 const SCHEMATIC_UNIT_M = 6.2;
 
 /** Centre of the schematic in its own units, so it sits over the yard centre. */

@@ -73,6 +73,11 @@ export class Legend {
   private readonly body: HTMLElement;
   private readonly host: LegendHost;
   private exaggerationRow: HTMLElement | null = null;
+  private machineGroup: HTMLElement | null = null;
+  private readonly voltageRows = new Map<number, HTMLElement>();
+  private dotGroup: HTMLElement | null = null;
+  private sizeGroup: HTMLElement | null = null;
+  private exaggerationGroup: HTMLElement | null = null;
 
   constructor(host: LegendHost = {}) {
     this.host = host;
@@ -87,12 +92,22 @@ export class Legend {
     this.build();
   }
 
-  private group(heading: string): HTMLElement {
+  private group(heading: string, tiles = false): HTMLElement {
     const g = document.createElement('div');
     g.className = 'legend__group';
     g.innerHTML = `<h3 class="legend__heading">${heading}</h3>`;
     this.body.appendChild(g);
-    return g;
+    if (!tiles) return g;
+    const wrap = document.createElement('div');
+    wrap.className = 'legend__tiles';
+    g.appendChild(wrap);
+    return wrap;
+  }
+
+  /** The group element a row lives in, whether or not it is inside a tile grid. */
+  private static groupOf(el: HTMLElement): HTMLElement {
+    return el.classList.contains('legend__group')
+      ? el : (el.parentElement as HTMLElement);
   }
 
   private row(parent: HTMLElement, swatch: string, name: string, explain: string): HTMLElement {
@@ -111,14 +126,14 @@ export class Legend {
     // --- Voltage classes: weight and dash, never hue ------------------------
     const v = this.group('Voltage class — by line weight');
     for (const c of VOLTAGE_CLASSES) {
-      this.row(v, strokeSwatch(c.weightPx, c.dashPx), c.label, c.blurb);
+      this.voltageRows.set(
+        c.kV, this.row(v, strokeSwatch(c.weightPx, c.dashPx), c.label, c.blurb));
     }
     const note = document.createElement('p');
     note.className = 'note';
     note.textContent =
-      'Voltage is shown by how heavy the line is, never by colour — so the ' +
-      'drawing survives being photocopied, and colour stays free to mean ' +
-      'one thing.';
+      'Weight, never colour — so the drawing photocopies, and colour is left ' +
+      'free to mean one thing.';
     v.appendChild(note);
 
     // --- What the size of a symbol means -----------------------------------
@@ -162,28 +177,31 @@ export class Legend {
     );
 
     // --- Symbols ------------------------------------------------------------
-    const sym = this.group('Symbols');
+    const sym = this.group('Symbols', true);
     for (const def of LEGEND_SYMBOLS) {
-      this.row(sym, symbolToSVG(def.path, 22), def.name, def.blurb);
+      this.row(sym, symbolToSVG(def.path, 18), def.name, def.blurb);
     }
 
     // --- Machine marks ------------------------------------------------------
-    const marks = this.group('Inside a machine circle');
+    const marks = this.group('Inside a machine circle', true);
     const order: MachineMark[] = ['steam', 'nuclear', 'hydro', 'wind', 'solar', 'geothermal', 'import'];
     for (const key of order) {
       const m = MACHINE_MARKS[key];
-      this.row(marks, symbolToSVG(m.path, 22), m.name, m.blurb);
+      this.row(marks, symbolToSVG(m.path, 18), m.name, m.blurb);
     }
     const markNote = document.createElement('p');
     markNote.className = 'note';
     markNote.textContent =
-      'There is no industry standard for telling one kind of plant from ' +
-      'another on a one-line diagram, so these marks are this drawing’s own ' +
-      'convention. Everything above them is standard.';
-    marks.appendChild(markNote);
+      'This drawing’s own convention: no standard exists for these. ' +
+      'Everything else here is standard.';
+    Legend.groupOf(marks).appendChild(markNote);
+    this.machineGroup = Legend.groupOf(marks);
+    this.dotGroup = Legend.groupOf(d);
+    this.sizeGroup = Legend.groupOf(z);
 
     // --- The vertical exaggeration, declared ---------------------------------
     const ex = this.group('Vertical scale');
+    this.exaggerationGroup = ex;
     this.exaggerationRow = this.row(
       ex, strokeSwatch(0.7, [], INK.inkFaint), 'Heights are exaggerated',
       'The voltage classes are drawn at different heights so the backbone ' +
@@ -194,10 +212,39 @@ export class Legend {
     );
   }
 
-  /** Keep the stated exaggeration honest as the camera zooms. */
-  update(metresPerPixel: number): void {
-    if (!this.exaggerationRow) return;
+  /**
+   * Keep the legend a key to THIS drawing.
+   *
+   * Complete has to mean "everything on the page", not "everything the
+   * renderer can draw". Eight groups and twenty-five rows is two and a half
+   * times the height the panel has, so a reader saw the voltage classes and
+   * never learned that the scatter of dots was demand or that the size of a
+   * symbol meant anything — the legend was complete in the source and truncated
+   * on the screen, which is the worse of the two failures.
+   *
+   * What is shown follows the COMPOSITOR's own report of what it drew, not a
+   * table of which level shows what, so it cannot drift away from the drawing.
+   */
+  update(
+    metresPerPixel: number,
+    shown: {
+      machineMarks: boolean; dots: boolean; sizes: boolean; kV: number[];
+    } = { machineMarks: true, dots: true, sizes: true, kV: [] }
+  ): void {
+    // A class nobody can see is not a key, it is a catalogue. At the whole
+    // state the legend was offering the wire along a street and the drop into
+    // a house, neither of which is within four orders of magnitude of being on
+    // the page. An empty list means the frame has not reported yet, and then
+    // everything is shown rather than nothing.
+    for (const [kV, row] of this.voltageRows) {
+      row.hidden = shown.kV.length > 0 && !shown.kV.includes(kV);
+    }
+    if (this.machineGroup) this.machineGroup.hidden = !shown.machineMarks;
+    if (this.dotGroup) this.dotGroup.hidden = !shown.dots;
+    if (this.sizeGroup) this.sizeGroup.hidden = !shown.sizes;
     const factor = verticalExaggeration(metresPerPixel);
+    if (this.exaggerationGroup) this.exaggerationGroup.hidden = factor < 2;
+    if (!this.exaggerationRow) return;
     const name = this.exaggerationRow.querySelector('.legend__name');
     if (name) {
       name.innerHTML =

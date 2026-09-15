@@ -39,6 +39,9 @@ export const SERVICE_ORIGIN: Vector3 = toWorld(
 );
 
 /** World position of a service node. */
+/** The voltage classes this drawing puts on the page. See SYSTEM_KV_DRAWN. */
+export const SERVICE_KV_DRAWN = [0.24];
+
 export function serviceNodePosition(n: ServiceNode): Vector3 {
   return new Vector3(
     SERVICE_ORIGIN.x + n.at[0],

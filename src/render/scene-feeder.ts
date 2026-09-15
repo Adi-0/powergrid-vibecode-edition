@@ -65,6 +65,9 @@ export const POLE = {
 } as const;
 
 /** World position of a feeder node's base. */
+/** The voltage classes this drawing puts on the page. See SYSTEM_KV_DRAWN. */
+export const FEEDER_KV_DRAWN = [12.47, 0.24];
+
 export function nodeGround(n: FeederNode): Vector3 {
   return toWorld(project(n.lat, n.lon), 0);
 }

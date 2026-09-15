@@ -346,3 +346,35 @@ describe('the machine panel width the camera assumes', () => {
     expect(assumed).toBe(width);
   });
 });
+
+/**
+ * The legend is a key to what is on the page, which means the scenes have to
+ * account for the palette between them. A class no scene claims would be drawn
+ * by nobody and listed by the legend forever, or — worse — drawn by somebody
+ * who forgot to say so and then missing from the key exactly when a reader
+ * needs it.
+ */
+describe('every voltage class belongs to a scene', () => {
+  it('is claimed by at least one of them', async () => {
+    const [{ SYSTEM_KV_DRAWN }, { SUBSTATION_KV_DRAWN }, { FEEDER_KV_DRAWN },
+      { SERVICE_KV_DRAWN }, { PLANT_KV_DRAWN }] = await Promise.all([
+      import('../src/render/scene-system.js'),
+      import('../src/render/scene-substation.js'),
+      import('../src/render/scene-feeder.js'),
+      import('../src/render/scene-service.js'),
+      import('../src/render/scene-plant.js'),
+    ]);
+    const claimed = new Set<number>([
+      ...SYSTEM_KV_DRAWN, ...SUBSTATION_KV_DRAWN, ...FEEDER_KV_DRAWN,
+      ...SERVICE_KV_DRAWN, ...PLANT_KV_DRAWN,
+    ]);
+    for (const c of VOLTAGE_CLASSES) {
+      expect(claimed.has(c.kV), `${c.label} is in the legend but no scene draws it`)
+        .toBe(true);
+    }
+    for (const kV of claimed) {
+      expect(VOLTAGE_CLASSES.some((c) => c.kV === kV),
+        `a scene claims to draw ${kV} kV, which is not a voltage class`).toBe(true);
+    }
+  });
+});

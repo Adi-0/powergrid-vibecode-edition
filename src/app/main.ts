@@ -112,7 +112,19 @@ const legend = new Legend({
       `<div class="tooltip__short">${text}</div>`, el),
   onDismiss: () => tooltip.hide(),
 });
-stage.appendChild(legend.element);
+// The left column: the controls for the level you are on, and under them the
+// legend.
+//
+// THEY SHARE A COLUMN, SO THEY HAVE TO SHARE IT PROPERLY. Fixed fractions —
+// fifty-six per cent for one, thirty-eight for the other — meant the legend was
+// cut off at "colour means one thing" whether or not the panel above it was
+// using its half, and a key that a reader has to discover is scrollable is not
+// always present in any sense that matters. As a flex column the controls take
+// what they need and the legend takes the rest.
+const leftColumn = document.createElement('div');
+leftColumn.className = 'column column--left';
+stage.appendChild(leftColumn);
+leftColumn.appendChild(legend.element);
 
 const inspector = new Inspector({
   onClose: () => state.select('none', null),
@@ -179,7 +191,7 @@ const levelBar = new LevelBar({
     mathTarget = null;
   },
 });
-stage.appendChild(levelBar.element);
+leftColumn.insertBefore(levelBar.element, legend.element);
 
 const profile = new VoltageProfile({
   onSelect: (nodeId) => state.select('site', nodeId),
@@ -475,7 +487,7 @@ state.subscribe((snap) => {
  * mode flag, because there isn't one.
  */
 function onCamera(mpp: number, level: LevelId): void {
-  legend.update(mpp);
+  legend.update(mpp, lastFrame?.drew);
   // On the generation branch the scene decides; on the distribution branch the
   // scale does, because there the two agree.
   const scene = dominantScene();
