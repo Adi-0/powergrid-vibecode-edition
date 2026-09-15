@@ -443,9 +443,10 @@ export class LevelBar {
         `enough to boil water, so a second turbine runs on the steam. Together ` +
         `they get about half the energy in the fuel out as electricity, which ` +
         `is as good as burning anything gets.</p>` +
-        `<p class="note">The streams are drawn at widths proportional to the ` +
-        `energy in them. The widest one goes to the condenser: that is the heat ` +
-        `no engine can use, leaving.</p>` +
+        `<p class="note">Stream widths are the energy in them. The widest is ` +
+        `the fuel going in. Follow it: most comes back out as the two exhaust ` +
+        `streams, and what the steam turbine cannot use leaves through the ` +
+        `condenser. That last one is the half no engine can keep.</p>` +
         `<p class="note">Select any piece of it for the working.</p>`;
       return;
     }

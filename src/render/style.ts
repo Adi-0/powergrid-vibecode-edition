@@ -121,6 +121,13 @@ export const VOLTAGE_CLASSES: VoltageClassStyle[] = [
       'substation.',
   },
   {
+    kV: 18, label: '18 kV generator bus', weightPx: 1.1, dashPx: [],
+    blurb:
+      'What a large generator actually produces, before the step-up ' +
+      'transformer. It runs a few metres from the machine to the transformer ' +
+      'in enclosed bus, and nowhere else.',
+  },
+  {
     kV: 12.47, label: '12.47 kV', weightPx: 0.9, dashPx: [7, 3.5],
     blurb:
       'Distribution primary. The wires on the poles along an ordinary street.',
@@ -239,7 +246,7 @@ export const ISOMETRIC = {
 
 export const LAYOUT = {
   /** Minimum gap between two screen-space labels before one is dropped, px. */
-  labelCollisionPaddingPx: 3,
+  labelCollisionPaddingPx: 6,
   /** Distance a label sits from the thing it names, px. */
   labelOffsetPx: 13,
   /** Size of a site's symbol on screen, px. Constant regardless of zoom. */

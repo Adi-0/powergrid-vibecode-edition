@@ -270,7 +270,12 @@ export function drawPlant(
     if (stage === 'export' || stage === 'gt-generator' || stage === 'st-generator') {
       // Electrical: a single stroke at its voltage class weight, exactly as
       // everywhere else in the app.
-      const kV = fromId.startsWith('GSU') || toId === 'SWITCHYARD' ? 230 : 12.47;
+      // Generator leads run at GENERATOR voltage, not at distribution voltage.
+      // They were drawn at 12.47 kV, which gave them the dashed pattern the
+      // legend reserves for the wires along a street — an 18 kV isolated-phase
+      // bus three metres long is not that, and saying so in the one visual
+      // code the app has was a straightforward lie.
+      const kV = fromId.startsWith('GSU') || toId === 'SWITCHYARD' ? 230 : 18;
       const cls = voltageClass(kV);
       mark({
         a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
@@ -280,10 +285,21 @@ export function drawPlant(
           ? { dash: [cls.dashPx[0], cls.dashPx[1]] as [number, number] } : {}),
       }, depth, HALO_PAD_PX);
     } else {
-      // Thermal: a duct, drawn as its two walls, with the gap between them
+      // Thermal: a duct, drawn as its two walls with the gap between them
       // proportional to the square root of the power it carries.
+      //
+      // The walls alone did not work. Two thin lines a centimetre apart read
+      // as two lines, not as one stream, so the claim the panel makes — that
+      // the widths ARE the energy — was invisible in the drawing that was
+      // supposed to be making it. A pale core between the walls turns the pair
+      // into a band, which is what a section through a duct looks like and
+      // what the eye compares.
       const widthPx = ductWidthPx(mw, reference);
       const perp = perpendicularOnGround(camera, a, b, widthPx / 2);
+      mark({
+        a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
+        widthPx, color: INK.inkGhost, opacity: 0.55,
+      }, depth + 2);
       for (const sign of [-1, 1]) {
         mark({
           a: [a.x + perp.x * sign, a.y, a.z + perp.z * sign],
@@ -331,15 +347,35 @@ export function drawPlant(
       }, depth + 1);
     }
 
+    // ONE number per caption, and "% of fuel" said once rather than eighteen
+    // times. Every item carried both its megawatts and its share of the fuel,
+    // so the drawing came out under two columns of near-identical text and the
+    // repetition drowned the one figure that differs between them.
     const stream = i.stage ? byStage.get(i.stage) : undefined;
+    const emphasised = isSelected || isHovered;
+
+    // Eighteen standing captions over a drawing this size is a page of text
+    // with a diagram behind it. Only the things that make the cycle a cycle
+    // keep a name; a generator sits against the turbine that drives it and a
+    // step-up transformer against the generator, so both are legible from
+    // their neighbours and answer on hover.
+    if (!emphasised && !NAMED_IN_PLANT.has(i.kind)) {
+      picks.push({
+        id: i.id, kind: 'site', world: p.clone(),
+        radiusPx: LAYOUT.pickRadiusPx * 1.2,
+      });
+      continue;
+    }
+    const value = emphasised && stream
+      ? `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of the fuel`
+      : stream ? formatPower(stream.mw)
+        : emphasised && i.rating ? i.rating : undefined;
     labels.push({
       id: `plant:${i.id}`,
       world: p,
       text: i.name,
-      ...(stream
-        ? { value: `${formatPower(stream.mw)} · ${(stream.fraction * 100).toFixed(1)} % of fuel` }
-        : i.rating ? { value: i.rating } : {}),
-      priority: plantPriority(i) + (isSelected || isHovered ? 5000 : 0),
+      ...(value ? { value } : {}),
+      priority: plantPriority(i) + (emphasised ? 5000 : 0),
       tone: isSelected ? 'selected' : 'normal',
     });
 
@@ -410,6 +446,18 @@ function perpendicularOnGround(
 
 const formatPower = (mw: number): string =>
   Math.abs(mw) >= 1000 ? `${(mw / 1000).toFixed(2)} GW` : `${mw.toFixed(0)} MW`;
+
+/**
+ * What keeps a standing label in the plant.
+ *
+ * The four stages of the cycle and the two places energy leaves it: burn,
+ * recover, expand, reject. Everything else is identified by what it is bolted
+ * to.
+ */
+const NAMED_IN_PLANT = new Set<PlantItem['kind']>([
+  'gas-turbine', 'hrsg', 'steam-turbine', 'condenser', 'cooling-tower',
+  'switchyard', 'fuel',
+]);
 
 function plantPriority(i: PlantItem): number {
   return i.kind === 'gas-turbine' ? 900

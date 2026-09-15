@@ -41,10 +41,35 @@ describe('voltage classes are encoded by weight, never by hue', () => {
     }
   });
 
-  it('separates the transmission classes from the distribution ones by dash', () => {
+  it('reserves the dash for circuits that run along a street', () => {
+    // The dash does not mean "low voltage". It means DISTRIBUTION: the wires
+    // on the poles outside, and the drop from the pole to a building. Voltage
+    // was a usable proxy for that until the generator bus was drawn, which is
+    // 18 kV and is three metres of enclosed busbar inside a power station —
+    // dashing it would have said "this is the wire along your street", which
+    // is the one thing the visual code exists to say, and it would have been
+    // false.
+    const DASHED = new Set([12.47, 0.24]);
     for (const c of VOLTAGE_CLASSES) {
-      if (c.kV >= 100) expect(c.dashPx, `${c.label} should be solid`).toEqual([]);
-      else expect(c.dashPx.length, `${c.label} should be dashed`).toBe(2);
+      if (DASHED.has(c.kV)) {
+        expect(c.dashPx.length, `${c.label} should be dashed`).toBe(2);
+      } else {
+        expect(c.dashPx, `${c.label} should be solid`).toEqual([]);
+      }
+    }
+  });
+
+  it('keeps line weight monotonic in voltage, which is the whole claim', () => {
+    // The legend says heavier means higher voltage. If the table ever stopped
+    // being sorted, the legend would be lying in the most basic way available
+    // to it.
+    for (let i = 1; i < VOLTAGE_CLASSES.length; i++) {
+      const above = VOLTAGE_CLASSES[i - 1];
+      const below = VOLTAGE_CLASSES[i];
+      expect(below.kV, `${below.label} after ${above.label}`)
+        .toBeLessThan(above.kV);
+      expect(below.weightPx, `${below.label} lighter than ${above.label}`)
+        .toBeLessThan(above.weightPx);
     }
   });
 
