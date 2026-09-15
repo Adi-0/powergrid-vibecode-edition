@@ -32,6 +32,8 @@ import { CLASS_CONSTRUCTION } from '../data/california/build.js';
 import { DropStep } from '../data/california/service.js';
 import { PlantEnergyChain } from '../data/california/plant.js';
 import { MachineOperatingPoint, CapabilityCurve } from '../core/machine.js';
+import { FaultResult } from '../core/fault.js';
+import { add } from '../core/complex.js';
 import { evaluate, num } from './expr.js';
 
 export interface DerivationStep {
@@ -1123,3 +1125,174 @@ export function deriveMachine(
       'as separate knobs.',
   };
 }
+
+// ---------------------------------------------------------------------------
+// A fault
+// ---------------------------------------------------------------------------
+
+/**
+ * A short circuit, worked in symmetrical components.
+ *
+ * The derivation is the connection of the three sequence networks, which is
+ * different for every kind of fault and IS the whole of fault analysis. What
+ * follows is that connection written out with this bus's actual Thevenin
+ * impedances in it.
+ */
+export function deriveFault(f: FaultResult, baseKV: number): Derivation {
+  const z1m = absC(f.z1);
+  const z2m = absC(f.z2);
+  const z0m = absC(f.z0);
+  const v = absC(f.prefaultV);
+  const finite0 = Number.isFinite(z0m);
+
+  const steps: DerivationStep[] = [
+    step('Base current at this voltage', 'I_base = S_base / (√3 · V_base)',
+      `100 * 1000 / (sqrt(3) * ${n(baseKV)})`, 'A', {
+        decimals: 1,
+        note: 'Everything below is in per-unit until this turns it into amperes.',
+        checkAgainst: { name: 'the study’s base', value: f.baseAmps, tolerance: 1e-4 },
+      }),
+    step('Positive sequence impedance at this bus', '|Z₁| = |(Y₁⁻¹)_kk|',
+      `sqrt(${n(f.z1.re)}^2 + ${n(f.z1.im)}^2)`, 'pu', {
+        decimals: 5,
+        note:
+          'The whole network, reduced to one impedance seen from this bus, with ' +
+          'every machine represented as a voltage behind its subtransient ' +
+          'reactance. A smaller number means a stronger source and a bigger fault.',
+      }),
+  ];
+
+  if (f.kind !== 'three-phase' && f.kind !== 'line-to-line') {
+    steps.push(
+      step('Zero sequence impedance', '|Z₀| = |(Y₀⁻¹)_kk|',
+        finite0 ? `sqrt(${n(f.z0.re)}^2 + ${n(f.z0.im)}^2)` : '0', 'pu', {
+          decimals: 5,
+          note: finite0
+            ? 'A different network entirely: a line’s zero-sequence impedance ' +
+              'is about three times its positive-sequence value because the ' +
+              'return path is the earth, and every delta winding is an open ' +
+              'circuit to it.'
+            : 'There is no path to earth from this bus at all — every ' +
+              'transformer between it and a grounded winding has a delta. Zero ' +
+              'sequence current cannot flow, so a fault to earth here draws ' +
+              'almost nothing.',
+        })
+    );
+  }
+
+  switch (f.kind) {
+    case 'three-phase':
+      steps.push(
+        step('Fault current', 'I_f = V / (Z₁ + Z_f)',
+          `${n(v)} / ${n(absC(add(f.z1, f.zf)))}`, 'pu', {
+            decimals: 4,
+            note:
+              'Balanced, so there is no negative or zero sequence at all and ' +
+              'only the positive sequence network is involved.',
+          }),
+        step('In amperes', 'I = i_pu · I_base',
+          `${n(v / absC(add(f.z1, f.zf)))} * ${n(f.baseAmps)}`, 'A', {
+            decimals: 0,
+            checkAgainst: { name: 'the study', value: f.maxAmps, tolerance: 2e-3 },
+          })
+      );
+      break;
+    case 'single-line-to-ground':
+      steps.push(
+        step('Sequence current', 'I₀ = I₁ = I₂ = V / (Z₀ + Z₁ + Z₂ + 3Z_f)',
+          finite0
+            ? `${n(v)} / ${n(absC(add(add(add(f.z0, f.z1), f.z2), mulC(3, f.zf))))}`
+            : '0',
+          'pu', {
+            decimals: 5,
+            note:
+              'The three networks in SERIES, because the same current has to ' +
+              'flow through all three. The 3Z_f is because the current in the ' +
+              'fault is 3I₀ while the current in each network is I₀.',
+          }),
+        step('Fault current in the faulted phase', 'I_a = 3·I₀',
+          finite0
+            ? `3 * ${n(v / absC(add(add(add(f.z0, f.z1), f.z2), mulC(3, f.zf))))} * ${n(f.baseAmps)}`
+            : '0',
+          'A', {
+            decimals: 0,
+            note:
+              'The other two phases carry nothing at all, and the whole of it ' +
+              'returns through the earth — which is exactly what a ground ' +
+              'overcurrent relay measures.',
+            checkAgainst: { name: 'the study', value: f.maxAmps, tolerance: 5e-3 },
+          })
+      );
+      break;
+    case 'line-to-line':
+      steps.push(
+        step('Sequence current', 'I₁ = −I₂ = V / (Z₁ + Z₂ + Z_f)',
+          `${n(v)} / ${n(absC(add(add(f.z1, f.z2), f.zf)))}`, 'pu', {
+            decimals: 5,
+            note:
+              'Positive and negative in PARALLEL OPPOSITION, and no zero ' +
+              'sequence at all: the two faulted phases touch each other and not ' +
+              'the earth, so nothing returns through the ground.',
+          }),
+        step('Fault current in the two faulted phases', 'I = √3 · I₁',
+          `sqrt(3) * ${n(v / absC(add(add(f.z1, f.z2), f.zf)))} * ${n(f.baseAmps)}`,
+          'A', {
+            decimals: 0,
+            note:
+              'With Z₁ = Z₂ this comes to √3/2 of the three-phase fault — about ' +
+              '87 %, which is the rule of thumb every protection engineer ' +
+              'carries and which falls straight out of this connection.',
+            checkAgainst: { name: 'the study', value: f.maxAmps, tolerance: 5e-3 },
+          })
+      );
+      break;
+    case 'double-line-to-ground':
+      steps.push(
+        step('Negative and zero in parallel', 'Z_p = Z₂·(Z₀+3Z_f) / (Z₂ + Z₀ + 3Z_f)',
+          finite0
+            ? `${n(z2m)} * ${n(absC(add(f.z0, mulC(3, f.zf))))} / ` +
+              `${n(absC(add(add(f.z2, f.z0), mulC(3, f.zf))))}`
+            : '0',
+          'pu', {
+            decimals: 5,
+            note: 'The current returning to earth divides between those two paths.',
+          }),
+        step('Positive sequence current', 'I₁ = V / (Z₁ + Z_p)',
+          finite0 ? `${n(v)} / ${n(z1m + parallelMag(z2m, absC(add(f.z0, mulC(3, f.zf)))))}` : '0',
+          'pu', { decimals: 5 })
+      );
+      break;
+  }
+
+  steps.push(
+    step('Short-circuit level', 'S = √3 · V · I',
+      `sqrt(3) * ${n(baseKV)} * 1000 * ${n(f.maxAmps, 5)} / 1000000`, 'MVA', {
+        decimals: 0,
+        note:
+          'What switchgear at this point has to be rated to interrupt. It is ' +
+          'quoted in MVA rather than amperes because that is how equipment is ' +
+          'specified and because it is comparable across voltage levels.',
+        checkAgainst: { name: 'the study', value: f.mva, tolerance: 1e-3 },
+      })
+  );
+
+  return {
+    id: `fault:${f.busId}:${f.kind}`,
+    title: 'Short-circuit current',
+    subtitle: `${f.kind.replace(/-/g, ' ')} at ${f.busId}`,
+    standard: 'Symmetrical components (Fortescue); IEEE Std 399',
+    convention:
+      'Current is positive INTO the fault. The pre-fault voltage is the ' +
+      'Thevenin source, and the calculation is a linear superposition about ' +
+      'the operating point the power flow found — not an iteration, because ' +
+      'with the loads replaced by impedances the problem is linear.',
+    steps,
+    closing: f.connection,
+  };
+}
+
+const absC = (z: { re: number; im: number }): number => Math.hypot(z.re, z.im);
+const mulC = (k: number, z: { re: number; im: number }) =>
+  ({ re: k * z.re, im: k * z.im });
+const parallelMag = (a: number, b: number): number =>
+  a + b > 0 ? (a * b) / (a + b) : 0;

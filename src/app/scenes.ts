@@ -130,6 +130,8 @@ export interface ComposeInput {
   substationMorph: number;
   showProtection: boolean;
   showFlow: boolean;
+  /** A bus the reader has put a fault on, if any. */
+  faultBusId?: string | null;
   onlyKV?: number | null;
 }
 
@@ -196,6 +198,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       showFlow: input.showFlow,
       opacity: aFeeder,
       showSubstation: aSub <= 0,
+      faultBusId: input.faultBusId ?? null,
     });
     segments.push(...r.segments);
     labels.push(...r.labels);

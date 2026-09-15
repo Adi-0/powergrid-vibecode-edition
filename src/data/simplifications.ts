@@ -443,6 +443,86 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'needed, it has to be told.',
     severity: 'modest',
   },
+  {
+    id: 'fault-is-a-snapshot',
+    scope: ['protection', 'feeder', 'substation'],
+    title: 'A fault is calculated, not simulated',
+    whatWeDo:
+      'A linear circuit problem solved about the pre-fault operating point, ' +
+      'with every machine represented as a voltage behind its subtransient ' +
+      'reactance. It gives the current in the first cycles and which device ' +
+      'would respond to it.',
+    fullTreatment:
+      'What happens next needs a time-domain simulation: the protection ' +
+      'operating, the breakers clearing, the arc extinguishing at a current ' +
+      'zero, the voltage recovering, the machines swinging against one another ' +
+      'and either pulling back into step or not.',
+    consequence:
+      'The number is right, and it is the number every one of those later ' +
+      'questions starts from. What is missing is the decay of the fault ' +
+      'current as the machines move from X″ to X′ to X_d, the direct-current ' +
+      'offset in the first cycle, and everything about stability.',
+    severity: 'material',
+  },
+  {
+    id: 'zero-sequence-ratio',
+    scope: ['protection'],
+    title: 'A line’s zero-sequence impedance is a multiple of its positive-sequence one',
+    whatWeDo:
+      'Z₀ = 3·Z₁ for an overhead line and 2·Z₁ for a cable, with the ' +
+      'zero-sequence charging at 60 % of the positive-sequence value.',
+    fullTreatment:
+      'The real value depends on the earth resistivity along the route, on ' +
+      'whether there is a shield wire and what it is made of, and on how the ' +
+      'shield wire is bonded — and it is computed with Carson\u2019s equations, ' +
+      'which model the earth as a conductor of finite conductivity.',
+    consequence:
+      'Ratios between 2 and 3.5 cover nearly all overhead construction, so ' +
+      'ground fault currents are right to within perhaps twenty per cent. ' +
+      'What is exactly right is the part that matters most for teaching: which ' +
+      'transformers pass zero-sequence current and which block it, because ' +
+      'that follows from the winding connections rather than from the soil.',
+    severity: 'modest',
+  },
+  {
+    id: 'one-protection-chain',
+    scope: ['protection'],
+    title: 'Only Cherry Lane’s protection is modelled',
+    whatWeDo:
+      'Four devices in series — a lateral fuse, a recloser, the feeder breaker ' +
+      'and the transformer\u2019s backup relay — with settings derived from the ' +
+      'feeder\u2019s own load and fault levels.',
+    fullTreatment:
+      'A real system has a protective device on every circuit at every ' +
+      'voltage, with distance relays and differential schemes on the ' +
+      'transmission network and communications between them.',
+    consequence:
+      'A fault anywhere on the network gives a correct current, because the ' +
+      'sequence networks cover the whole case. But only on this feeder is ' +
+      'there a chain of devices to say which one would clear it; elsewhere the ' +
+      'app says so rather than showing a chain that would not operate.',
+    severity: 'modest',
+  },
+  {
+    id: 'phase-elements-only',
+    scope: ['protection'],
+    title: 'The coordination shown is of the phase elements',
+    whatWeDo:
+      'Each device responds to the largest phase current. Ground elements — ' +
+      'devices 50N and 51N, which watch the residual — are named in the ' +
+      'substation\u2019s protection scheme but are not plotted.',
+    fullTreatment:
+      'A real study plots the phase and ground elements as two separate ' +
+      'coordination problems, because the ground elements are set far more ' +
+      'sensitively and coordinate with each other rather than with the phase ' +
+      'curves.',
+    consequence:
+      'For a three-phase or phase-to-phase fault the answer is complete. For a ' +
+      'fault to earth the real clearing would usually be faster than shown, ' +
+      'because a sensitive ground element sees it long before a phase element ' +
+      'does.',
+    severity: 'modest',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>

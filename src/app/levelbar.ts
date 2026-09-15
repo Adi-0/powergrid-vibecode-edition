@@ -13,6 +13,8 @@
  */
 
 import { APPLIANCES } from '../data/california/service.js';
+import { FaultKind } from '../core/fault.js';
+import { feederBusId } from '../data/california/feeder.js';
 import { SceneId } from './scenes.js';
 import { term } from './tooltip.js';
 
@@ -21,6 +23,7 @@ export interface LevelBarHost {
   onProtection: (on: boolean) => void;
   onAppliance: (id: string | null) => void;
   onStorage: (inService: boolean) => void;
+  onFault: (busId: string | null, kind: FaultKind) => void;
   onExplain?: (title: string, text: string, el: HTMLElement) => void;
   onDismiss?: () => void;
 }
@@ -33,6 +36,8 @@ export class LevelBar {
   private protection = false;
   private appliance: string | null = null;
   private storage = true;
+  private faultBus: string | null = null;
+  private faultKind: FaultKind = 'single-line-to-ground';
 
   constructor(host: LevelBarHost) {
     this.host = host;
@@ -67,6 +72,15 @@ export class LevelBar {
         this.storage = !this.storage;
         this.host.onStorage(this.storage);
         this.render();
+      } else if (b.dataset.faultAt !== undefined) {
+        const at = b.dataset.faultAt || null;
+        this.faultBus = this.faultBus === at ? null : at;
+        this.host.onFault(this.faultBus, this.faultKind);
+        this.render();
+      } else if (b.dataset.faultKind) {
+        this.faultKind = b.dataset.faultKind as FaultKind;
+        if (this.faultBus) this.host.onFault(this.faultBus, this.faultKind);
+        this.render();
       } else if (b.dataset.appliance !== undefined) {
         const id = b.dataset.appliance || null;
         this.appliance = this.appliance === id ? null : id;
@@ -100,6 +114,48 @@ export class LevelBar {
     if (this.scene === null) this.render();
   }
 
+  /**
+   * Where to put a fault, and what kind.
+   *
+   * Four places along one feeder, chosen because they are the four that teach
+   * different things: a fault on a lateral should take out one street, a fault
+   * on the main should take out the feeder, and a fault on the busbar should be
+   * caught by something far faster than the overcurrent chain.
+   */
+  private faultControls(): string {
+    const places: [string, string][] = [
+      [feederBusId('L3B'), 'On a lateral'],
+      [feederBusId('F06'), 'On the main'],
+      [feederBusId('F01'), 'Close to the substation'],
+      ['EDENVALE_12', 'On the 12.47 kV busbar'],
+    ];
+    const kinds: [FaultKind, string][] = [
+      ['single-line-to-ground', 'One phase to earth'],
+      ['line-to-line', 'Phase to phase'],
+      ['three-phase', 'All three'],
+      ['double-line-to-ground', 'Two phases to earth'],
+    ];
+    return (
+      `<div class="level__fault">` +
+      `<h4 class="inspect__heading">Put a ${term('fault', 'fault')} somewhere</h4>` +
+      `<div class="level__appliances">` +
+      places.map(([id, label]) =>
+        `<button class="btn btn--quiet" data-fault-at="${id}" ` +
+        `aria-pressed="${this.faultBus === id}">${label}</button>`).join('') +
+      `</div>` +
+      `<div class="level__appliances">` +
+      kinds.map(([k, label]) =>
+        `<button class="btn btn--quiet" data-fault-kind="${k}" ` +
+        `aria-pressed="${this.faultKind === k}">${label}</button>`).join('') +
+      `</div>` +
+      (this.faultBus
+        ? `<div class="inspect__actions">` +
+          `<button class="btn btn--quiet" data-fault-at="">Clear the fault</button></div>`
+        : '') +
+      `</div>`
+    );
+  }
+
   private updateMorphReadout(): void {
     const el = this.element.querySelector('[data-role="morph-readout"]');
     if (!el) return;
@@ -113,30 +169,6 @@ export class LevelBar {
     const body = this.element.querySelector('.panel__body') as HTMLElement;
     const title = this.element.querySelector('[data-role="title"]') as HTMLElement;
     const sub = this.element.querySelector('[data-role="sub"]') as HTMLElement;
-
-    if (this.scene === 'substation') {
-      this.element.style.display = '';
-      title.textContent = 'Eden Vale';
-      sub.textContent = 'two representations of one station';
-      body.innerHTML =
-        `<p class="note">A substation is drawn two ways, and the relationship ` +
-        `between them is the thing that is hard to learn. The ${term('single-line-diagram', 'single-line diagram')} ` +
-        `keeps only what is connected to what — all the electricity cares about. ` +
-        `The yard is where that equipment actually stands. Slide between them.</p>` +
-        `<div class="level__slider">` +
-        `<button class="btn btn--quiet" data-role="morph-end" data-value="0">Diagram</button>` +
-        `<input type="range" min="0" max="100" step="1" value="${Math.round(this.morph * 100)}" ` +
-        `data-role="morph" aria-label="Diagram to yard">` +
-        `<button class="btn btn--quiet" data-role="morph-end" data-value="1">Yard</button>` +
-        `</div>` +
-        `<div class="level__readout num" data-role="morph-readout"></div>` +
-        `<div class="inspect__actions">` +
-        `<button class="btn btn--quiet" data-role="protection" aria-pressed="${this.protection}">` +
-        `Show ${term('device-number', 'device numbers')}</button>` +
-        `</div>`;
-      this.updateMorphReadout();
-      return;
-    }
 
     if (this.scene === 'service') {
       this.element.style.display = '';
@@ -160,17 +192,36 @@ export class LevelBar {
       return;
     }
 
-    if (this.scene === 'feeder') {
+    if (this.scene === 'feeder' || this.scene === 'substation') {
       this.element.style.display = '';
       title.textContent = 'Cherry Lane 1201';
       sub.textContent = 'one distribution feeder, pole by pole';
+      const isFeeder = this.scene === 'feeder';
+      title.textContent = isFeeder ? 'Cherry Lane 1201' : 'Eden Vale';
+      sub.textContent = isFeeder ? 'one distribution feeder' : 'inside the fence';
       body.innerHTML =
-        `<p class="note">Three kilometres of street at the height the wires ` +
-        `actually hang. The three-phase main runs the length of it; the ` +
-        `single-phase laterals branch into the side streets, each behind its own ` +
-        `fuse. The plot below is the same information as a graph: voltage ` +
-        `against distance, which is the shape everything on this feeder exists ` +
-        `to manage.</p>`;
+        (isFeeder
+          ? `<p class="note">Three kilometres of street at the height the wires ` +
+            `actually hang. The three-phase main runs the length of it; the ` +
+            `single-phase laterals branch into the side streets, each behind its ` +
+            `own fuse. The plot below is voltage against distance, which is the ` +
+            `shape everything on this feeder exists to manage.</p>`
+          : `<p class="note">A substation is drawn two ways, and the relationship ` +
+            `between them is the thing that is hard to learn. Slide between them ` +
+            `below, or put a fault somewhere and watch which device clears it.</p>` +
+            `<div class="level__slider">` +
+            `<button class="btn btn--quiet" data-role="morph-end" data-value="0">Diagram</button>` +
+            `<input type="range" min="0" max="100" step="1" value="${Math.round(this.morph * 100)}" ` +
+            `data-role="morph" aria-label="Diagram to yard">` +
+            `<button class="btn btn--quiet" data-role="morph-end" data-value="1">Yard</button>` +
+            `</div>` +
+            `<div class="level__readout num" data-role="morph-readout"></div>` +
+            `<div class="inspect__actions">` +
+            `<button class="btn btn--quiet" data-role="protection" ` +
+            `aria-pressed="${this.protection}">Show ` +
+            `${term('device-number', 'device numbers')}</button></div>`) +
+        this.faultControls();
+      if (!isFeeder) this.updateMorphReadout();
       return;
     }
 

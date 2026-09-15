@@ -13,7 +13,7 @@
 
 import './styles.css';
 import { Vector3 } from 'three';
-import { AppState } from './state.js';
+import { AppState, AppSnapshot } from './state.js';
 import { Viewport, FrameContent } from './viewport.js';
 import { Legend } from './legend.js';
 import { Inspector } from './inspector.js';
@@ -23,6 +23,9 @@ import { LevelBar } from './levelbar.js';
 import { VoltageProfile } from './profile.js';
 import { MathPanel } from './mathpanel.js';
 import { MachinePanel } from './machine-panel.js';
+import { TccPanel } from './tcc-panel.js';
+import { cherryLaneProtection } from '../data/california/protection-scheme.js';
+import { feederFaultLevels } from '../sim/faults.js';
 import { derivationsFor } from '../math/for-selection.js';
 import { Tooltip, term } from './tooltip.js';
 import {
@@ -71,6 +74,7 @@ const viewport: Viewport = new Viewport(stage, {
       substationMorph: view.substationMorph,
       showProtection: view.showProtection,
       showFlow: true,
+      faultBusId: snap.faultAt?.busId ?? null,
       onlyKV: debug.onlyKV,
     });
     lastFrame = r;
@@ -110,7 +114,8 @@ stage.appendChild(math.element);
 /** Open the working for one selected object. */
 function openMath(kind: Parameters<typeof derivationsFor>[0], id: string): void {
   const snap = state.current;
-  const derivations = derivationsFor(kind, id, snap.solved, snap.service);
+  const derivations = derivationsFor(
+    kind, id, snap.solved, snap.service, snap.fault?.result ?? null);
   if (derivations.length === 0) return;
   mathTarget = { kind, id };
   stage.classList.add('has-math');
@@ -134,6 +139,7 @@ const levelBar = new LevelBar({
   onProtection: (on) => { view.showProtection = on; viewport.invalidate(); },
   onAppliance: (id) => state.setAppliance(id),
   onStorage: (on) => state.setStorageInService(on),
+  onFault: (busId, kind) => state.setFault(busId, kind),
 });
 stage.appendChild(levelBar.element);
 
@@ -146,6 +152,11 @@ const machinePanel = new MachinePanel({
   onClose: () => stage.classList.remove('has-machine'),
 });
 stage.appendChild(machinePanel.element);
+
+const tcc = new TccPanel({
+  onClose: () => { stage.classList.remove('has-tcc'); state.setFault(null); },
+});
+stage.appendChild(tcc.element);
 
 const scrubber = new Scrubber({
   onChange: (hour) => state.setHour(hour),
@@ -261,8 +272,11 @@ state.subscribe((snap) => {
   inspector.render(snap, geometry);
   profile.render(snap.solved, snap.selection.id);
   if (machinePanel.isOpen) machinePanel.render(snap.solved, lastFrame?.machine);
+  renderTcc(snap);
   if (math.isOpen && mathTarget) {
-    math.update(derivationsFor(mathTarget.kind, mathTarget.id, snap.solved, snap.service));
+    math.update(derivationsFor(
+      mathTarget.kind, mathTarget.id, snap.solved, snap.service,
+      snap.fault?.result ?? null));
   }
   scrubber.update(state.dispatchDayResults, snap.hour, snap.dispatch);
   (controls.querySelector('[data-action="restore"]') as HTMLElement).style.display =
@@ -290,6 +304,8 @@ function onCamera(mpp: number, level: LevelId): void {
   side.setScope(here as ScopeId);
 
   levelBar.setScene(scene);
+
+  renderTcc(state.current);
 
   // The capability curve belongs to the machine and to nothing else.
   const wantMachine = scene === 'machine';
@@ -321,6 +337,22 @@ function onCamera(mpp: number, level: LevelId): void {
  * camera cannot see, so its own account of what it drew is the only honest
  * answer.
  */
+/**
+ * The coordination plot appears when there is a fault to study, and nowhere
+ * else. It is not a permanent readout: it is the answer to a question the
+ * reader asked by putting a fault somewhere.
+ */
+function renderTcc(snap: AppSnapshot): void {
+  const want = snap.fault !== null;
+  if (tcc.isOpen !== want) {
+    tcc.setVisible(want);
+    stage.classList.toggle('has-tcc', want);
+  }
+  if (want) {
+    tcc.render(snap.fault, cherryLaneProtection(feederFaultLevels(snap.solved)));
+  }
+}
+
 function dominantScene(): SceneId | null {
   if (!lastFrame) return null;
   let best: SceneId | null = null;

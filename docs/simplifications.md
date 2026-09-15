@@ -52,6 +52,16 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** The number shown is several times faster than what the real system would see, and the panel says so where it is shown. What it gets right is the COMPARISON: an hour with less synchronous plant online has less inertia, and that is the whole point of the readout.
 
+### A fault is calculated, not simulated
+
+*Applies to: protection, feeder, substation* · `fault-is-a-snapshot`
+
+**What the model does.** A linear circuit problem solved about the pre-fault operating point, with every machine represented as a voltage behind its subtransient reactance. It gives the current in the first cycles and which device would respond to it.
+
+**What the full treatment would involve.** What happens next needs a time-domain simulation: the protection operating, the breakers clearing, the arc extinguishing at a current zero, the voltage recovering, the machines swinging against one another and either pulling back into step or not.
+
+**What that means for you.** The number is right, and it is the number every one of those later questions starts from. What is missing is the decay of the fault current as the machines move from X″ to X′ to X_d, the direct-current offset in the first cycle, and everything about stability.
+
 ## Modest
 
 ### Everything is balanced across the three phases
@@ -204,6 +214,36 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** The result is right for this network at these hours — the plant runs, and the region is not left depending entirely on imports. What is missing is the mechanism: the model cannot discover that a unit is needed, it has to be told.
 
+### A line’s zero-sequence impedance is a multiple of its positive-sequence one
+
+*Applies to: protection* · `zero-sequence-ratio`
+
+**What the model does.** Z₀ = 3·Z₁ for an overhead line and 2·Z₁ for a cable, with the zero-sequence charging at 60 % of the positive-sequence value.
+
+**What the full treatment would involve.** The real value depends on the earth resistivity along the route, on whether there is a shield wire and what it is made of, and on how the shield wire is bonded — and it is computed with Carson’s equations, which model the earth as a conductor of finite conductivity.
+
+**What that means for you.** Ratios between 2 and 3.5 cover nearly all overhead construction, so ground fault currents are right to within perhaps twenty per cent. What is exactly right is the part that matters most for teaching: which transformers pass zero-sequence current and which block it, because that follows from the winding connections rather than from the soil.
+
+### Only Cherry Lane’s protection is modelled
+
+*Applies to: protection* · `one-protection-chain`
+
+**What the model does.** Four devices in series — a lateral fuse, a recloser, the feeder breaker and the transformer’s backup relay — with settings derived from the feeder’s own load and fault levels.
+
+**What the full treatment would involve.** A real system has a protective device on every circuit at every voltage, with distance relays and differential schemes on the transmission network and communications between them.
+
+**What that means for you.** A fault anywhere on the network gives a correct current, because the sequence networks cover the whole case. But only on this feeder is there a chain of devices to say which one would clear it; elsewhere the app says so rather than showing a chain that would not operate.
+
+### The coordination shown is of the phase elements
+
+*Applies to: protection* · `phase-elements-only`
+
+**What the model does.** Each device responds to the largest phase current. Ground elements — devices 50N and 51N, which watch the residual — are named in the substation’s protection scheme but are not plotted.
+
+**What the full treatment would involve.** A real study plots the phase and ground elements as two separate coordination problems, because the ground elements are set far more sensitively and coordinate with each other rather than with the phase curves.
+
+**What that means for you.** For a three-phase or phase-to-phase fault the answer is complete. For a fault to earth the real clearing would usually be faster than shown, because a sensitive ground element sees it long before a phase element does.
+
 ## Cosmetic
 
 ### One distribution feeder is modelled; the rest are lumped
@@ -258,4 +298,4 @@ Severity is how badly a simplification would change an answer:
 
 ---
 
-*23 entries.*
+*27 entries.*

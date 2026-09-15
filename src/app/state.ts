@@ -18,6 +18,8 @@ import { operate, OperateResult } from '../sim/operate.js';
 import {
   APPLIANCES, Appliance, solveService, ServiceSolution,
 } from '../data/california/service.js';
+import { FaultKind } from '../core/fault.js';
+import { studyFault, FaultStudy } from '../sim/faults.js';
 
 export interface Selection {
   kind: 'site' | 'circuit' | 'bus' | 'generator' | 'none';
@@ -40,6 +42,16 @@ export interface AppSnapshot {
   tripped: ReadonlySet<string>;
   /** Whether the battery fleet is available to charge and discharge. */
   storageInService: boolean;
+  /**
+   * A fault the reader has placed, if any.
+   *
+   * It is a STUDY, not a state of the network: the power flow still shows the
+   * system operating normally, because a fault is cleared in a few cycles and
+   * the pre-fault condition is what it is calculated from. Drawing the system
+   * as though it were permanently faulted would be the wrong picture.
+   */
+  fault: FaultStudy | null;
+  faultAt: { busId: string; kind: FaultKind } | null;
   selection: Selection;
   hovered: string | null;
   /** How long the last full re-solve took, milliseconds. */
@@ -72,6 +84,7 @@ export class AppState {
   private _hovered: string | null = null;
   private _appliance: Appliance | null = null;
   private _storageInService = true;
+  private _faultAt: { busId: string; kind: FaultKind } | null = null;
   private snapshot: AppSnapshot;
   private readonly listeners = new Set<Listener>();
 
@@ -142,6 +155,10 @@ export class AppState {
       lastSolveMs: performance.now() - t0,
       appliance: this._appliance,
       service: serviceFrom(result.solved, this._appliance),
+      faultAt: this._faultAt,
+      fault: this._faultAt
+        ? studyFault(result.solved, this._faultAt.busId, this._faultAt.kind)
+        : null,
     };
   }
 
@@ -208,6 +225,25 @@ export class AppState {
     else this._tripped.add(branchId);
     this._tripped = new Set(this._tripped);
     this.emit(true);
+  }
+
+  /**
+   * Put a fault somewhere, or take it away.
+   *
+   * The fault is calculated from the present solved case and does not change
+   * it: a fault lasts a few cycles and the system it is calculated from is the
+   * one that existed just before. Redrawing the whole network as permanently
+   * short-circuited would be a different and much less useful picture.
+   */
+  setFault(busId: string | null, kind: FaultKind = 'single-line-to-ground'): void {
+    const next = busId ? { busId, kind } : null;
+    if (next?.busId === this._faultAt?.busId && next?.kind === this._faultAt?.kind) return;
+    this._faultAt = next;
+    this.emit(true);
+  }
+
+  get faultAt(): { busId: string; kind: FaultKind } | null {
+    return this._faultAt;
   }
 
   /** Switch an appliance on at the modelled house, or switch everything off. */

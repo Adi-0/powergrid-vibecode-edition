@@ -966,6 +966,122 @@ export const GLOSSARY: GlossaryEntry[] = [
     scale: 'About 2 % of gross for a combined cycle; nearer 7 % for a coal plant with its mills and precipitators.',
     see: ['combined-cycle'],
   },
+
+  // --- faults and protection ------------------------------------------------
+  {
+    id: 'fault', term: 'Fault', aliases: ['short circuit'], category: 'protection',
+    short: 'Two conductors that should not be connected become connected, usually through an arc.',
+    long:
+      'The impedance between them collapses from that of a load to that of a ' +
+      'few hundred metres of copper, and the current rises to whatever the ' +
+      'network can deliver — commonly twenty or thirty times normal. ' +
+      'Everything about protection is a consequence of that number: how big a ' +
+      'breaker must be, how fast it must act, and how a relay can tell a fault ' +
+      'from an unusually heavy load.',
+    scale: 'A 12.47 kV substation busbar can deliver 20,000 A; the far end of a feeder, 4,000.',
+    see: ['symmetrical-components', 'coordination', 'circuit-breaker'],
+  },
+  {
+    id: 'symmetrical-components', term: 'Symmetrical components',
+    aliases: ['sequence components', '012'], category: 'analysis',
+    short: 'A way of writing any three unbalanced phasors as the sum of three balanced sets, so an unbalanced problem becomes three balanced ones.',
+    long:
+      'Fortescue, 1918. The three sets are POSITIVE sequence (an ordinary ' +
+      'balanced system), NEGATIVE sequence (the same thing turning backwards) ' +
+      'and ZERO sequence (three phasors all in phase, which do not sum to zero ' +
+      'and must therefore return through earth). It is not a mathematical ' +
+      'trick: each behaves differently in real equipment and each has its own ' +
+      'network.',
+    standard: 'IEEE Std 399',
+    see: ['sequence-network', 'fault', 'zero-sequence'],
+  },
+  {
+    id: 'sequence-network', term: 'Sequence network', category: 'analysis',
+    short: 'The circuit that one of the three symmetrical components sees — and the three are not the same circuit.',
+    long:
+      'Positive and negative sequence see much the same passive network. Zero ' +
+      'sequence sees a different one entirely: a line’s zero-sequence ' +
+      'impedance is about three times its positive-sequence value, because the ' +
+      'return path is the earth, and a transformer either passes zero-sequence ' +
+      'current or blocks it completely depending on how its windings are ' +
+      'connected. Which fault it is decides how the three networks are ' +
+      'connected together.',
+    see: ['symmetrical-components', 'zero-sequence', 'vector-group'],
+  },
+  {
+    id: 'zero-sequence', term: 'Zero sequence', symbol: 'I₀, V₀',
+    category: 'analysis',
+    short: 'The component in which all three phases are identical, so the current has to return through the earth.',
+    long:
+      'Because the three are in phase they do not cancel, and the sum — the ' +
+      'RESIDUAL, 3I₀ — must find a path back through the ground. A delta ' +
+      'winding is a closed loop with no connection to earth and blocks it ' +
+      'completely, which is the whole reason a distribution transformer is ' +
+      'delta on the high side: a ground fault on the feeder cannot push earth ' +
+      'current onto the transmission system.',
+    see: ['sequence-network', 'residual-current', 'vector-group'],
+  },
+  {
+    id: 'residual-current', term: 'Residual current', symbol: '3I₀', unit: 'A',
+    category: 'protection',
+    short: 'The sum of the three phase currents — zero in a balanced circuit, and equal to whatever is flowing to earth when it is not.',
+    long:
+      'It is what a ground overcurrent relay measures, and the reason that ' +
+      'relay can be set far more sensitively than the phase elements: normal ' +
+      'load, however heavy, barely shows up in it at all.',
+    standard: 'ANSI/IEEE C37.2 devices 50N and 51N',
+    see: ['zero-sequence', 'device-number'],
+  },
+  {
+    id: 'tcc', term: 'Time–current characteristic', aliases: ['TCC curve', 'TCC'],
+    category: 'protection',
+    short: 'The curve of how long a protective device takes to operate against how much current it sees.',
+    long:
+      'Inverse: the bigger the overcurrent, the sooner it acts — because a ' +
+      'bigger current means the fault is closer, and because damage ' +
+      'accumulates as I²t. Shapes are standardised so that devices from ' +
+      'different manufacturers coordinate with each other. The TIME DIAL slides ' +
+      'the whole curve up and down without changing its shape, and that is the ' +
+      'setting an engineer actually adjusts.',
+    standard: 'IEEE C37.112-1996',
+    see: ['coordination', 'device-number', 'relay'],
+  },
+  {
+    id: 'pickup', term: 'Pickup', symbol: 'I_s', unit: 'A', category: 'protection',
+    short: 'The current at which a protective device starts timing at all. Below it, nothing ever happens.',
+    long:
+      'It has to sit above everything the circuit legitimately carries — ' +
+      'including the surge when a whole feeder is re-energised and every ' +
+      'thermostat on it is calling at once — and below the smallest fault the ' +
+      'device must detect. That gap is not always comfortable, and closing it ' +
+      'is much of the work of setting a relay.',
+    see: ['tcc', 'coordination'],
+  },
+  {
+    id: 'instantaneous', term: 'Instantaneous element', symbol: '50',
+    category: 'protection',
+    short: 'A threshold above which a device trips at once, with no intentional delay.',
+    long:
+      'Set above the fault current available at the far end of the zone it is ' +
+      'meant to protect, so it can only ever respond to a fault close by. A ' +
+      'fault further away draws less current because of the impedance in ' +
+      'between — so one threshold distinguishes near from far without measuring ' +
+      'distance at all.',
+    standard: 'ANSI/IEEE C37.2 device 50',
+    see: ['tcc', 'coordination', 'device-number'],
+  },
+  {
+    id: 'subtransient-reactance', term: 'Subtransient reactance', symbol: 'X_d″',
+    unit: 'pu', category: 'quantity',
+    short: 'The reactance a generator appears to have in the first cycles after a fault — much smaller than its steady-state value.',
+    long:
+      'A machine cannot change its flux linkages instantly, so in the moments ' +
+      'after a fault it behaves as a voltage behind a small reactance rather ' +
+      'than as a scheduled power injection. That is why fault current is large ' +
+      'at first and decays: X″ becomes X′ becomes X_d over a second or so.',
+    scale: 'About 0.15–0.25 pu, against a synchronous reactance near 2.',
+    see: ['fault', 'sequence-network'],
+  },
 ];
 
 const INDEX = new Map<string, GlossaryEntry>();

@@ -271,7 +271,7 @@ html, body {
   width: 236px;
   /* Always present and always complete, but never more than half the page:
      beyond that the legend stops being a key and starts being the subject. */
-  max-height: min(58%, calc(100% - 2 * var(--pad)));
+  max-height: min(50%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
@@ -694,7 +694,7 @@ button, select, input {
   width: 268px;
   /* The legend owns the bottom half of this column and must never be
      covered: it is the one panel the brief requires to be always present. */
-  max-height: min(38%, calc(100% - 2 * var(--pad)));
+  max-height: min(42%, calc(100% - 2 * var(--pad)));
   display: flex;
   flex-direction: column;
 }
@@ -1011,3 +1011,62 @@ button, select, input {
 .machine__label { font-size: 12px; }
 .machine__value { font-size: 12px; font-weight: 500; text-align: right; }
 .machine__note { margin: 1px 0 5px; }
+
+/* --------------------------------------------------------------------- */
+/* Coordination plot                                                       */
+/* --------------------------------------------------------------------- */
+
+.panel--tcc {
+  right: var(--pad);
+  bottom: var(--pad);
+  width: 470px;
+  max-height: calc(100% - 2 * var(--pad));
+  display: flex;
+  flex-direction: column;
+}
+.panel--tcc .panel__body { overflow-y: auto; }
+.panel--tcc svg { display: block; margin-bottom: 8px; }
+
+/* With the coordination plot open the inspector moves out of its way rather
+   than sitting on top of it. */
+.stage.has-tcc .panel--inspect {
+  right: calc(var(--pad) + 470px + 9px);
+}
+.stage.has-tcc .panel--profile { display: none !important; }
+
+.tcc__rows {
+  margin-bottom: 8px;
+  padding-bottom: 7px;
+  border-bottom: var(--rule);
+}
+.tcc__row {
+  display: grid;
+  grid-template-columns: 22px 1fr 54px 86px;
+  gap: 7px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 11.5px;
+}
+.tcc__row--first .tcc__time { color: var(--alarm); font-weight: 500; }
+/* The sample of the curve's own weight, so a row can be matched to a line on
+   the plot without a colour key. */
+.tcc__weight {
+  display: block;
+  border-top: 1px solid var(--ink);
+  transform: translateY(-3px);
+}
+.tcc__name { line-height: 1.3; }
+.tcc__device {
+  margin-left: 5px;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.tcc__pickup, .tcc__time { text-align: right; color: var(--ink-muted); }
+.tcc__ok { color: var(--ink-muted); }
+.tcc__bad { color: var(--alarm); }
+
+.level__fault {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: var(--rule);
+}

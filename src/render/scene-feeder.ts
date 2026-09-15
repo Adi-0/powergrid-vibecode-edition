@@ -205,6 +205,8 @@ export interface FeederDrawOptions {
    * between the two levels — otherwise the station is named twice.
    */
   showSubstation?: boolean;
+  /** A bus the reader has put a fault on, marked in the one signal colour. */
+  faultBusId?: string | null;
 }
 
 export interface FeederDrawResult {
@@ -358,7 +360,31 @@ export function drawFeeder(
     const color = isSelected ? SELECTION.stroke : violation ? SIGNAL.alarm : INK.ink;
     const depth = depthOf(top) - 1e4;
 
-    const kit = EQUIPMENT[node.id];
+      // The fault, if the reader has put one here. A cross through the pole in
+    // the one colour this app uses for "something is wrong" — and nothing else
+    // on the drawing changes, because the power flow still shows the system as
+    // it was in the cycle before.
+    if (options.faultBusId === busId) {
+      const r = 13;
+      for (const [dx, dy] of [[-1, -1], [-1, 1]] as [number, number][]) {
+        placeSymbol([[[dx * 1, dy * 1], [-dx * 1, -dy * 1]]], {
+          x: top.x, y: top.y, z: top.z, sizePx: r,
+          widthPx: 2.4, color: SIGNAL.alarm,
+        }, basis, scratch);
+      }
+      for (const seg of scratch) marks.push({ seg: fade(seg), depth: depth - 6 });
+      scratch.length = 0;
+      labels.push({
+        id: `feeder:fault:${node.id}`,
+        world: top,
+        text: 'Fault here',
+        value: 'the drawing still shows the cycle before it',
+        priority: 9000,
+        tone: 'alarm',
+      });
+    }
+
+  const kit = EQUIPMENT[node.id];
     if (kit) {
       marks.push({
         seg: fade({

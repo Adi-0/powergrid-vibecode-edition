@@ -23,8 +23,9 @@ import { FEEDER_NODES, feederBusId } from '../data/california/feeder.js';
 import {
   Derivation, deriveBranch, deriveBus, deriveLineGeometry, deriveServiceDrop,
   deriveSystemBalance, deriveTransformerImpedance, derivePlantEnergy,
-  deriveMachine,
+  deriveMachine, deriveFault,
 } from './derive.js';
+import { FaultResult } from '../core/fault.js';
 
 export type SelectionKind = 'site' | 'circuit' | 'bus' | 'generator' | 'none';
 
@@ -39,9 +40,22 @@ export function derivationsFor(
   kind: SelectionKind,
   id: string | null,
   solved: SolvedCase,
-  service: ServiceSolution
+  service: ServiceSolution,
+  fault?: FaultResult | null
 ): Derivation[] {
   if (!id) return [];
+
+  // A fault at the selected bus takes precedence: it is what the reader just
+  // asked about, and the ordinary flow calculation for that bus is still
+  // available underneath it.
+  const faultFirst: Derivation[] = [];
+  if (fault && fault.busId === id) {
+    const bus = solved.net.buses.find((b) => b.id === id);
+    if (bus) faultFirst.push(deriveFault(fault, bus.baseKV));
+  }
+  if (faultFirst.length > 0) {
+    return [...faultFirst, ...derivationsFor(kind, id, solved, service, null)];
+  }
 
   if (kind === 'circuit') {
     const byId = `${id}`;

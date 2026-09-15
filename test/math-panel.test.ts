@@ -30,8 +30,11 @@ import { evaluate, pretty, num, ExpressionError } from '../src/math/expr.js';
 import {
   deriveBases, deriveBus, deriveBranch, deriveLineGeometry,
   deriveTransformerImpedance, deriveServiceDrop, deriveSystemBalance,
-  derivePlantEnergy, deriveMachine, Derivation,
+  derivePlantEnergy, deriveMachine, deriveFault, Derivation,
 } from '../src/math/derive.js';
+import { buildFaultModel, solveFault, FaultKind } from '../src/core/fault.js';
+import { indexCase } from '../src/core/network.js';
+import { polar } from '../src/core/complex.js';
 import { energyChain } from '../src/data/california/plant.js';
 import { operatingPoint, capabilityCurve, solvedOutput } from '../src/core/machine.js';
 import { californiaCase, SLACK_BUS } from '../src/data/california/network.js';
@@ -175,6 +178,26 @@ function allDerivations(): Derivation[] {
       for (const [p, q] of [[o.pMW, o.qMVAr], [g.pMaxMW, 200], [500, -150]]) {
         const op = operatingPoint(g, bus?.vpu ?? 1, p, q);
         out.push(deriveMachine(g, op, capabilityCurve(g, bus?.vpu ?? 1)));
+      }
+    }
+  }
+
+  // Faults, of every kind, at a strong bus and a weak one.
+  {
+    const model = buildFaultModel(solved.net, indexCase(solved.net));
+    const kinds: FaultKind[] = [
+      'three-phase', 'single-line-to-ground', 'line-to-line', 'double-line-to-ground',
+    ];
+    for (const busId of ['EDENVALE_12', 'METCALF_230', 'FDR_F06']) {
+      const bus = solved.net.buses.find((b) => b.id === busId);
+      const r = solved.busById.get(busId);
+      if (!bus || !r) continue;
+      for (const kind of kinds) {
+        const f = solveFault(model, busId, kind, {
+          prefaultV: polar(r.vpu, (r.angleDeg * Math.PI) / 180),
+          baseKV: bus.baseKV, baseMVA: solved.net.baseMVA,
+        });
+        out.push(deriveFault(f, bus.baseKV));
       }
     }
   }

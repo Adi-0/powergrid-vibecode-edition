@@ -2,7 +2,7 @@
 
 An isometric, zoomable, explorable model of the California power grid.
 
-**Last updated:** phases 1–6 complete.
+**Last updated:** phases 1–7 complete.
 
 ---
 
@@ -16,7 +16,7 @@ An isometric, zoomable, explorable model of the California power grid.
 | 4 | Substation → distribution feeder → service | **complete** |
 | 5 | Math panel with full worked derivations | **complete** |
 | 6 | Plant and machine branch | **complete** |
-| 7 | Faults and protection | not started |
+| 7 | Faults and protection | **complete** |
 | 8 | Breadth: remaining generation types, regions, guided path | not started |
 
 ---
@@ -390,11 +390,83 @@ spinning.
 
 ---
 
+## Phase 7 — complete
+
+**Faults and protection.** The one place the balanced positive-sequence
+assumption is abandoned, because a fault breaks it by definition.
+
+### What exists
+
+**Symmetrical components** (`src/core/sequence.ts`). The a operator, the forward
+and inverse transforms, the residual current a ground relay actually measures,
+and the unbalance factor. Exactly reversible, and tested as such.
+
+**Three sequence networks** (`src/core/fault.ts`). Positive and negative see much
+the same passive network with every machine behind its subtransient reactance;
+zero sequence sees a different network entirely, assembled winding by winding.
+A delta is an open circuit to it — which is the whole reason a distribution
+transformer is delta on the high side.
+
+The Thevenin impedance at a bus comes from solving Y·z = e_k rather than forming
+an inverse, and the solve is restricted to the island the bus is in, because the
+zero-sequence network genuinely falls into islands and a bus with no path to
+earth genuinely has infinite zero-sequence impedance.
+
+**Four fault types**, each with its own connection of the three networks stated
+in words and in arithmetic: three-phase, single line to ground, line to line, and
+double line to ground.
+
+**Inverse-time protection** (`src/core/protection.ts`) to IEEE C37.112, with the
+published constants, and coordination checked across the whole range of fault
+currents the feeder can produce.
+
+**The Cherry Lane chain** (`src/data/california/protection-scheme.ts`): a lateral
+fuse, a recloser, the feeder breaker and the transformer's backup relay, with
+every setting derived from the feeder's own load and fault levels rather than
+typed in.
+
+**The coordination plot** (`src/app/tcc-panel.ts`) on log–log axes, with the
+fault currents the network can actually produce drawn as rules, and a dot where
+each device would operate.
+
+### What it says
+
+| Fault | Cleared by | Time | Who notices |
+|---|---|---|---|
+| On a lateral | the lateral fuse | 0.015 s | one street |
+| On the feeder main | Recloser R1 | 0.60 s | one feeder, briefly |
+| On the 12.47 kV busbar | bank differential 87B | 0.05 s | the station's low-voltage bus |
+
+### What the tests caught
+
+| Defect | How |
+|---|---|
+| A fuse on Cherry Lane "cleared" a fault on the substation busbar | It is not in series with it; selectivity is geometry before it is timing |
+| The zero-sequence solve failed on a singular pivot | The network is genuinely disconnected — the fix was to say so, not to add a shunt |
+| An autotransformer was read as blocking zero sequence | The vector group parser looked for "a" in the wrong position |
+| Coordination "failed" above 7.4 kA | The breaker's instantaneous quite properly beats the recloser there; the check was asking beyond the range a downstream fault can produce |
+| A 23 kA bus fault was quoted at 2.2 seconds | That is the backup relay; the differential clears it in three cycles |
+
+### What it does
+
+| Check | Result |
+|---|---|
+| Symmetrical component transform reversibility | exact to 10⁻¹² |
+| Residual = 3·I₀ | exact to 10⁻¹¹ |
+| Line-to-line fault against three-phase | 0.87, as √3/2 says |
+| Fault level at the 12.47 kV bus / far end of the feeder | 23 kA / 4.6 kA |
+| Coordination checks across the feeder's fault range | 83, no crossings |
+| New model-honesty entries | 4 (27 in total) |
+| New glossary entries | 9 (98 in total) |
+| Tests | 471 passing |
+
+---
+
 ## Running it
 
 ```
 npm install
-npm test          # 368 tests
+npm test          # 471 tests
 npm run typecheck
 npm run dev
 ```
