@@ -307,7 +307,15 @@ function goTo(id: LevelId): void {
     // Frame by computing the camera the box wants, then fly to it, so that the
     // motion is one continuous move rather than a jump followed by a settle.
     const before = { target: viewport.camera.target.clone(), mpp: viewport.camera.metresPerPixel };
-    viewport.camera.frame(box.min, box.max, 56, { left: 252, bottom: profileInsetPx() });
+    // The left inset is the controls and the legend, which are always there.
+    // The right-hand panels are deliberately NOT counted here: framing the
+    // whole state is about the map, and shrinking the map by half because a
+    // transient panel is open trades a permanent loss for a temporary gain.
+    // The point-and-scale path below still pans for them, which is the part
+    // that matters — it keeps what you flew to out from under the panel.
+    viewport.camera.frame(box.min, box.max, 56, {
+      left: 300, bottom: profileInsetPx(),
+    });
     const after = { target: viewport.camera.target.clone(), mpp: viewport.camera.metresPerPixel };
     viewport.camera.target.copy(before.target);
     viewport.camera.setZoom(before.mpp);

@@ -346,6 +346,16 @@ Severity is how badly a simplification would change an answer:
 
 **What that means for you.** The SCALE is right — block sizes, lot widths and setbacks are the ordinary dimensions of American suburban development, so the sense of how much street a megawatt covers is honest. Which house is which is not, and no house drawn here is the one whose service is modelled, apart from the one that is labelled.
 
+### The scatter of dots is where the LOAD is, not where the cities are
+
+*Applies to: system, region* · `demand-dots`
+
+**What the model does.** Each dot is a fixed quantity of peak demand, scattered at random within a radius of the substation that carries it. The COUNT is real — it comes from the model’s own load data and counting the dots gives the megawatts back. The positions are not.
+
+**What the full treatment would involve.** A real map of demand comes from census and land-use data, or from the utility’s own meter density, and has boundaries: this block is residential, that one is a data centre.
+
+**What that means for you.** The shape is right at the scale of a region — the network visibly goes where the people are, which is the point. Do not read the outline of a scatter as the outline of a city, and do not read a gap in it as empty country. It means no modelled substation is near.
+
 ---
 
-*32 entries.*
+*33 entries.*

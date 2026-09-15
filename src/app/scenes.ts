@@ -44,7 +44,7 @@ import { drawSubstation, substationBounds } from '../render/scene-substation.js'
 import { FeederGeometry, drawFeeder } from '../render/scene-feeder.js';
 import { drawService, serviceBounds } from '../render/scene-service.js';
 import { drawGround, groundBounds } from '../render/scene-ground.js';
-import { drawTerrain } from '../render/scene-terrain.js';
+import { drawTerrain, drawDemandDots } from '../render/scene-terrain.js';
 import { drawPlant, plantBounds } from '../render/scene-plant.js';
 import { drawMachine, machineBounds } from '../render/scene-machine.js';
 import { Generator } from '../core/network.js';
@@ -255,8 +255,23 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // Visible wherever the transmission drawing is, and gone once the window is
   // small enough that the nearest coastline is a hundred kilometres away.
   if (mpp > 12) {
-    const shore = drawTerrain(Math.min(1, (mpp - 12) / 40), view);
-    segments.push(...shore.segments);
+    const near = Math.min(1, (mpp - 12) / 40);
+    segments.push(...drawTerrain(near, view).segments);
+
+    // Where the demand is, as a dot-density map. It answers the question the
+    // transmission drawing raises and cannot answer on its own: why the network
+    // is shaped the way it is. Faded out once the whole state no longer fits,
+    // where individual dots would be kilometres apart and say nothing.
+    const dotAlpha = near * Math.min(1, Math.max(0, (2600 - mpp) / 900));
+    if (dotAlpha > 0.01) {
+      segments.push(...drawDemandDots(
+        [...input.systemGeometry.sites.values()].map((n) => ({
+          id: n.site.id, ground: n.ground, peakLoadMW: n.peakLoadMW,
+        })),
+        dotAlpha * 0.62,
+        view
+      ));
+    }
   }
 
   // --- the ground, before anything electrical -------------------------------

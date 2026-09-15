@@ -621,6 +621,26 @@ export const SIMPLIFICATIONS: Simplification[] = [
       'apart from the one that is labelled.',
     severity: 'cosmetic',
   },
+  {
+    id: 'demand-dots',
+    scope: ['system', 'region'],
+    title: 'The scatter of dots is where the LOAD is, not where the cities are',
+    whatWeDo:
+      'Each dot is a fixed quantity of peak demand, scattered at random within ' +
+      'a radius of the substation that carries it. The COUNT is real \u2014 it ' +
+      'comes from the model\u2019s own load data and counting the dots gives the ' +
+      'megawatts back. The positions are not.',
+    fullTreatment:
+      'A real map of demand comes from census and land-use data, or from the ' +
+      'utility\u2019s own meter density, and has boundaries: this block is ' +
+      'residential, that one is a data centre.',
+    consequence:
+      'The shape is right at the scale of a region \u2014 the network visibly ' +
+      'goes where the people are, which is the point. Do not read the outline ' +
+      'of a scatter as the outline of a city, and do not read a gap in it as ' +
+      'empty country. It means no modelled substation is near.',
+    severity: 'cosmetic',
+  },
 ];
 
 export const simplificationsFor = (scope: ScopeId): Simplification[] =>

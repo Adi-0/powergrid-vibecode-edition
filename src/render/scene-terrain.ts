@@ -127,3 +127,107 @@ export function terrainBounds(): {
   }
   return { min: { x: minX, z: minZ }, max: { x: maxX, z: maxZ } };
 }
+
+// ---------------------------------------------------------------------------
+// Where the people are
+// ---------------------------------------------------------------------------
+
+/**
+ * Demand, as a dot-density map.
+ *
+ * The transmission drawing shows where the wires go and says nothing about why
+ * they go there. At region scale that is the whole question: the network is
+ * shaped the way it is because of where the load is, and with only line work on
+ * the page a reader has no way to see that.
+ *
+ * So each dot is a fixed quantity of peak demand, scattered around the site
+ * that carries it. Dot density is the oldest honest way to draw a quantity on a
+ * map — it does not claim a boundary, it does not need a colour scale, and
+ * counting the dots gives the number back. The legend says what one dot is
+ * worth, so it is readable rather than decorative.
+ *
+ * WHAT IT IS NOT: a map of where the cities are. It is where the MODEL puts its
+ * load, which is at the substations that serve those cities. The scatter radius
+ * is a drawing choice, not data, and the honesty register says so.
+ */
+export const MW_PER_DOT = 25;
+
+/** Deterministic, so the scatter does not shimmer from frame to frame. */
+function hashed(seed: string): () => number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return () => {
+    h ^= h << 13; h >>>= 0;
+    h ^= h >> 17;
+    h ^= h << 5; h >>>= 0;
+    return h / 4294967296;
+  };
+}
+
+export interface DemandSite {
+  id: string;
+  ground: Vector3;
+  peakLoadMW: number;
+}
+
+const dotCache = new Map<string, Vector3[]>();
+
+function dotsFor(site: DemandSite): Vector3[] {
+  const key = `${site.id}:${Math.round(site.peakLoadMW)}`;
+  const hit = dotCache.get(key);
+  if (hit) return hit;
+
+  const n = Math.min(400, Math.round(site.peakLoadMW / MW_PER_DOT));
+  // Bigger loads spread further, because a bigger load is a bigger place —
+  // but a load centre is compact, and too wide a scatter turns a city into a
+  // haze that says nothing.
+  const radius = 1_800 + 520 * Math.sqrt(Math.max(0, site.peakLoadMW));
+  const rand = hashed(site.id);
+  const out: Vector3[] = [];
+  for (let i = 0; i < n; i++) {
+    const angle = rand() * Math.PI * 2;
+    // Square root of a uniform gives an even areal density rather than a
+    // clump at the centre.
+    const r = radius * Math.sqrt(rand());
+    out.push(new Vector3(
+      site.ground.x + r * Math.cos(angle), 0, site.ground.z + r * Math.sin(angle)));
+  }
+  dotCache.set(key, out);
+  return out;
+}
+
+export function drawDemandDots(
+  sites: Iterable<DemandSite>,
+  opacity: number,
+  view: { min: { x: number; z: number }; max: { x: number; z: number } } | null
+): LineSegment[] {
+  const segments: LineSegment[] = [];
+  if (opacity <= 0.004) return segments;
+
+  const cull = view ? (() => {
+    const cx = (view.min.x + view.max.x) / 2;
+    const cz = (view.min.z + view.max.z) / 2;
+    const reach = 0.5 * Math.hypot(
+      view.max.x - view.min.x, view.max.z - view.min.z) + 20_000;
+    return { cx, cz, reach };
+  })() : null;
+
+  for (const site of sites) {
+    if (site.peakLoadMW < MW_PER_DOT) continue;
+    if (cull && Math.hypot(site.ground.x - cull.cx, site.ground.z - cull.cz)
+      > cull.reach + 40_000) continue;
+    for (const d of dotsFor(site)) {
+      if (cull && Math.hypot(d.x - cull.cx, d.z - cull.cz) > cull.reach) continue;
+      // A dot is a zero-length stroke, which the line batch renders as a round
+      // cap — one primitive, no special case.
+      segments.push({
+        a: [d.x, 0, d.z], b: [d.x, 0, d.z],
+        widthPx: 1.6, color: INK.inkFaint, opacity,
+      });
+    }
+  }
+  return segments;
+}

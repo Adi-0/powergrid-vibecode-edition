@@ -12,6 +12,7 @@
  */
 
 import { VOLTAGE_CLASSES, INK, SIGNAL, FLOW } from '../render/style.js';
+import { MW_PER_DOT } from '../render/scene-terrain.js';
 import { LEGEND_SYMBOLS, MACHINE_MARKS, MachineMark, symbolToSVG } from '../render/symbols.js';
 import { verticalExaggeration } from '../render/world.js';
 
@@ -43,6 +44,17 @@ function strokeSwatch(weightPx: number, dash: number[], color: string = INK.ink)
     `<svg viewBox="0 0 44 14" width="44" height="14" fill="none">` +
     `<line x1="1" y1="7" x2="43" y2="7" stroke="${color}" ` +
     `stroke-width="${weightPx}" stroke-linecap="round"${dashAttr} /></svg>`
+  );
+}
+
+/** A scatter, to say that one dot is a fixed quantity of demand. */
+function dotSwatch(): string {
+  const at = [[4, 9], [9, 4], [13, 10], [18, 6], [22, 11], [27, 5], [30, 9]];
+  return (
+    `<svg width="34" height="14" viewBox="0 0 34 14" aria-hidden="true">` +
+    at.map(([x, y]) =>
+      `<circle cx="${x}" cy="${y}" r="0.9" fill="${INK.inkFaint}"/>`).join('') +
+    `</svg>`
   );
 }
 
@@ -118,6 +130,16 @@ export class Legend {
       'A site symbol is drawn larger where there is more generating capacity, ' +
       'or more demand. Square-rooted, so a four-gigawatt station is about six ' +
       'times the area of a hundred-megawatt one rather than forty.'
+    );
+
+    // --- What the scatter of dots is ---------------------------------------
+    const d = this.group('Where the demand is');
+    this.row(
+      d, dotSwatch(), `One dot is ${MW_PER_DOT} MW of peak demand`,
+      'Scattered around the substation that carries it, so the drawing shows ' +
+      'why the network goes where it goes. Counting the dots gives the number ' +
+      'back. It is not a map of the cities: it is where this model puts its ' +
+      'load, and the spread is a drawing choice.'
     );
 
     // --- The one signal colour ---------------------------------------------
