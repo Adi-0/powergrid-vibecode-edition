@@ -306,9 +306,19 @@ export class LevelBar {
       ['three-phase', 'All three'],
       ['double-line-to-ground', 'Two phases to earth'],
     ];
-    return (
+    // BEHIND A DISCLOSURE, BUT NOT HIDDEN. The summary IS the invitation —
+    // "Put a fault somewhere" says everything a heading over eight buttons
+    // said — so nothing is lost in discoverability and the panel gets two
+    // hundred pixels back for the level it is on and the legend beneath it.
+    // Held open once a fault is placed, because then it is the thing the
+    // reader is working with.
+    if (this.faultBus) this.opened.add('Put a fault somewhere');
+    return this.more(
+      'Put a fault somewhere',
       `<div class="level__fault">` +
-      `<h4 class="inspect__heading">Put a ${term('fault', 'fault')} somewhere</h4>` +
+      `<p class="note">A ${term('fault', 'fault')} is a short circuit. Put one ` +
+      `somewhere and the coordination curves show which device gets there ` +
+      `first.</p>` +
       `<div class="level__appliances">` +
       places.map(([id, label]) =>
         `<button class="btn btn--quiet" data-fault-at="${id}" ` +
