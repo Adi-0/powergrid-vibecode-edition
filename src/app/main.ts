@@ -36,7 +36,7 @@ import {
   composeFrame, destinations, SceneId, Destination, ComposeResult,
 } from './scenes.js';
 import {
-  buildSystemGeometry, formatMW, SystemGeometry,
+  buildSystemGeometry, formatMW, SystemGeometry, PickTarget,
 } from '../render/scene-system.js';
 import { buildFeederGeometry, FeederGeometry } from '../render/scene-feeder.js';
 import { LevelId, levelForScale, ZOOM } from '../render/style.js';
@@ -59,6 +59,14 @@ const feederGeometry: FeederGeometry = buildFeederGeometry();
 const view = { substationMorph: 0, showProtection: false };
 
 const tooltip = new Tooltip();
+/**
+ * A second tooltip, for the drawing.
+ *
+ * Separate from the glossary one so that pointing at a circuit cannot fight
+ * with pointing at a term in a panel: the two have different lifetimes and one
+ * hiding the other would flicker.
+ */
+const hoverTip = new Tooltip();
 
 /** The last frame's composition, so the panels know what is actually on screen. */
 let lastFrame: ComposeResult | null = null;
@@ -97,7 +105,10 @@ const viewport: Viewport = new Viewport(stage, {
     return { segments: r.segments, labels: r.labels, picks: r.picks };
   },
   onPick: (id, kind) => state.select(kind ?? 'none', id),
-  onHover: (id) => state.hover(id),
+  onHover: (id, kind, at) => {
+    state.hover(id);
+    showHoverReadout(id, kind, at);
+  },
   onCameraChange: (mpp, level) => onCamera(mpp, level),
   // The contextual panels ask "what is on screen", which only the frame that
   // was just built can answer.
@@ -688,6 +699,51 @@ function dominantScene(): SceneId | null {
     if (score >= bestScore * 0.92) { bestScore = Math.max(bestScore, score); best = a.scene; }
   }
   return best === 'system' ? null : best;
+}
+
+/**
+ * What the thing under the cursor is, beside the cursor.
+ *
+ * SITES ARE NAMED ON THE DRAWING AND CIRCUITS ARE NOT, and there is no room to
+ * name them: a hundred and forty circuits on one page would be a word search.
+ * So the one thing a reader could not find out without clicking was the one
+ * thing the drawing is mostly made of — which is a large part of what "hard to
+ * discover anything" meant. Sweeping the cursor along a corridor now reads out
+ * what each circuit is and what it is carrying.
+ *
+ * Deliberately short. The inspector is one click away and says everything; this
+ * only has to answer "what am I pointing at".
+ */
+function showHoverReadout(
+  id: string | null,
+  kind: PickTarget['kind'] | null,
+  at: { x: number; y: number }
+): void {
+  if (!id || kind !== 'circuit') {
+    hoverTip.hide();
+    return;
+  }
+  const solved = state.current.solved;
+  const flow = solved.branchById.get(id);
+  const branch = solved.net.branches.find((b) => b.id === id);
+  if (!flow || !branch) {
+    hoverTip.hide();
+    return;
+  }
+  const out = !branch.inService;
+  const over = Math.abs(flow.loading) > 1;
+  // The circuit's name already carries its voltage class, so the readout does
+  // not say it again. Same rule as the drawing's.
+  const value = out
+    ? 'out of service'
+    : `${formatMW(Math.abs(flow.pFromMW))} · ` +
+      `${(Math.abs(flow.loading) * 100).toFixed(0)} % of rating`;
+  hoverTip.showAtPoint(
+    `<div><span class="tooltip__term">${escapeAttr(branch.name)}</span></div>` +
+    `<div class="tooltip__short"${over || out ? ' style="color:var(--alarm)"' : ''}>` +
+    `${value}</div>`,
+    at.x, at.y
+  );
 }
 
 function renderStats(): void {

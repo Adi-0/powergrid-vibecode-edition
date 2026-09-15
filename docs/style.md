@@ -199,6 +199,17 @@ Two related rules, in the same spirit:
   already says how big a place is; come closer and the threshold drops to
   nothing.
 
+## The circuits answer when pointed at
+
+Sites are named on the drawing; circuits are not, and cannot be — a hundred and
+forty names on one page is a word search. So the thing the drawing is mostly
+made of was the one thing a reader could not find out without clicking, which
+is a large part of what "hard to discover anything" meant.
+
+Hovering a circuit reads out its name and what it is carrying, beside the
+cursor, in two short lines. Not a substitute for the inspector, which is one
+click away and says everything: only an answer to "what am I pointing at".
+
 ## The legend is a key to the page, not a catalogue
 
 Always present and always complete — where complete means *everything on the

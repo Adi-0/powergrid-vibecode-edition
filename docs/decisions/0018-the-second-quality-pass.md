@@ -157,6 +157,20 @@ Two related fixes followed from the same look:
   showing whatever was last pressed. The motor controls have taken their state
   from the state since they were written; the appliances now do too.
 
+## The one thing you could not find out without clicking
+
+Sites are named on the drawing and circuits are not, because a hundred and forty
+names on one page is a word search rather than a map. That left the thing the
+drawing is mostly made of as the one thing a reader could not identify at all
+without selecting it — a large part of what "hard to learn or discover anything"
+meant. Hovering a circuit now reads out its name and what it is carrying, in two
+lines, beside the cursor.
+
+"Show me around" also stopped being quiet. Five of the six buttons along the
+footer are reference for a reader who already has a question; the sixth is for a
+reader who does not yet know what to be curious about, and it was the same
+weight as the others.
+
 ## What is still not right
 
 Carried forward from 0017, honestly:

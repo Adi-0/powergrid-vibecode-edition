@@ -129,6 +129,30 @@ export class Tooltip {
     this.position(anchor);
   }
 
+  /**
+   * Show something beside a point on the drawing rather than beside an element.
+   *
+   * The map's own marks are not DOM nodes, so a readout for the thing under the
+   * cursor has nothing to anchor to. Everything else about it is the same
+   * tooltip, in the same place, with the same rules about staying on screen.
+   */
+  showAtPoint(html: string, x: number, y: number): void {
+    if (this.hideTimer !== null) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+    this.el.innerHTML = html;
+    this.el.style.display = 'block';
+    const t = this.el.getBoundingClientRect();
+    const margin = 8;
+    let left = x + 14;
+    let top = y + 16;
+    if (left + t.width > window.innerWidth - margin) left = x - t.width - 14;
+    if (top + t.height > window.innerHeight - margin) top = y - t.height - 14;
+    this.el.style.left = `${Math.round(Math.max(margin, left))}px`;
+    this.el.style.top = `${Math.round(Math.max(margin, top))}px`;
+  }
+
   private position(anchor: HTMLElement): void {
     const a = anchor.getBoundingClientRect();
     const t = this.el.getBoundingClientRect();
