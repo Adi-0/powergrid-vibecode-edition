@@ -627,7 +627,8 @@ Most of it was one bug.
 | The whole drawing subtly the wrong shape; circles drawn as ellipses | The canvas's CSS box is 748 px tall and the drawing buffer was 846. `resize()` measured the stage once, before the footer had been laid out, and nothing told it afterwards |
 | Captions lying across bus bars the layout believed were 40 px away | The same 98 px. Label placement, leaders, hit-testing and the ink map are all computed in the camera's coordinates, so every caption drifted from its anchor, further the further down the page |
 | A caption written along the 115 kV bus, twice | Least-ink is a preference, not a rule. There is a ceiling now, and a caption can walk to five times the offset on a leader to meet it |
-| The two places that open were not named at all | The ceiling dropped them: no clear paper anywhere near either. Important captions get a second pass with it lifted |
+| The two places that open were not named at all | The ceiling dropped them. How far a caption may be led is now declared per scene: a schematic has no coast to fall off, the state does |
+| Then six coastal names jumped into the sea | Clear paper off San Diego is the Pacific. A map gets its far rings only in the directions pointing squarely inland, and staying on the subject beats finding clean paper |
 | Six concentric circles and eighteen floating crosses for a generator | Redrawn with the vocabulary of a machine section: hatched iron, slots cut into the bore, ⊗ and ⊙ conductors, a two-pole round rotor with its field as one coil, chain-line axes, δ dimensioned |
 | A blue rotor axis and a blue δ arc | Colour means one thing and that thing is not "the rotor". Gone |
 | Zooming in over open country stopped dead on a blank page | The floor asked whether a scene's bounding BOX overlapped the window, and the transmission scene's box is the whole state. It now asks whether any circuit or site is actually in view, and holds the reader where the map is still fully drawn |

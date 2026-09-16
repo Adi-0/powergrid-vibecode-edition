@@ -64,12 +64,36 @@ Two changes, now that the measurements mean something.
   draughtsman does on a crowded sheet, and the near ring alone could never
   offer it.
 
-**And a caption the reader needs is never dropped.** The two sites that open
-into levels of their own sit in the tangle of circuits round the Bay, where
-there is no clean position within reach of either, so the rule dropped both
-names. A map that will not name its own entrances is worse than one with a name
-lying over a conductor. Captions above a priority threshold get a second pass
-with the ceiling lifted, after every clean position has been tried.
+**And then it put six names in the sea**, which `tools/label-geography.mjs`
+caught the same afternoon. Refusing to write over the drawing sends a caption
+looking for clear paper, and off the coast of California the cleanest paper is
+the Pacific. San Diego, Miguel, San Onofre, Imperial Valley, Oakland and San
+Gorgonio Pass all jumped offshore onto hairline leaders, reading as names for
+the ocean — exactly the fault 0019 had fixed, reintroduced from the other side.
+
+Two things separate the two cases, and neither is "how much ink".
+
+**Whether there is an edge to fall off is a property of the scene.** A
+substation single-line has no coast; the state has one. The distance a caption
+may be led is now declared per scene by the compositor — the one place that
+knows which of its scenes are drawings and which are maps. The substation, the
+service, the plant and the machine may lead a caption out to five times the
+standard offset; everything else keeps it beside its point.
+
+**Direction matters as much as distance.** "Inward" means within a right angle
+of the middle of the ink, and from San Diego that includes along the coast as
+well as up it, so a caption let out three offsets could follow the shoreline
+out over the water. A map still gets two rings at arm's length, but only in the
+directions pointing squarely inland — the move a cartographer makes, and worth
+several names that would otherwise be dropped for want of anywhere to sit.
+
+**And the passes are ordered so that staying on the subject beats finding clean
+paper**: inward on clear paper, then inward anywhere, and only then beside the
+point facing outward. A name written over a conductor is a nuisance; a name in
+the sea is wrong.
+
+Thirty-three labels placed with two off the subject, against thirty-six placed
+and three off before any of this — and no type lying across a busbar anywhere.
 
 ## A machine section is a standard drawing; this one now is
 
