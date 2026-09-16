@@ -38,7 +38,7 @@ import { Vector3 } from 'three';
 import { SolvedCase } from '../core/results.js';
 import { IsoCamera } from '../render/iso.js';
 import { LineSegment } from '../render/line-batch.js';
-import { LabelSpec } from '../render/labels.js';
+import { LabelSpec, LabelReach } from '../render/labels.js';
 import {
   PickTarget, SystemGeometry, drawSystem, SYSTEM_KV_DRAWN,
 } from '../render/scene-system.js';
@@ -322,11 +322,17 @@ export function composeFrame(input: ComposeInput): ComposeResult {
    * a faint caption, it is unreadable grey text sitting on top of the drawing
    * that replaced it.
    */
-  const addLabels = (from: LabelSpec[], alpha: number): void => {
-    if (alpha >= 0.999) { labels.push(...from); return; }
+  const addLabels = (
+    from: LabelSpec[], alpha: number, reach?: LabelReach
+  ): void => {
+    // WHICH SCENES ARE DRAWINGS AND WHICH ARE MAPS is known here and nowhere
+    // else, so this is where a caption is told how far it may be led. A
+    // schematic has no coast to fall off; the state does.
+    const tagged = reach ? from.map((l) => ({ ...l, reach })) : from;
+    if (alpha >= 0.999) { labels.push(...tagged); return; }
     if (alpha < 0.34) return;
     const o = (alpha - 0.34) / 0.66;
-    for (const l of from) labels.push({ ...l, opacity: o * o * (3 - 2 * o) });
+    for (const l of tagged) labels.push({ ...l, opacity: o * o * (3 - 2 * o) });
   };
 
   const include = (
@@ -451,7 +457,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       detail,
     });
     segments.push(...r.segments);
-    addLabels(r.labels, aSub);
+    addLabels(r.labels, aSub, 'far');
     picks.push(...r.picks);
     if (r.faultAt) faultAt = r.faultAt;
   }
@@ -465,7 +471,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       detail,
     });
     segments.push(...r.segments);
-    addLabels(r.labels, aService);
+    addLabels(r.labels, aService, 'far');
     picks.push(...r.picks);
   }
 
@@ -479,7 +485,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       detail,
     });
     segments.push(...r.segments);
-    addLabels(r.labels, aPlant);
+    addLabels(r.labels, aPlant, 'far');
     picks.push(...r.picks);
   }
 
@@ -492,7 +498,7 @@ export function composeFrame(input: ComposeInput): ComposeResult {
       opacity: aMachine,
     });
     segments.push(...r.segments);
-    addLabels(r.labels, aMachine);
+    addLabels(r.labels, aMachine, 'far');
     picks.push(...r.picks);
     machine = r.generator;
   }

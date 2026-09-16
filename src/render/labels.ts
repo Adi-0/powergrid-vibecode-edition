@@ -24,7 +24,28 @@ import { LAYOUT, TYPE, INK, SIGNAL } from './style.js';
 
 export type LabelTone = 'normal' | 'muted' | 'alarm' | 'selected';
 
+/**
+ * How far a caption may walk from the thing it names.
+ *
+ * ON A MAP IT MAY NOT WALK FAR, and the reason is geography. A caption that
+ * leaves its point on a leader is going somewhere emptier, and beyond the coast
+ * the emptiest paper of all is the Pacific: let a name walk five offsets from
+ * San Diego and it lands in the sea, on a hairline, reading as the name of the
+ * sea. Cartographers have never allowed this and neither does `near`.
+ *
+ * ON A SCHEMATIC IT MUST. A substation single-line is a grid of bus bars with
+ * drops every few pixels and there is no clear paper beside any device, so a
+ * caption that cannot reach the margin has nowhere to go but on top of the
+ * drawing. A drawing sheet has no coast to fall off.
+ *
+ * The compositor sets it per scene, because that is the one place that knows
+ * which scenes are maps and which are drawings.
+ */
+export type LabelReach = 'near' | 'far';
+
 export interface LabelSpec {
+  /** How far this caption may be led from its subject. Default 'near'. */
+  reach?: LabelReach;
   id: string;
   /** Where in the world the label points at. */
   world: Vector3;
@@ -169,32 +190,59 @@ export function inkField(
  * Within each group the most inward-facing direction comes first, so ties in
  * ink break towards the middle of the drawing rather than away from it.
  */
+interface Candidates {
+  /** Rings facing into the drawing, nearest first. */
+  inward: Placement[][];
+  /** Every inward position at once, for choosing the least bad one. */
+  inwardAll: Placement[];
+  /** Beside the subject, facing away from the drawing. */
+  outward: Placement[][];
+}
+
 function inwardFirst(
-  tries: readonly Placement[], at: Vector2, ink: InkField
-): Placement[][] {
+  tries: readonly Placement[], at: Vector2, ink: InkField, reach: LabelReach
+): Candidates {
   const dx = ink.centreX - at.x;
   const dy = ink.centreY - at.y;
   const len = Math.hypot(dx, dy);
-  if (len < 1) return [[...tries]];
+  if (len < 1) {
+    return { inward: [[...tries]], inwardAll: [...tries], outward: [] };
+  }
   const ux = dx / len;
   const uy = dy / len;
   const facing = (p: Placement): number =>
     (p[0] * ux + p[1] * uy) / Math.hypot(p[0], p[1]);
   const byFacing = (a: Placement, b: Placement): number => facing(b) - facing(a);
   const inward = tries.filter((p) => facing(p) > 0.05).sort(byFacing);
+  /** Only the directions pointing squarely into the drawing. */
+  const squarelyInward = tries.filter((p) => facing(p) > 0.55).sort(byFacing);
   const outward = tries.filter((p) => facing(p) <= 0.05).sort(byFacing);
   const ring = (d: number): Placement[] =>
     inward.map(([x, y]) => [x, y, d] as Placement);
-  // FOUR GROUPS, and the extra two are both INWARD.
+  // FOUR INWARD RINGS.
   //
   // On a schematic there is no clear paper beside a device — a single-line
   // diagram is a grid of bus bars with drops every few pixels — so a caption
   // has to be able to walk out to the margin and take a leader with it, which
   // is what a draughtsman does and what the near ring alone could never offer.
-  // The rings that walk out all face INTO the drawing; the outward group stays
-  // at arm's length only, because a name that goes outward and far is a name
-  // over open sea, where it reads as the name of the sea.
-  return [inward, ring(2.2), ring(3.6), ring(5.2), outward];
+  // They all face INTO the drawing; the outward group stays at arm's length
+  // only, because a name that goes outward and far is a name over open sea,
+  // where it reads as the name of the sea.
+  // A MAP GETS ONE RING AT ARM'S LENGTH, AND ONLY STRAIGHT INLAND.
+  //
+  // Distance alone is not what put names in the sea; direction is. "Inward"
+  // covers anything within a right angle of the middle of the ink, and from
+  // San Diego that includes along the coast as well as up it — so a caption
+  // let out to three offsets could follow the shoreline out over the water.
+  // The far ring a map is allowed keeps to the directions pointing squarely
+  // inland, which is the move a cartographer makes and is worth seven names
+  // that would otherwise be dropped for want of anywhere to sit.
+  const rings = reach === 'far'
+    ? [inward, ring(2.2), ring(3.6), ring(5.2)]
+    : [inward, ring(2.2),
+      squarelyInward.map(([x, y]) => [x, y, 3.2] as Placement),
+      squarelyInward.map(([x, y]) => [x, y, 4.6] as Placement)];
+  return { inward: rings, inwardAll: rings.flat(), outward: [outward] };
 }
 
 /**
@@ -407,7 +455,9 @@ export class LabelLayer {
       // scene has without knowing anything about geography.
       const tries = spec.side === 'above' ? ABOVE
         : spec.side === 'below' ? BELOW : PLACEMENTS;
-      const groups = ink ? inwardFirst(tries, px, ink) : [[...tries]];
+      const groups: Candidates = ink
+        ? inwardFirst(tries, px, ink, spec.reach ?? 'near')
+        : { inward: [[...tries]], inwardAll: [...tries], outward: [] };
 
       // A NAME WITHOUT ITS NUMBER BEATS NO NAME AT ALL.
       //
@@ -420,56 +470,63 @@ export class LabelLayer {
       // name on its own.
       const attempts: LabelSpec[] =
         spec.value !== undefined ? [spec, withoutValue(spec)] : [spec];
-      // The FIRST free position is not the best one. Candidates are ordered by
-      // where a caption conventionally sits, and that order is the tie-break;
-      // between them, the one written over the least drawing wins.
-      // THE GROUP DECIDES THE SIDE; THE INK DECIDES THE SPOT WITHIN IT.
+
+      // THE ORDER OF THE PASSES IS THE WHOLE OF THE CARTOGRAPHY.
       //
-      // Minimising ink across all candidates at once looks like the same thing
-      // and is not: the emptiest paper within reach of a coastal site is the
-      // sea, so least-ink always won there and the name went out to sea. Each
-      // group is exhausted before the next is considered, and inside a group
-      // the cleanest placement wins.
-      // A CEILING IS A PREFERENCE FOR SOME CAPTIONS AND A RULE FOR THE REST.
+      //   1. inward, on clear paper — the ordinary case, and what the far
+      //      rings exist for: on a crowded schematic a caption walks out to
+      //      the margin rather than lying along a busbar.
+      //   2. inward, anywhere — the LEAST inky position of all of them.
+      //   3. outward, on clear paper — beside the subject, facing away.
       //
-      // Refusing to write over the drawing is right for the fortieth site on a
-      // map. It is wrong for the two places that open into levels of their
-      // own: in the tangle of circuits round the Bay there is no clear paper
-      // within reach of either, so the rule dropped both, and a map that will
-      // not name its own entrances is worse than one with a name lying over a
-      // conductor. Important captions get a second pass with the ceiling
-      // lifted, and only after every clean position has been tried and failed.
-      const ceilings = raw.priority >= 900
-        ? [MAX_INK_UNDER, Infinity] : [MAX_INK_UNDER];
-      for (const ceiling of ceilings) {
-      for (const attempt of attempts) {
-        size = this.measure(attempt);
-        for (const group of groups) {
-          let bestInk = Infinity;
-          for (const [sx, sy, scale] of group) {
-            const base = attempt.offsetPx ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
-            const off = [base[0] * scale, base[1] * scale];
-            const x = px.x
-              + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
-            const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
-            const rect = { x, y, w: size.w, h: size.h };
-            if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
-            if (blocked.some((b) => overlaps(rect, b, 2))) continue;
-            const over = ink ? inkUnder(ink, rect) : 0;
-            if (over > ceiling) continue;
-            if (over < bestInk) {
-              bestInk = over;
-              put = {
-                spec: attempt, x, y, w: size.w, h: size.h,
-                anchorX: px.x, anchorY: px.y,
-              };
+      // Two before three, and that ordering is not obvious. Clear paper beside
+      // a coastal site is the sea, so a ceiling on ink with outward tried
+      // before this made San Diego, Miguel, San Onofre and Imperial Valley
+      // jump off the coast onto open water, each on a hairline leader, reading
+      // as names for the ocean. A name written over a conductor is a nuisance;
+      // a name in the sea is wrong. Staying on the subject wins.
+      const passes: { groups: Placement[][]; ceiling: number }[] = [
+        { groups: groups.inward, ceiling: MAX_INK_UNDER },
+        { groups: groups.inward, ceiling: Infinity },
+        { groups: groups.outward, ceiling: MAX_INK_UNDER },
+      ];
+
+      for (const pass of passes) {
+        for (const attempt of attempts) {
+          size = this.measure(attempt);
+          for (const group of pass.groups) {
+            // The FIRST free position is not the best one. Candidates are
+            // ordered by where a caption conventionally sits, and that order is
+            // the tie-break; between them, the one written over the least
+            // drawing wins. THE GROUP DECIDES THE SIDE; THE INK DECIDES THE
+            // SPOT WITHIN IT — minimising ink across all candidates at once
+            // looks like the same thing and is not.
+            let bestInk = Infinity;
+            for (const [sx, sy, scale] of group) {
+              const base = attempt.offsetPx
+                ?? [LAYOUT.labelOffsetPx, LAYOUT.labelOffsetPx];
+              const off = [base[0] * scale, base[1] * scale];
+              const x = px.x
+                + (sx >= 0 ? off[0] : -off[0] - size.w) + (sx === 0 ? -size.w / 2 : 0);
+              const y = px.y + (sy >= 0 ? off[1] : -off[1] - size.h);
+              const rect = { x, y, w: size.w, h: size.h };
+              if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
+              if (blocked.some((b) => overlaps(rect, b, 2))) continue;
+              const over = ink ? inkUnder(ink, rect) : 0;
+              if (over > pass.ceiling) continue;
+              if (over < bestInk) {
+                bestInk = over;
+                put = {
+                  spec: attempt, x, y, w: size.w, h: size.h,
+                  anchorX: px.x, anchorY: px.y,
+                };
+              }
+              if (over === 0) break;
             }
-            if (over === 0) break;
+            if (put) break;
           }
           if (put) break;
         }
-        if (put) break;
-      }
         if (put) break;
       }
       // A value is only spoken for once it has actually been PLACED: a label
