@@ -154,6 +154,11 @@ to thirty larger places, while being the door into three of the seven levels.
 
 ## What is still not right
 
+- **The legend can still be cut off mid-row.** It scrolls, so it is complete in
+  the sense that everything is reachable, but on the levels whose control panel
+  is tall — the feeder, with its four motor states — the last visible row is
+  sliced in half, which reads as truncation rather than as more below. "Always
+  complete" deserves better than a scrollbar.
 - **The Bay Area is a tangle** at whole-state scale: a dozen sites inside forty
   kilometres, with parallel circuits between all of them. The region level is
   supposed to be the answer and still has no treatment of its own.
