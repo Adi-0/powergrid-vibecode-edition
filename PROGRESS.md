@@ -613,6 +613,26 @@ loosely wired don't really feel immersive, can we create actual structures?*
 | A transformer serving twelve houses with one wire leaving it | A neighbour in outline and two more laterals running off the page |
 | A substation yard of glass crates | The same fill, applied to the tanks, racks and the control house. Only the primary masses: porcelain, radiator fins, steel portals and blades are things you can see through in life |
 
+### What the fifth pass changed
+
+The judgement, with a screenshot of the machine view: *graphics could be much
+better… from a user human side it's really difficult to navigate and comprehend
+at times.* And: *there seems to only be one substation, one feeder — I can only
+zoom in on one specific area, and they fade in/out unreliably.*
+
+Most of it was one bug.
+
+| Symptom | What it was |
+|---|---|
+| The whole drawing subtly the wrong shape; circles drawn as ellipses | The canvas's CSS box is 748 px tall and the drawing buffer was 846. `resize()` measured the stage once, before the footer had been laid out, and nothing told it afterwards |
+| Captions lying across bus bars the layout believed were 40 px away | The same 98 px. Label placement, leaders, hit-testing and the ink map are all computed in the camera's coordinates, so every caption drifted from its anchor, further the further down the page |
+| A caption written along the 115 kV bus, twice | Least-ink is a preference, not a rule. There is a ceiling now, and a caption can walk to five times the offset on a leader to meet it |
+| The two places that open were not named at all | The ceiling dropped them: no clear paper anywhere near either. Important captions get a second pass with it lifted |
+| Six concentric circles and eighteen floating crosses for a generator | Redrawn with the vocabulary of a machine section: hatched iron, slots cut into the bore, ⊗ and ⊙ conductors, a two-pole round rotor with its field as one coil, chain-line axes, δ dimensioned |
+| A blue rotor axis and a blue δ arc | Colour means one thing and that thing is not "the rotor". Gone |
+| Zooming in over open country stopped dead on a blank page | The floor asked whether a scene's bounding BOX overlapped the window, and the transmission scene's box is the whole state. It now asks whether any circuit or site is actually in view, and holds the reader where the map is still fully drawn |
+| No way to tell which circles open up | Corner brackets — what a drawing office puts round a part detailed on another sheet — plus `zoom in to go inside` under the name, and a row in the legend |
+
 ---
 
 ## Running it

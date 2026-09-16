@@ -647,6 +647,36 @@ export function drawSystem(
       },
     });
 
+    // --- 5b. WHICH CIRCLES YOU CAN WALK INTO ------------------------------
+    //
+    // The reader's complaint was "there seems to only be one substation, one
+    // feeder — I can only zoom in on one specific area". Both halves of that
+    // are true and only one of them is a limitation: the atlas works ONE
+    // example all the way down, on purpose, and says so in what it leaves out.
+    // The part that was a fault is that nothing on the page said which two of
+    // forty-odd circles were the ones that open, so the reader was left to
+    // discover it by zooming into forty of them.
+    //
+    // Corner brackets, which is what a drawing office puts round the part of a
+    // general arrangement that is detailed on another sheet. The mark means
+    // exactly that here, and it is in the legend.
+    const deeperHere = DEEPER_INSIDE[node.site.id] !== undefined;
+    if (deeperHere) {
+      const r = size * 0.95 + 7;
+      const arm = r * 0.45;
+      const atPx = (sx: number, sy: number): [number, number, number] => [
+        node.ground.x + basis.rightX * sx + basis.downX * sy,
+        0,
+        node.ground.z + basis.rightZ * sx + basis.downZ * sy,
+      ];
+      for (const [ux, uy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as [number, number][]) {
+        const cx = ux * r;
+        const cy = uy * r;
+        mark({ a: atPx(cx, cy), b: atPx(cx - ux * arm, cy), widthPx: 1.3, color }, 1.6);
+        mark({ a: atPx(cx, cy), b: atPx(cx, cy - uy * arm), widthPx: 1.3, color }, 1.6);
+      }
+    }
+
     // --- 6. Labels --------------------------------------------------------
     //
     // A NUMBER UNDER EVERY NAME IS NOT MORE INFORMATION, IT IS LESS.
@@ -667,7 +697,14 @@ export function drawSystem(
     const showValue = detail !== 'minimal' && (
       detail === 'all' || isSelected || isHovered
       || mpp < 600 || throughputMW >= 1000);
-    const value = showValue ? siteReadout(node, solved) : undefined;
+    const readoutValue = showValue ? siteReadout(node, solved) : undefined;
+    // The invitation outranks the reading. A megawatt figure is something the
+    // reader can get by pointing at the site; that the site OPENS is the one
+    // thing they cannot find out without being told.
+    const value = [
+      readoutValue,
+      deeperHere && detail !== 'minimal' ? 'zoom in to go inside' : undefined,
+    ].filter(Boolean).join(' · ') || undefined;
     labels.push({
       id: `site:${node.site.id}`,
       world: node.ground,
@@ -763,5 +800,12 @@ function labelPriority(node: SiteNode, topKV: number): number {
   const capacity = node.generation.reduce((s, g) => s + g.capacityMW, 0);
   const throughput = Math.max(capacity, node.peakLoadMW);
   const classScore = topKV >= 500 ? 3000 : topKV >= 230 ? 1200 : 300;
+  // THE TWO WAYS IN ARE NAMED BEFORE ANYTHING ELSE. Eden Vale is a 115 kV
+  // substation with a few tens of megawatts through it, so on throughput it
+  // lost its caption to thirty larger places — and it is the door into three
+  // of the seven levels. A map that will not name its own entrances is the
+  // reason "there seems to only be one substation" reads as a fault rather
+  // than as a scope.
+  if (DEEPER_INSIDE[node.site.id] !== undefined) return 9000;
   return classScore + throughput;
 }

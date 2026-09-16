@@ -158,10 +158,34 @@ export class Viewport {
     return { width: this.width, height: this.height };
   }
 
+  /**
+   * Match the drawing buffer to the box the canvas actually occupies.
+   *
+   * THE ONE BUG THAT MADE EVERYTHING ELSE LOOK WRONG. This used to be measured
+   * once, in the constructor, before the footer had been laid out — so the
+   * stage measured 846 px tall, settled to 748, and never told anyone. The
+   * canvas keeps its own CSS size (setSize is called with updateStyle false,
+   * because the grid owns the layout), so an 846-tall buffer was being
+   * displayed in a 748-tall box: the whole drawing squashed by twelve per cent
+   * in one axis and nothing else.
+   *
+   * That is bad on its own — a machine drawn square to the page came out an
+   * ellipse, and an isometric projection stopped being isometric. It is much
+   * worse than it looks, because SCREEN-SPACE WORK IS DONE IN THE CAMERA'S
+   * COORDINATES: label placement, leader lines, the ink map that keeps type
+   * off the drawing, and hit-testing all ran in a space 98 px taller than the
+   * one on the screen. Every caption drifted from its own anchor, further the
+   * further down the page it sat, which is why names ended up lying across bus
+   * bars that the layout believed were nowhere near them.
+   *
+   * A ResizeObserver rather than the window's resize event, because the stage
+   * changes size when a panel opens, not only when the window does.
+   */
   resize(): void {
     const rect = this.stage.getBoundingClientRect();
     const w = Math.max(1, Math.floor(rect.width));
     const h = Math.max(1, Math.floor(rect.height));
+    if (w === this.width && h === this.height) return;
     this.width = w;
     this.height = h;
     this.renderer.setSize(w, h, false);
@@ -234,6 +258,7 @@ export class Viewport {
     }, { passive: false });
 
     window.addEventListener('resize', () => this.resize());
+    new ResizeObserver(() => this.resize()).observe(this.stage);
   }
 
   /** Nearest pick target to the pointer, within its own radius. */

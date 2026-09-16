@@ -183,14 +183,29 @@ function inwardFirst(
   const byFacing = (a: Placement, b: Placement): number => facing(b) - facing(a);
   const inward = tries.filter((p) => facing(p) > 0.05).sort(byFacing);
   const outward = tries.filter((p) => facing(p) <= 0.05).sort(byFacing);
-  const inwardFar = inward.map(([x, y]) => [x, y, 2.6] as Placement);
-  // Three groups, tried in order. There is deliberately no fourth: a name that
-  // fits nowhere inward and nowhere beside its point is dropped rather than
-  // held out on a leader over open sea, where it reads as the name of the sea.
-  return [inward, inwardFar, outward];
+  const ring = (d: number): Placement[] =>
+    inward.map(([x, y]) => [x, y, d] as Placement);
+  // FOUR GROUPS, and the extra two are both INWARD.
+  //
+  // On a schematic there is no clear paper beside a device — a single-line
+  // diagram is a grid of bus bars with drops every few pixels — so a caption
+  // has to be able to walk out to the margin and take a leader with it, which
+  // is what a draughtsman does and what the near ring alone could never offer.
+  // The rings that walk out all face INTO the drawing; the outward group stays
+  // at arm's length only, because a name that goes outward and far is a name
+  // over open sea, where it reads as the name of the sea.
+  return [inward, ring(2.2), ring(3.6), ring(5.2), outward];
 }
 
-/** How much ink a rectangle would be written over. */
+/**
+ * How much ink a rectangle would be written over, per cell it covers.
+ *
+ * PER CELL, not in total, because a two-line caption covers twice the paper of
+ * a one-line one and would otherwise look twice as dirty in the same place.
+ * A rectangle crossed once, corner to corner, by a single conductor scores
+ * about 1; one sitting on a busbar with three circuits dropping off it scores
+ * three or four; clear paper scores 0.
+ */
 function inkUnder(field: InkField, r: Rect): number {
   const { cells, cols, rows, cell } = field;
   const x0 = Math.max(0, (r.x / cell) | 0);
@@ -198,11 +213,38 @@ function inkUnder(field: InkField, r: Rect): number {
   const x1 = Math.min(cols - 1, ((r.x + r.w) / cell) | 0);
   const y1 = Math.min(rows - 1, ((r.y + r.h) / cell) | 0);
   let sum = 0;
+  let n = 0;
   for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) sum += cells[y * cols + x];
+    for (let x = x0; x <= x1; x++) { sum += cells[y * cols + x]; n++; }
   }
-  return sum;
+  return n > 0 ? sum / n : 0;
 }
+
+/**
+ * How much drawing a caption may be written over before it is not placed.
+ *
+ * TYPE ON TOP OF LINE WORK IS THE SINGLE THING THAT MADE THIS APP HARD TO
+ * READ. The layout already preferred clear paper, but preference is not a
+ * rule: with six candidate positions round a device and ink under all six, it
+ * still chose one, and on a substation single-line — where the drawing is a
+ * dense grid of bus bars and drops with no clear paper anywhere near any
+ * device — that meant "Line 2 circuit breaker" written straight across the
+ * 115 kV bus, twice, in a drawing whose whole subject is which conductor
+ * connects to which.
+ *
+ * So there is a ceiling. Above it a caption is not placed at all: it tries
+ * again without its number, then further out on a leader, and then it is
+ * dropped. A dropped name costs the reader one thing they can get by pointing
+ * at it; a name lying across a busbar costs them the busbar.
+ *
+ * The number is low on purpose, and what it separates is not "some ink" from
+ * "more ink" but a line running ALONG a caption from one crossing it. A
+ * conductor cutting the corner of a two-line label touches a fifth of its
+ * cells and is barely noticed; a busbar running the length of it touches most
+ * of one row in four, scores about three quarters, and makes the caption and
+ * the busbar both unreadable. Only the second is refused.
+ */
+const MAX_INK_UNDER = 0.55;
 
 export interface PlacedLabel {
   spec: LabelSpec;
@@ -233,6 +275,7 @@ const overlaps = (a: Rect, b: Rect, pad: number): boolean =>
 type Placement = readonly [number, number, number];
 const NEAR: Placement[] = [
   [1, -1, 1], [-1, -1, 1], [1, 1, 1], [-1, 1, 1], [0, -1.6, 1], [0, 1.6, 1],
+  [1.6, 0, 1], [-1.6, 0, 1],
 ];
 const PLACEMENTS: Placement[] = NEAR;
 
@@ -252,10 +295,12 @@ const PLACEMENTS: Placement[] = NEAR;
  * along a wire to keep a tidy rhythm would be a bad trade.
  */
 const ABOVE: Placement[] = [
-  [1, -1, 1], [-1, -1, 1], [0, -1.6, 1], [1, 1, 1], [-1, 1, 1], [0, 1.6, 1],
+  [1, -1, 1], [-1, -1, 1], [0, -1.6, 1], [1.6, 0, 1], [-1.6, 0, 1],
+  [1, 1, 1], [-1, 1, 1], [0, 1.6, 1],
 ];
 const BELOW: Placement[] = [
-  [1, 1, 1], [-1, 1, 1], [0, 1.6, 1], [1, -1, 1], [-1, -1, 1], [0, -1.6, 1],
+  [1, 1, 1], [-1, 1, 1], [0, 1.6, 1], [1.6, 0, 1], [-1.6, 0, 1],
+  [1, -1, 1], [-1, -1, 1], [0, -1.6, 1],
 ];
 
 export class LabelLayer {
@@ -385,6 +430,18 @@ export class LabelLayer {
       // sea, so least-ink always won there and the name went out to sea. Each
       // group is exhausted before the next is considered, and inside a group
       // the cleanest placement wins.
+      // A CEILING IS A PREFERENCE FOR SOME CAPTIONS AND A RULE FOR THE REST.
+      //
+      // Refusing to write over the drawing is right for the fortieth site on a
+      // map. It is wrong for the two places that open into levels of their
+      // own: in the tangle of circuits round the Bay there is no clear paper
+      // within reach of either, so the rule dropped both, and a map that will
+      // not name its own entrances is worse than one with a name lying over a
+      // conductor. Important captions get a second pass with the ceiling
+      // lifted, and only after every clean position has been tried and failed.
+      const ceilings = raw.priority >= 900
+        ? [MAX_INK_UNDER, Infinity] : [MAX_INK_UNDER];
+      for (const ceiling of ceilings) {
       for (const attempt of attempts) {
         size = this.measure(attempt);
         for (const group of groups) {
@@ -399,6 +456,7 @@ export class LabelLayer {
             if (placed.some((p) => overlaps(rect, p, this.collisionPadding))) continue;
             if (blocked.some((b) => overlaps(rect, b, 2))) continue;
             const over = ink ? inkUnder(ink, rect) : 0;
+            if (over > ceiling) continue;
             if (over < bestInk) {
               bestInk = over;
               put = {
@@ -410,6 +468,8 @@ export class LabelLayer {
           }
           if (put) break;
         }
+        if (put) break;
+      }
         if (put) break;
       }
       // A value is only spoken for once it has actually been PLACED: a label

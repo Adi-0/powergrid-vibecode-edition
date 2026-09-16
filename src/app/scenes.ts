@@ -169,6 +169,38 @@ const overlaps = (a: Box, b: Box): boolean =>
   a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.z <= b.max.z && a.max.z >= b.min.z;
 
 /**
+ * Does a line from `a` to `b` touch the rectangle `r`?
+ *
+ * Needed because the transmission drawing's BOUNDING BOX is the whole state
+ * and its content is a few hundred thin lines, so "the box overlaps the
+ * window" is true over every acre of California and answers the wrong
+ * question. What the compositor actually needs to know is whether there is
+ * anything to look at where the reader is pointing.
+ */
+function segmentHitsRect(a: Vector3, b: Vector3, r: Box): boolean {
+  const { min, max } = r;
+  if (Math.max(a.x, b.x) < min.x || Math.min(a.x, b.x) > max.x) return false;
+  if (Math.max(a.z, b.z) < min.z || Math.min(a.z, b.z) > max.z) return false;
+  const inside = (p: Vector3): boolean =>
+    p.x >= min.x && p.x <= max.x && p.z >= min.z && p.z <= max.z;
+  if (inside(a) || inside(b)) return true;
+  // Liang–Barsky: clip the parameter range against the four edges.
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0;
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  };
+  return clip(-dx, a.x - min.x) && clip(dx, max.x - a.x)
+    && clip(-dz, a.z - min.z) && clip(dz, max.z - a.z);
+}
+
+/**
  * How well a scene fits the window: 1 when it exactly fills it, falling off
  * when it is much smaller OR much larger.
  *
@@ -297,8 +329,11 @@ export function composeFrame(input: ComposeInput): ComposeResult {
     for (const l of from) labels.push({ ...l, opacity: o * o * (3 - 2 * o) });
   };
 
-  const include = (scene: SceneId, bounds: Box | null): number => {
-    const near = !bounds || !view || overlaps(bounds, view);
+  const include = (
+    scene: SceneId, bounds: Box | null, hasContent?: (v: Box) => boolean
+  ): number => {
+    const near = !bounds || !view
+      || (overlaps(bounds, view) && (!hasContent || hasContent(view)));
     // Stop a little ABOVE where the scene vanishes, not exactly at it: the last
     // sliver of a fade is a drawing so faint it reads as a blank page.
     if (near) floorScale = Math.min(floorScale, quarterAlphaScale(scene));
@@ -350,7 +385,23 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // unbounded: once the window is a few kilometres across, a drawing of the
   // whole state is no longer what anybody is looking at even though its lines
   // are still crossing the page.
-  const aSystem = include('system', input.systemGeometry.bounds);
+  // WHAT IS ACTUALLY UNDER THE CAMERA, not what the state's bounding box
+  // covers. Wheeling in over open country used to stop at 20.5 m/px — the
+  // scale at which the transmission drawing has faded to a quarter — on a page
+  // with two segments and no labels on it. The reader was left staring at
+  // blank paper with the zoom refusing to go further and nothing saying why,
+  // which is most of what "I can only zoom in on one specific area, and they
+  // fade in and out unreliably" means.
+  const systemInView = (v: Box): boolean => {
+    for (const c of input.systemGeometry.circuits) {
+      if (segmentHitsRect(c.a, c.b, v)) return true;
+    }
+    for (const n of input.systemGeometry.sites.values()) {
+      if (segmentHitsRect(n.ground, n.ground, v)) return true;
+    }
+    return false;
+  };
+  const aSystem = include('system', input.systemGeometry.bounds, systemInView);
   if (aSystem > 0) {
     const r = drawSystem(input.systemGeometry, input.solved, input.camera, {
       selectedId: input.selectedId,
@@ -449,7 +500,11 @@ export function composeFrame(input: ComposeInput): ComposeResult {
   // Nothing modelled under the camera at all — over open country, say. The
   // floor is then the scale at which the transmission drawing itself gives up,
   // because that is genuinely as close as this model goes out there.
-  if (!Number.isFinite(floorScale)) floorScale = ENVELOPE.system[0];
+  // NOTHING IS NEAR: hold the reader where the whole-state drawing is still
+  // fully drawn rather than letting them wheel into an empty page. The old
+  // fallback was the scale at which the system scene DISAPPEARS, which is the
+  // one place it is guaranteed to be useless.
+  if (!Number.isFinite(floorScale)) floorScale = ENVELOPE.system[1];
 
   // The machine marks and the size scale belong to the transmission drawing:
   // it is the only scene that draws a machine circle or scales a symbol by how

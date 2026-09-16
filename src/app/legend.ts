@@ -83,6 +83,7 @@ export class Legend {
   private readonly host: LegendHost;
   private exaggerationRow: HTMLElement | null = null;
   private machineGroup: HTMLElement | null = null;
+  private deepGroup: HTMLElement | null = null;
   private readonly voltageRows = new Map<number, HTMLElement>();
   /** The class the reader is holding up, if any. */
   private picked: number | null = null;
@@ -205,6 +206,27 @@ export class Legend {
       this.row(sym, symbolToSVG(def.path, 18), def.name, def.blurb);
     }
 
+    // --- Where the drawing goes deeper ---------------------------------------
+    const deep = this.group('Going deeper');
+    this.deepGroup = Legend.groupOf(deep);
+    this.row(
+      deep,
+      symbolToSVG([
+        [[-1, -0.5], [-1, -1], [-0.5, -1]],
+        [[0.5, -1], [1, -1], [1, -0.5]],
+        [[1, 0.5], [1, 1], [0.5, 1]],
+        [[-0.5, 1], [-1, 1], [-1, 0.5]],
+      ], 18),
+      'Bracketed: you can go inside',
+      'Two places on the map are worked all the way down — Eden Vale into ' +
+      'its substation, its feeder and one house, and Metcalf into the power ' +
+      'station and one generator. Zoom in on either. The brackets are what a ' +
+      'drawing office puts round the part of a general arrangement that is ' +
+      'detailed on another sheet, which is exactly what these are. Everywhere ' +
+      'else the atlas stops at the transmission drawing, and what that ' +
+      'leaves out is in the register.'
+    );
+
     // --- Machine marks ------------------------------------------------------
     const marks = this.group('Inside a machine circle', true);
     const order: MachineMark[] = ['steam', 'nuclear', 'hydro', 'wind', 'solar', 'geothermal', 'import'];
@@ -269,6 +291,7 @@ export class Legend {
       }
     }
     if (this.machineGroup) this.machineGroup.hidden = !shown.machineMarks;
+    if (this.deepGroup) this.deepGroup.hidden = !shown.sizes;
     if (this.dotGroup) this.dotGroup.hidden = !shown.dots;
     if (this.sizeGroup) this.sizeGroup.hidden = !shown.sizes;
     const factor = verticalExaggeration(metresPerPixel);

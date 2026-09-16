@@ -32,7 +32,7 @@ import { plantItemById } from '../data/california/plant.js';
 import { LineSegment } from './line-batch.js';
 import { LabelSpec } from './labels.js';
 import { IsoCamera } from './iso.js';
-import { INK, SELECTION, LAYOUT } from './style.js';
+import { INK, LAYOUT } from './style.js';
 import { PickTarget } from './scene-system.js';
 
 /**
@@ -137,110 +137,265 @@ export function drawMachine(
       depth,
     });
   };
-  const arc = (
-    r: number, fromDeg: number, toDeg: number, widthPx: number, color: string,
-    steps = 48
-  ) => {
+  // --- the stator core, in section -----------------------------------------
+  //
+  // WHAT WAS WRONG WITH THE OLD DRAWING. Six concentric circles of the same
+  // weight with eighteen little crosses floating between them: a target, not a
+  // machine. Nothing was filled, so nothing was solid; the coil sides sat in
+  // the middle of the iron rather than in slots; and the one part that moves
+  // was a blue line, in an app where colour is reserved for something being
+  // wrong.
+  //
+  // A machine section is one of the most standardised drawings in engineering
+  // and it has a settled vocabulary: iron is hatched, slots are cut into the
+  // bore, conductors are marked for which way the current goes, and axes are
+  // chain lines. Using it costs nothing and is worth more than any amount of
+  // invention, because a reader who has ever seen one recognises this at once
+  // and a reader who has not is learning the real one.
+  const FRAME_R = 1.0;
+  const CORE_R = 0.92;
+  const SLOT_BOTTOM_R = 0.74;
+  const BORE_R = 0.62;
+  const ROTOR_R = 0.56;
+  const SHAFT_R = 0.10;
+
+  const circle = (
+    r: number, widthPx: number, color: string, dash?: [number, number]
+  ): void => {
+    const steps = 72;
     for (let i = 0; i < steps; i++) {
-      const a0 = ((fromDeg + ((toDeg - fromDeg) * i) / steps) * Math.PI) / 180;
-      const a1 = ((fromDeg + ((toDeg - fromDeg) * (i + 1)) / steps) * Math.PI) / 180;
-      line(
-        [r * Math.cos(a0), r * Math.sin(a0)],
-        [r * Math.cos(a1), r * Math.sin(a1)],
-        widthPx, color
-      );
+      const a0 = (i / steps) * Math.PI * 2;
+      const a1 = ((i + 1) / steps) * Math.PI * 2;
+      line([r * Math.cos(a0), r * Math.sin(a0)],
+        [r * Math.cos(a1), r * Math.sin(a1)], widthPx, color, dash);
     }
   };
+  const polar = (deg: number, r: number): [number, number] => {
+    const a = (deg * Math.PI) / 180;
+    return [r * Math.cos(a), r * Math.sin(a)];
+  };
+  const radial = (
+    deg: number, r0: number, r1: number, widthPx: number, color: string,
+    dash?: [number, number]
+  ): void => line(polar(deg, r0), polar(deg, r1), widthPx, color, dash);
 
-  // --- the stator -----------------------------------------------------------
-  arc(1.0, 0, 360, 1.5, INK.ink);          // outside of the frame
-  arc(0.80, 0, 360, 1.2, INK.ink);         // back of the core
-  arc(0.52, 0, 360, 1.2, INK.ink);         // the bore
-  arc(0.48, 0, 360, 1.0, INK.inkFaint);    // the air gap, drawn as a gap
+  // The casing, and the back of the core inside it.
+  circle(FRAME_R, 1.6, INK.ink);
+  circle(CORE_R, 1.2, INK.ink);
 
-  // --- the three phase windings, 120° apart ---------------------------------
+  // IRON IS HATCHED. Parallel lines at 45°, clipped to the annulus of the
+  // core, which is how every sectional drawing since the nineteenth century
+  // says "you are looking at a cut through solid metal".
+  {
+    const step = 0.052;
+    const n = Math.ceil((CORE_R * 2) / step);
+    for (let i = -n; i <= n; i++) {
+      // A line at 45°: points where u is the offset along the perpendicular.
+      const u = i * step;
+      // Intersections of that line with a circle of radius r, in the rotated
+      // frame where the line is horizontal.
+      const cut = (r: number): number | null =>
+        r * r - u * u > 0 ? Math.sqrt(r * r - u * u) : null;
+      const outer = cut(CORE_R);
+      if (outer === null) continue;
+      const inner = cut(SLOT_BOTTOM_R);
+      // Rotate (v, u) by 45° to get back to drawing coordinates.
+      const c = Math.SQRT1_2;
+      const pt = (v: number): [number, number] => [c * (v - u), c * (v + u)];
+      const spans: [number, number][] = inner === null
+        ? [[-outer, outer]]
+        : [[-outer, -inner], [inner, outer]];
+      for (const [v0, v1] of spans) {
+        line(pt(v0), pt(v1), 0.55, INK.inkFaint);
+      }
+    }
+  }
+
+  // --- the slots, and the three phase windings in them ----------------------
   //
-  // The spacing is the whole point. Three windings at 120° in space, fed by
-  // three currents at 120° in time, produce a magnetic field of constant
-  // magnitude rotating at synchronous speed — and run backwards, a rotating
-  // field produces three voltages 120° apart. Everything else follows.
+  // TWELVE SLOTS, TWO POLES, THREE PHASES, which divides exactly: each phase
+  // gets two slots under each pole. That is the smallest winding that is a
+  // real one rather than a diagram of one, and the arithmetic is the whole
+  // lesson — three windings 120° apart in SPACE, fed by three currents 120°
+  // apart in TIME, make a field of constant size going round at synchronous
+  // speed. Run it backwards and the same arrangement makes the three voltages.
+  const SLOTS = 12;
+  const SLOT_HALF_DEG = 7;
   const PHASES: { name: string; deg: number }[] = [
     { name: 'A', deg: 90 },
     { name: 'B', deg: 210 },
     { name: 'C', deg: 330 },
   ];
-  for (const phase of PHASES) {
-    for (const side of [-1, 1]) {
-      // Each phase occupies a band of slots either side of its axis; a real
-      // machine distributes them further still, which is in the honesty note.
-      const a = ((phase.deg + side * 14) * Math.PI) / 180;
-      for (const r of [0.56, 0.64, 0.72]) {
-        const cx = r * Math.cos(a);
-        const cy = r * Math.sin(a);
-        const s = 0.035;
-        line([cx - s, cy - s], [cx + s, cy + s], 1.1, INK.ink);
-        line([cx - s, cy + s], [cx + s, cy - s], 1.1, INK.ink);
-      }
+
+  /** Which phase a slot belongs to, and which way its current runs. */
+  const slotPhase = (deg: number): { name: string; into: boolean } => {
+    for (const p of PHASES) {
+      const d = (((deg - p.deg) % 360) + 360) % 360;
+      if (d < 25 || d > 335) return { name: p.name, into: true };
+      if (Math.abs(d - 180) < 25) return { name: p.name, into: false };
     }
-    const lx = 0.9 * Math.cos((phase.deg * Math.PI) / 180);
-    const ly = 0.9 * Math.sin((phase.deg * Math.PI) / 180);
-    labels.push({
-      id: `machine:phase${phase.name}`,
-      world: new Vector3(...at(lx, ly)),
-      text: `Phase ${phase.name}`,
-      value: `${phase.deg}° around the stator`,
-      priority: 500,
-      tone: 'muted',
-    });
+    return { name: '?', into: true };
+  };
+
+  for (let i = 0; i < SLOTS; i++) {
+    const deg = 15 + i * (360 / SLOTS);
+    // The slot: two sides and a bottom, open to the bore.
+    radial(deg - SLOT_HALF_DEG, BORE_R, SLOT_BOTTOM_R, 1.0, INK.ink);
+    radial(deg + SLOT_HALF_DEG, BORE_R, SLOT_BOTTOM_R, 1.0, INK.ink);
+    for (let k = 0; k < 6; k++) {
+      const a0 = deg - SLOT_HALF_DEG + (2 * SLOT_HALF_DEG * k) / 6;
+      const a1 = deg - SLOT_HALF_DEG + (2 * SLOT_HALF_DEG * (k + 1)) / 6;
+      line(polar(a0, SLOT_BOTTOM_R), polar(a1, SLOT_BOTTOM_R), 1.0, INK.ink);
+    }
+
+    // THE CONDUCTOR IN IT, marked the way every winding diagram marks one: a
+    // cross for current going into the page, a dot for current coming out.
+    // Those two symbols are the reason the drawing can show a winding at all
+    // — a coil is a loop, and a section through a loop is two conductors with
+    // the current going opposite ways.
+    const { into } = slotPhase(deg);
+    const [cx, cy] = polar(deg, (BORE_R + SLOT_BOTTOM_R) / 2);
+    const rad = 0.036;
+    for (let k = 0; k < 14; k++) {
+      const a0 = (k / 14) * Math.PI * 2;
+      const a1 = ((k + 1) / 14) * Math.PI * 2;
+      line([cx + rad * Math.cos(a0), cy + rad * Math.sin(a0)],
+        [cx + rad * Math.cos(a1), cy + rad * Math.sin(a1)], 1.0, INK.ink);
+    }
+    if (into) {
+      const d = rad * Math.SQRT1_2;
+      line([cx - d, cy - d], [cx + d, cy + d], 1.0, INK.ink);
+      line([cx - d, cy + d], [cx + d, cy - d], 1.0, INK.ink);
+    } else {
+      line([cx - 0.004, cy], [cx + 0.004, cy], 3.2, INK.ink);
+    }
   }
+
+  // The bore, and the rotor face across the air gap. Two circles close
+  // together with nothing between them IS the air gap, and the gap is where
+  // every watt the machine makes is transferred.
+  circle(BORE_R, 1.2, INK.ink);
+  circle(ROTOR_R, 1.4, INK.ink);
 
   // --- the rotor, turned to the load angle ----------------------------------
   //
+  // A two-pole round rotor: a forging with the field winding in slots over
+  // part of its circumference and two unslotted POLE FACES opposite each
+  // other. The pole faces are heavier, because that is where the flux leaves
+  // and enters, and they are what the load angle is measured to.
+  //
   // δ is the angle between the rotor's field axis and the terminal voltage
-  // phasor. Drawing the rotor at that angle is not an illustration of the load
-  // angle; it IS the load angle.
+  // phasor. Drawing the rotor at that angle is not an illustration of the
+  // load angle; it IS the load angle.
   const delta = op.deltaDeg;
-  arc(0.44, 0, 360, 1.4, INK.ink);
-  const rotorAxis = (deg: number, r0: number, r1: number, w: number, c: string) => {
-    const a = (deg * Math.PI) / 180;
-    line([r0 * Math.cos(a), r0 * Math.sin(a)], [r1 * Math.cos(a), r1 * Math.sin(a)], w, c);
-  };
-  // The field winding, as two coil sides on the direct axis.
-  for (const side of [0, 180]) {
-    for (const off of [-10, 10]) {
-      rotorAxis(delta + 90 + side + off, 0.18, 0.40, 1.2, INK.ink);
+  const dAxis = 90 + delta;
+
+  for (const pole of [0, 180]) {
+    // The pole face: a heavier arc centred on the direct axis.
+    const from = dAxis + pole - 38;
+    const to = dAxis + pole + 38;
+    const steps = 20;
+    for (let i = 0; i < steps; i++) {
+      const a0 = from + ((to - from) * i) / steps;
+      const a1 = from + ((to - from) * (i + 1)) / steps;
+      line(polar(a0, ROTOR_R), polar(a1, ROTOR_R), 2.6, INK.ink);
+    }
+    // The field winding: three slots each side of the pole face, with the
+    // current going in on one side of the rotor and out on the other, which is
+    // what makes one end of it north and the other south.
+    for (const s of [-1, 1]) {
+      for (let k = 0; k < 3; k++) {
+        const deg = dAxis + pole + s * (48 + k * 13);
+        const [fx, fy] = polar(deg, ROTOR_R - 0.075);
+        const rad = 0.026;
+        for (let j = 0; j < 10; j++) {
+          const a0 = (j / 10) * Math.PI * 2;
+          const a1 = ((j + 1) / 10) * Math.PI * 2;
+          line([fx + rad * Math.cos(a0), fy + rad * Math.sin(a0)],
+            [fx + rad * Math.cos(a1), fy + rad * Math.sin(a1)], 0.9, INK.ink);
+        }
+        // WHICH SIDE OF THE DIRECT AXIS, not which pole. The field is one
+        // coil: the current goes down every conductor on one side of the
+        // rotor and back up every conductor on the other, and that is the
+        // whole of why one end is north and the other south. Splitting it by
+        // pole instead put crosses on both sides of the same pole, which is a
+        // coil that cannot exist.
+        const into = Math.sin(((deg - dAxis) * Math.PI) / 180) > 0;
+        if (into) {
+          const d = rad * Math.SQRT1_2;
+          line([fx - d, fy - d], [fx + d, fy + d], 0.9, INK.ink);
+          line([fx - d, fy + d], [fx + d, fy - d], 0.9, INK.ink);
+        } else {
+          line([fx - 0.003, fy], [fx + 0.003, fy], 2.4, INK.ink);
+        }
+      }
     }
   }
-  // The direct axis itself — the north–south line of the rotor's field.
-  rotorAxis(delta + 90, 0, 0.44, 1.8, SELECTION.stroke);
-  rotorAxis(delta - 90, 0, 0.44, 1.8, SELECTION.stroke);
-  // The shaft.
-  arc(0.07, 0, 360, 1.2, INK.ink);
+
+  // The shaft, and the direct axis through it.
+  circle(SHAFT_R, 1.2, INK.ink);
+
+  // AXES ARE CHAIN LINES. A long dash is what a drawing office uses for a
+  // centre line, and using it here means the two lines that are not parts of
+  // the machine cannot be mistaken for parts of the machine.
+  const CHAIN: [number, number] = [11, 5];
+  radial(dAxis, 0, FRAME_R + 0.34, 1.4, INK.ink, CHAIN);
+  radial(dAxis + 180, 0, ROTOR_R + 0.12, 1.4, INK.ink, CHAIN);
 
   // --- the reference: where the terminal voltage phasor points --------------
   //
   // Straight up, by definition — V is the reference and δ is measured from it.
-  rotorAxis(90, 0, 1.18, 1.0, INK.inkFaint);
+  radial(90, 0, FRAME_R + 0.34, 1.0, INK.inkFaint, CHAIN);
   labels.push({
     id: 'machine:reference',
-    world: new Vector3(...at(0, 1.24)),
+    world: new Vector3(...at(0.02, FRAME_R + 0.42)),
     text: 'Terminal voltage V∠0',
     value: 'the reference the angle is measured from',
     priority: 820,
     tone: 'muted',
   });
 
-  // The angle between them, drawn as an arc with the number on it.
-  if (Math.abs(delta) > 0.5) {
-    arc(1.06, Math.min(90, 90 + delta), Math.max(90, 90 + delta), 1.2, SELECTION.stroke, 24);
-    const mid = ((90 + delta / 2) * Math.PI) / 180;
+  // --- δ, drawn as a dimension ---------------------------------------------
+  //
+  // An arc between the two axes with a tick on each end, which is how an angle
+  // is dimensioned on any drawing. The old version was a bare 16° smear of
+  // colour on the outside of the frame and read as a stray mark.
+  if (Math.abs(delta) > 0.4) {
+    // OUTSIDE THE IRON. Drawn across the hatched core the arc read as a part
+    // of the machine; outside everything it reads as what it is, a dimension
+    // between two axes.
+    const rArc = FRAME_R + 0.26;
+    const from = Math.min(90, dAxis);
+    const to = Math.max(90, dAxis);
+    const steps = 28;
+    for (let i = 0; i < steps; i++) {
+      const a0 = from + ((to - from) * i) / steps;
+      const a1 = from + ((to - from) * (i + 1)) / steps;
+      line(polar(a0, rArc), polar(a1, rArc), 1.3, INK.ink);
+    }
+    for (const end of [from, to]) {
+      line(polar(end, rArc - 0.035), polar(end, rArc + 0.035), 1.3, INK.ink);
+    }
+    const mid = 90 + delta / 2;
     labels.push({
       id: 'machine:delta',
-      world: new Vector3(...at(1.14 * Math.cos(mid), 1.14 * Math.sin(mid))),
+      world: new Vector3(...at(...polar(mid, rArc + 0.14))),
       text: 'Load angle δ',
       value: `${delta.toFixed(2)}° — how far the rotor leads`,
       priority: 940,
-      tone: 'selected',
+      tone: 'normal',
+    });
+  }
+
+  // The phase names, outside the casing so they are never written on it.
+  for (const phase of PHASES) {
+    labels.push({
+      id: `machine:phase${phase.name}`,
+      world: new Vector3(...at(...polar(phase.deg, FRAME_R + 0.16))),
+      text: `Phase ${phase.name}`,
+      value: `${phase.deg}° around the stator`,
+      priority: 500,
+      tone: 'muted',
     });
   }
 
@@ -250,16 +405,20 @@ export function drawMachine(
   // machine that produces one. The arrowhead is built from the TANGENT at the
   // end of the arc rather than from a fixed offset, or it points somewhere else
   // as soon as the arc moves.
-  const rotationArrow = 150;
-  const rotR = 1.22;
-  arc(rotR, rotationArrow - 22, rotationArrow + 22, 1.0, INK.inkFaint, 16);
+  const rotationArrow = 152;
+  const rotR = FRAME_R + 0.10;
   {
-    const a = ((rotationArrow + 22) * Math.PI) / 180;
+    const steps = 16;
+    for (let i = 0; i < steps; i++) {
+      const a0 = rotationArrow - 20 + (40 * i) / steps;
+      const a1 = rotationArrow - 20 + (40 * (i + 1)) / steps;
+      line(polar(a0, rotR), polar(a1, rotR), 1.0, INK.inkFaint);
+    }
+    const a = ((rotationArrow + 20) * Math.PI) / 180;
     const tip: [number, number] = [rotR * Math.cos(a), rotR * Math.sin(a)];
-    // The tangent to a circle at angle a, travelling anticlockwise.
     const tx = -Math.sin(a);
     const ty = Math.cos(a);
-    const h = 0.09;
+    const h = 0.075;
     for (const spread of [-0.45, 0.45]) {
       const bx = tx * Math.cos(spread) - ty * Math.sin(spread);
       const by = tx * Math.sin(spread) + ty * Math.cos(spread);
@@ -268,8 +427,7 @@ export function drawMachine(
   }
   labels.push({
     id: 'machine:speed',
-    world: new Vector3(...at(1.34 * Math.cos((rotationArrow * Math.PI) / 180),
-      1.34 * Math.sin((rotationArrow * Math.PI) / 180))),
+    world: new Vector3(...at(...polar(rotationArrow, rotR + 0.16))),
     text: '3,600 rev/min',
     value: 'two poles at 60 Hz — the rotor IS the frequency',
     priority: 900,

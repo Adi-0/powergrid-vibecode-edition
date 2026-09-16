@@ -151,6 +151,20 @@ houses are invented and the honesty register says so, but their DIMENSIONS are
 the ordinary ones of American suburban development, so the sense of scale is
 honest even though the particular houses are not.
 
+## The camera's screen and the actual screen are the same screen
+
+Everything in screen space — where a caption goes, where its leader points,
+what the ink map says is under it, what the pointer is over — is computed in
+the camera's viewport coordinates. If those differ from the box the canvas
+actually occupies, none of it is wrong in a way that shows up as an error: the
+drawing simply comes out the wrong shape and every caption drifts from its own
+anchor, further the further down the page it sits.
+
+The canvas's size is owned by the CSS grid, so the renderer is sized with
+`updateStyle` false and the camera is told the same numbers. A `ResizeObserver`
+keeps them together — measuring once at start is not enough, because the
+footer has not been laid out yet and a panel can change the stage later.
+
 ## Type is placed where the drawing is not
 
 The label layout knows where every other label is, and — since the second
@@ -178,6 +192,22 @@ turns the service view from scattered annotation into a labelled diagram: the
 equipment named above the chain, the wires between them below. It is a
 preference and not a restriction — a caption with nowhere to go on its own side
 is still placed.
+
+## A caption is never written along a line
+
+Preferring clear paper is not enough on a schematic, where there is no clear
+paper: a single-line diagram is a grid of bus bars with drops every few pixels,
+and the least-inky position beside a device is still on the bus. There is a
+ceiling on how much drawing a caption may cover, measured per cell so a
+two-line caption is not penalised for being larger, and set to separate a line
+running ALONG a caption from one crossing it — the first makes both unreadable,
+the second is barely noticed.
+
+To make that survivable, a caption can walk out to five times the standard
+offset on a leader, in rings that all face into the drawing. And a caption the
+reader needs is never dropped for it: above a priority threshold the ceiling is
+lifted on a second pass, after every clean position has failed. A map that will
+not name its own entrances is worse than one with a name over a conductor.
 
 ## A name without its number beats no name at all
 
@@ -453,6 +483,19 @@ cannot be read.
 There is no monospace face here, deliberately. Setting labels in monospace to
 look technical is a costume; tabular figures in a real text face is what
 engineering drawings actually use.
+
+## A section is drawn with the vocabulary of sections
+
+The machine cross-section, and any drawing like it, uses what a drawing office
+uses: iron hatched at 45°, slots cut into the bore, conductors marked ⊗ into
+the page and ⊙ out of it, axes as chain lines, angles dimensioned with an arc
+and a tick at each end. None of it is invented and all of it is free — a reader
+who has seen a machine section recognises this one at once, and a reader who
+has not is learning the real convention rather than a private one.
+
+Corner brackets mean the same thing they mean on a general arrangement: this
+part is detailed on another sheet. On the map they mark the two places that
+open into levels of their own.
 
 ## The isometric projection
 
