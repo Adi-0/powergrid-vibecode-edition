@@ -410,6 +410,12 @@ panels comes from a 1 px rule and space.
 The one permitted "shadow" is the ground-coloured halo behind map labels, which
 is the typographic equivalent of the hidden-line removal in the drawing itself.
 
+**A halo carries the opacity of the stroke it backs, not the scene's.** A halo
+is an instruction to erase, and an erasure at full strength behind a stroke
+that is barely there is the same mistake as a pale wide band: half way through
+the substation's morph, the yard's tanks were rubbing out the conductors behind
+them before they had appeared themselves.
+
 ## Motion only where it carries information
 
 Marks in the colour of the paper travel along the core of each conductor at a

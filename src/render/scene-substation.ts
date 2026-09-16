@@ -872,7 +872,15 @@ export function drawSubstation(
         widthPx: m.seg.widthPx + m.haloPx,
         color: INK.occluder,
         ...(m.seg.dash ? { dash: m.seg.dash } : {}),
-        ...(alpha < 1 ? { opacity: alpha } : {}),
+        // A HALO CARRIES THE OPACITY OF THE STROKE IT BACKS, not the scene's.
+        //
+        // A halo is an instruction to erase, and an erasure at full strength
+        // behind a stroke that is barely there is the same mistake as a pale
+        // wide band: half way through the substation's morph the yard's tanks
+        // were rubbing out the conductors behind them before they had appeared
+        // themselves.
+        ...(m.seg.opacity !== undefined && m.seg.opacity < 1
+          ? { opacity: m.seg.opacity } : {}),
       });
     }
     segments.push(m.seg);
