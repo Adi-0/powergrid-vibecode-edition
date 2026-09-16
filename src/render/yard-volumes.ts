@@ -21,65 +21,15 @@
  * scale as everything else in the model.
  */
 
-import { Vector3 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import { LineSegment } from './line-batch.js';
 import { INK } from './style.js';
+import {
+  Edge, Quad, v, boxEdges, post, insulatorEdges as insulator, facingQuads,
+} from './volumes.js';
+import { IsoCamera } from './iso.js';
 
-/** One edge of a volume, in world metres. */
-export type Edge = [Vector3, Vector3];
-
-const v = (x: number, y: number, z: number): Vector3 => new Vector3(x, y, z);
-
-/**
- * The edges of an axis-aligned box.
- *
- * All twelve, not the nine a hidden-line treatment would keep: the renderer
- * composites in painter's order with ground-coloured halos, so the back edges
- * are erased by whatever is drawn in front of them and the box comes out
- * correctly without anybody computing visibility.
- */
-export function boxEdges(
-  centre: Vector3, wx: number, h: number, wz: number
-): Edge[] {
-  const hx = wx / 2;
-  const hz = wz / 2;
-  const x0 = centre.x - hx;
-  const x1 = centre.x + hx;
-  const z0 = centre.z - hz;
-  const z1 = centre.z + hz;
-  const y0 = centre.y;
-  const y1 = centre.y + h;
-  const c = [
-    v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1),
-    v(x0, y1, z0), v(x1, y1, z0), v(x1, y1, z1), v(x0, y1, z1),
-  ];
-  const e: [number, number][] = [
-    [0, 1], [1, 2], [2, 3], [3, 0],
-    [4, 5], [5, 6], [6, 7], [7, 4],
-    [0, 4], [1, 5], [2, 6], [3, 7],
-  ];
-  return e.map(([i, j]) => [c[i], c[j]] as Edge);
-}
-
-/** A vertical post. */
-const post = (base: Vector3, h: number): Edge =>
-  [base.clone(), v(base.x, base.y + h, base.z)];
-
-/**
- * An insulator stack: a column with its sheds shown as a few discs.
- *
- * The discs are what make a porcelain stack recognisable from fifty metres, and
- * they are the reason a yard photograph reads as a yard rather than as pipework.
- */
-function insulator(base: Vector3, h: number, sheds = 4): Edge[] {
-  const out: Edge[] = [post(base, h)];
-  const r = 0.35;
-  for (let i = 1; i <= sheds; i++) {
-    const y = base.y + (h * i) / (sheds + 1);
-    out.push([v(base.x - r, y, base.z), v(base.x + r, y, base.z)]);
-  }
-  return out;
-}
+export type { Edge } from './volumes.js';
 
 /**
  * What each kind of equipment looks like, standing on the ground at `p`.
@@ -209,6 +159,51 @@ export function volumeFor(kind: string, p: Vector3, kV: number): Edge[] {
     default:
       return [];
   }
+}
+
+/**
+ * Fill the camera-facing faces of a solid with strokes in the colour of the
+ * paper, so that what is behind it is hidden.
+ *
+ * Spacing is worked out in SCREEN pixels, not in metres: a face six metres
+ * across needs two strokes at the scale of a yard and forty at the scale of a
+ * bushing, and the wash has to stay opaque at both. Each stroke is drawn wider
+ * than the gap to its neighbour, so there is no ruling visible in the fill.
+ */
+export function washSegments(
+  quads: readonly Quad[], camera: IsoCamera, opacity = 1
+): LineSegment[] {
+  const out: LineSegment[] = [];
+  const a2 = new Vector2();
+  const b2 = new Vector2();
+  const STEP_PX = 5;
+
+  for (const q of facingQuads([...quads], camera.direction)) {
+    // How far the face runs across the page, so the stroke count follows the
+    // zoom rather than the metres.
+    camera.worldToScreen(q[0], a2);
+    camera.worldToScreen(q[1], b2);
+    const wPx = a2.distanceTo(b2);
+    camera.worldToScreen(q[3], b2);
+    const hPx = a2.distanceTo(b2);
+    if (wPx < 0.5 && hPx < 0.5) continue;
+    // Sweep along whichever pair of edges is shorter on screen, so the strokes
+    // run the long way and there are fewer of them.
+    const alongW = wPx >= hPx;
+    const n = Math.min(160, Math.max(2, Math.ceil((alongW ? hPx : wPx) / STEP_PX)));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const p = alongW
+        ? q[0].clone().lerp(q[3], t) : q[0].clone().lerp(q[1], t);
+      const r = alongW
+        ? q[1].clone().lerp(q[2], t) : q[3].clone().lerp(q[2], t);
+      out.push({
+        a: [p.x, p.y, p.z], b: [r.x, r.y, r.z],
+        widthPx: STEP_PX + 2.5, color: INK.occluder, opacity,
+      });
+    }
+  }
+  return out;
 }
 
 /** Turn edges into segments at one opacity and weight. */

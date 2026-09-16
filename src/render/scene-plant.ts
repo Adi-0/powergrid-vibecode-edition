@@ -35,6 +35,8 @@ import { IsoCamera } from './iso.js';
 import {
   INK, SIGNAL, SELECTION, LAYOUT, voltageClass, TextDetail,
 } from './style.js';
+import { plantVolumeFor, plantSolidsFor } from './plant-volumes.js';
+import { volumeSegments, washSegments } from './yard-volumes.js';
 import { toWorld } from './world.js';
 import {
   SYM_GENERATOR, SYM_TRANSFORMER, placeSymbol, SymbolPath,
@@ -144,9 +146,21 @@ const SYMBOL_FOR: Record<PlantItem['kind'], SymbolPath> = {
 
 const SIZE_FOR: Record<PlantItem['kind'], number> = {
   'gas-turbine': 20, 'steam-turbine': 22, hrsg: 19, stack: 11,
-  condenser: 16, 'cooling-tower': 24, generator: 14, transformer: 14,
+  condenser: 16, 'cooling-tower': 24, generator: 13, transformer: 13,
   switchyard: 20, fuel: 13,
 };
+
+/**
+ * Which items keep their one-line symbol once they have a body.
+ *
+ * Only the two that are STANDARD NOTATION a reader will meet again on a real
+ * drawing: a circle with a sine wave is a machine, two interlocking rings are
+ * a transformer. Everything else in a power station has no one-line symbol —
+ * a boiler, a cooling tower and a stack are drawn as what they are — so the
+ * glyphs that used to stand for them were this drawing's invention, and the
+ * volume says it better.
+ */
+const MARKED_WITH_SYMBOL = new Set<PlantItem['kind']>(['generator', 'transformer']);
 
 // ---------------------------------------------------------------------------
 // Drawing
@@ -310,32 +324,9 @@ export function drawPlant(
     });
   }
 
-  // --- buildings, as footprints at their true size --------------------------
-  for (const i of PLANT_ITEMS) {
-    if (!i.sizeM) continue;
-    const p = pos.get(i.id)!;
-    const [w, d] = i.sizeM;
-    const corners: [number, number][] = [
-      [-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2], [-w / 2, -d / 2],
-    ];
-    const isSelected = selected === i.id;
-    for (let k = 0; k + 1 < corners.length; k++) {
-      mark({
-        a: [p.x + corners[k][0], 0, p.z - corners[k][1]],
-        b: [p.x + corners[k + 1][0], 0, p.z - corners[k + 1][1]],
-        widthPx: isSelected ? 1.6 : 1.0,
-        color: isSelected ? SELECTION.stroke : INK.inkFaint,
-      }, Number.MAX_SAFE_INTEGER - 18);
-    }
-    // One corner post, to give the footprint a height without drawing a box
-    // that would outweigh everything inside it.
-    if (i.at[2] > 1) {
-      mark({
-        a: [p.x - w / 2, 0, p.z + d / 2], b: [p.x - w / 2, i.at[2], p.z + d / 2],
-        widthPx: 0.8, color: INK.inkGhost,
-      }, Number.MAX_SAFE_INTEGER - 17);
-    }
-  }
+  // The footprints and corner posts that used to stand in for the buildings are
+  // gone: the buildings are here now, and drawing both left a pale rectangle
+  // under every one of them and a stray post up one corner.
 
   // --- the energy streams ---------------------------------------------------
   const reference = chain.fuelMW;
@@ -418,21 +409,74 @@ export function drawPlant(
     const depth = depthOf(p) - 1e4;
     const color = isSelected ? SELECTION.stroke : INK.ink;
 
-    marks.push({
-      seg: fade({
-        a: [p.x, p.y, p.z], b: [p.x, p.y, p.z],
-        widthPx: size * 1.85, color: INK.occluder,
-      }),
-      depth: depth - 1,
-    });
-    placeSymbol(SYMBOL_FOR[i.kind], {
-      x: p.x, y: p.y, z: p.z, sizePx: size,
-      widthPx: 1.35 * (isSelected ? 1.4 : 1), color,
-    }, basis, scratch);
-    for (const seg of scratch) marks.push({ seg: fade(seg), depth: depth - 2 });
-    scratch.length = 0;
+    // THE EQUIPMENT IS BUILT, NOT PINNED.
+    //
+    // A trapezoid for a gas turbine, a striped rectangle for a boiler
+    // twenty-six metres tall, four circles for a cooling tower: functionally
+    // correct and visually confusing, because nothing in the drawing occupied
+    // any space. The widths of the energy streams were doing all the work and
+    // the equipment they ran between read as annotation over a plan.
+    //
+    // Each item is now a volume at its real size. The symbol survives only
+    // where it is standard notation the reader will meet again — a generator
+    // circle, a transformer's two rings — and then it is drawn SMALL, against
+    // the body it names, the way a drawing office marks up a general
+    // arrangement.
+    // The mass first, in the colour of the paper, so the building is solid;
+    // then its edges over the top.
+    const solids = plantSolidsFor(i, p);
+    if (solids.length > 0) {
+      for (const seg of washSegments(solids, camera)) {
+        const mid = new Vector3(
+          (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
+          (seg.a[2] + seg.b[2]) / 2);
+        // Just behind this object's own edges, and otherwise sorted with
+        // everything else by where the stroke actually is. A constant offset
+        // per object was tried and put one building's wash in front of another
+        // building's edges: with no depth buffer, the ordering has to come from
+        // the geometry rather than from which list a stroke is in.
+        marks.push({ seg: fade(seg), depth: depthOf(mid) + 0.35 });
+      }
+    }
 
-    if (p.y > 1) {
+    const volume = plantVolumeFor(i, p);
+    if (volume.length > 0) {
+      // EVERY EDGE CARRIES A HALO, or the buildings are glass.
+      //
+      // The renderer has no depth buffer: hidden-line removal is done by
+      // drawing a ground-coloured backing behind each stroke and compositing
+      // in painter's order. Without it the first version of this came out as a
+      // yard full of transparent crates — every back edge of every box visible
+      // through every front one, which is harder to read than the flat glyphs
+      // it replaced.
+      for (const seg of volumeSegments(
+        volume, (isSelected ? 1.7 : 1.2), color, 1
+      )) {
+        const mid = new Vector3(
+          (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
+          (seg.a[2] + seg.b[2]) / 2);
+        marks.push({ seg: fade(seg), depth: depthOf(mid), haloPx: HALO_PAD_PX });
+      }
+    }
+
+    if (MARKED_WITH_SYMBOL.has(i.kind)) {
+      const at = volume.length > 0 ? new Vector3(p.x, p.y + 4.5, p.z) : p;
+      marks.push({
+        seg: fade({
+          a: [at.x, at.y, at.z], b: [at.x, at.y, at.z],
+          widthPx: size * 1.85, color: INK.occluder,
+        }),
+        depth: depth - 1,
+      });
+      placeSymbol(SYMBOL_FOR[i.kind], {
+        x: at.x, y: at.y, z: at.z, sizePx: size,
+        widthPx: 1.35 * (isSelected ? 1.4 : 1), color,
+      }, basis, scratch);
+      for (const seg of scratch) marks.push({ seg: fade(seg), depth: depth - 2 });
+      scratch.length = 0;
+    }
+
+    if (volume.length === 0 && p.y > 1) {
       mark({
         a: [p.x, 0, p.z], b: [p.x, p.y, p.z],
         widthPx: 0.8, color: INK.inkGhost,
