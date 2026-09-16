@@ -171,7 +171,8 @@ export function volumeFor(kind: string, p: Vector3, kV: number): Edge[] {
  * than the gap to its neighbour, so there is no ruling visible in the fill.
  */
 export function washSegments(
-  quads: readonly Quad[], camera: IsoCamera, opacity = 1
+  quads: readonly Quad[], camera: IsoCamera, opacity = 1,
+  color: string = INK.occluder
 ): LineSegment[] {
   const out: LineSegment[] = [];
   const a2 = new Vector2();
@@ -190,16 +191,34 @@ export function washSegments(
     // Sweep along whichever pair of edges is shorter on screen, so the strokes
     // run the long way and there are fewer of them.
     const alongW = wPx >= hPx;
-    const n = Math.min(160, Math.max(2, Math.ceil((alongW ? hPx : wPx) / STEP_PX)));
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const p = alongW
+    const sweepPx = alongW ? hPx : wPx;
+    const runPx = alongW ? wPx : hPx;
+
+    // A WASH MUST NOT SPILL OFF ITS OWN FACE.
+    //
+    // The first version put a stroke on each edge of the face and gave every
+    // stroke the same generous width, which on a boiler twenty metres across
+    // is invisible and on the eighty-millimetre lid of a pad-mounted
+    // transformer erases the cabinet under it. Strokes are inset by half a
+    // step and sized to the step they cover, so neighbours overlap by a pixel
+    // and a half — enough that no ruling shows — while the outermost stroke
+    // hangs less than a pixel over the edge.
+    const n = Math.min(160, Math.max(1, Math.ceil(sweepPx / STEP_PX)));
+    const widthPx = sweepPx / n + 1.5;
+    // The capsule's end caps are round, so they reach half a width past each
+    // endpoint. Pull the ends in by that much.
+    const inset = runPx > 1e-3 ? Math.min(0.45, widthPx / 2 / runPx) : 0;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const p0 = alongW
         ? q[0].clone().lerp(q[3], t) : q[0].clone().lerp(q[1], t);
-      const r = alongW
+      const p1 = alongW
         ? q[1].clone().lerp(q[2], t) : q[3].clone().lerp(q[2], t);
+      const a = p0.clone().lerp(p1, inset);
+      const b = p1.clone().lerp(p0, inset);
       out.push({
-        a: [p.x, p.y, p.z], b: [r.x, r.y, r.z],
-        widthPx: STEP_PX + 2.5, color: INK.occluder, opacity,
+        a: [a.x, a.y, a.z], b: [b.x, b.y, b.z],
+        widthPx, color, opacity,
       });
     }
   }

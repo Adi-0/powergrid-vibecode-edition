@@ -71,7 +71,7 @@ the in-app model-honesty panel reads, so the two cannot disagree.
 
 ```
 npm install
-npm test        # 663 tests
+npm test        # 667 tests
 npm run dev     # the app
 ```
 

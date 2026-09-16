@@ -293,6 +293,99 @@ palette, so none can quietly become legend-only. The machine marks, the size
 key and the dot key appear on the same terms — reported by the frame, never
 inferred from the level.
 
+## Things are built, not drawn as icons on a plan
+
+A flat symbol pinned over a site plan is a label for a thing, and a page of
+them is a page of labels. The power station was a trapezoid for a gas turbine,
+a striped rectangle for a boiler twenty-six metres tall, and four circles for a
+cooling tower — which is exactly what a cooling tower looks like from directly
+above and from nowhere else. The service was five symbols floating inside the
+ghost outline of a house.
+
+**Everything with a size is drawn at that size, as a volume, out of the
+primitives in `src/render/volumes.ts`.** What that buys is not decoration. A
+combined-cycle station is a small number of very large objects in a particular
+arrangement, and once they occupy space the arrangement becomes the subject:
+the turbine hall between two boilers, the stacks twice the height of anything
+else, the cooling tower off on its own because it is the only part that has to
+stand in open air. A service is a green box on a verge, a meter at eye height
+on an outside wall, a panel round the corner inside, and a rod in the dirt —
+and those four facts are most of what there is to understand about a service.
+
+### A wireframe box is transparent by construction
+
+There is no depth buffer. Hidden-line removal happens because each stroke is
+drawn over a ground-coloured backing in painter's order, and that erases a line
+where something crosses in front of it — and erases nothing in the middle of a
+face, because an edge-only box has nothing there. On the yard's small equipment
+that reads as wireframe detail; on a boiler it reads as glass.
+
+So each solid also declares its faces, and `washSegments` strokes the ones the
+camera can see in the colour of the paper. Three rules the first version got
+wrong, each of which looks like something else:
+
+- **A wash must not spill off its own face.** Strokes sized to the gap they
+  cover and inset by half of it, so neighbours overlap by a pixel and a half
+  and the outermost hangs less than a pixel over the edge. Sized generously
+  instead, the eighty-millimetre lid of a pad-mounted transformer erased the
+  cabinet under it.
+- **Winding decides which faces exist.** A face listed the wrong way round
+  reports an inward normal and is culled as a back face. What that looks like
+  is a box with its lid off — which is not obvious, because a box with its lid
+  off looks exactly like a box until you notice you can see its back edges
+  through the top. `test/volumes.test.ts` checks every face of every primitive.
+- **Depth comes from the geometry, not from the list.** A constant offset per
+  object put one building's fill in front of another building's edges. Each
+  stroke sorts on where it actually is, with the fill a hair behind its own
+  edges.
+
+### The cutaway removes one plane, not three
+
+To see inside a house you do not need three walls off. The camera is
+thirty-five degrees above the ground, so a wall 2.7 m high hides a strip about
+2.7 m deep behind it and nothing further in: take the roof off and every wall
+can stay standing with the whole interior still in view. The house at 14 Cherry
+Lane keeps its slab, its four walls, its door and its windows, and the roof is
+drawn as a PHANTOM — the long dash every drawing office uses for a part shown
+in a position it is not in. Solid, the roof frame read as a wireframe pyramid
+hovering over the house; dashed, it says cutaway without being told to.
+
+What a reader can see is then a design constraint on where things go. The meter
+is on the outside of the wall that faces the viewer, the panel on the inside of
+a wall that faces away, the receptacle on the far wall of the kitchen, and each
+of them far enough in that it clears the wall in front of it. Put one on the
+wrong wall and it vanishes behind the wash, correctly.
+
+### A symbol is what you draw when the thing itself is too small to read
+
+Over a structure a symbol is a label on something the reader can already see.
+But one service spans three orders of magnitude — a pad-mounted transformer is
+a metre and a half across, the breaker handle in the panel is forty
+millimetres — so the standard symbol appears for exactly as long as it is
+needed. Below about thirty pixels of built size a device is called out with its
+symbol on a leader, the way a detail is called out on any drawing; above it the
+symbol goes and the object speaks for itself. Zooming in therefore does what a
+reader expects of zooming in: notation gives way to the thing.
+
+### A run is drawn in pieces so the building can get in front of it
+
+Painter's order sorts a stroke by one depth, and a wire that leaves a meter
+outside a wall and lands on a panel inside it is on both sides of that wall at
+once. Drawn whole it was either wholly in front of the house or wholly behind
+it. Split into pieces about a centimetre of screen apart, each piece sorts on
+its own: the service-entrance conductors disappear into the wall and come out
+inside it, which is what they do. The pieces overlap by more than a halo is
+wide, or every joint is nibbled into a dotted line, and the dash phase runs on
+from piece to piece so a buried run stays one dashed line.
+
+### The floor of a house is the one fill that is allowed to be seen
+
+Every other solid is filled with the ground colour, because the fill is there
+to hide what is behind it and not to be looked at. Inside the walls of a house
+a tone one step darker is what separates in from out at a glance; without it, a
+cutaway with its roof off is four walls standing on the same blank paper as the
+lawn.
+
 ## Framing a solid, not its footprint
 
 A ground rectangle is the right description of a map and the wrong one for a

@@ -126,20 +126,25 @@ export function ringEdges(
 }
 
 /**
- * A horizontal cylinder lying along x — a generator, a condenser shell, a tank.
+ * A horizontal cylinder lying along one ground axis — a generator, a condenser
+ * shell, a tank, the glass of a meter standing off a wall.
  *
  * Drawn as two end rings in the vertical plane and the four silhouette lines
  * between them, which is all a cylinder on its side needs to be unmistakable.
  */
 export function drumEdges(
-  centre: Vector3, length: number, radius: number, sides = 8
+  centre: Vector3, length: number, radius: number, sides = 8,
+  axis: 'x' | 'z' = 'x'
 ): Edge[] {
   const out: Edge[] = [];
-  const ends = [centre.x - length / 2, centre.x + length / 2];
-  const rings: Vector3[][] = ends.map((x) =>
+  const along = axis === 'x' ? centre.x : centre.z;
+  const ends = [along - length / 2, along + length / 2];
+  const rings: Vector3[][] = ends.map((t) =>
     Array.from({ length: sides }, (_, i) => {
       const a = (i / sides) * Math.PI * 2;
-      return v(x, centre.y + radius * Math.sin(a), centre.z + radius * Math.cos(a));
+      const y = centre.y + radius * Math.sin(a);
+      const off = radius * Math.cos(a);
+      return axis === 'x' ? v(t, y, centre.z + off) : v(centre.x + off, y, t);
     })
   );
   for (const r of rings) {
@@ -250,7 +255,12 @@ export function boxQuads(
   const y0 = centre.y;
   const y1 = centre.y + h;
   return [
-    [v(x0, y1, z0), v(x1, y1, z0), v(x1, y1, z1), v(x0, y1, z1)], // top
+    // WINDING MATTERS: `quadNormal` takes q1−q0 crossed with q3−q0, so a face
+    // listed the other way round reports an inward normal and gets culled as
+    // if the camera were behind it. A box whose top is culled is a box with
+    // its lid off, and that is exactly how the first pad-mounted transformer
+    // came out. `test/volumes.test.ts` checks every face of every primitive.
+    [v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0), v(x0, y1, z0)], // top
     [v(x0, y0, z1), v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1)], // +z
     [v(x1, y0, z0), v(x0, y0, z0), v(x0, y1, z0), v(x1, y1, z0)], // -z
     [v(x1, y0, z1), v(x1, y0, z0), v(x1, y1, z0), v(x1, y1, z1)], // +x
@@ -269,15 +279,15 @@ export function prismQuads(
   const out: Quad[] = [];
   for (let i = 0; i < sides; i++) {
     out.push([
-      at(i, base.y, radius), at(i + 1, base.y, radius),
-      at(i + 1, base.y + h, topRadius), at(i, base.y + h, topRadius),
+      at(i + 1, base.y, radius), at(i, base.y, radius),
+      at(i, base.y + h, topRadius), at(i + 1, base.y + h, topRadius),
     ]);
   }
   // The cap, as a fan of quads so the same wash works on it.
   for (let i = 0; i < sides; i += 2) {
     out.push([
-      at(i, base.y + h, topRadius), at(i + 1, base.y + h, topRadius),
-      at(i + 2, base.y + h, topRadius), base.clone().setY(base.y + h),
+      base.clone().setY(base.y + h), at(i + 2, base.y + h, topRadius),
+      at(i + 1, base.y + h, topRadius), at(i, base.y + h, topRadius),
     ]);
   }
   return out;
@@ -294,17 +304,25 @@ export function gableQuads(
   const yR = yTop + ridgeH;
   const rA = v(centre.x - hx, yR, centre.z);
   const rB = v(centre.x + hx, yR, centre.z);
-  for (const dz of [-hz, hz]) {
-    out.push([
-      v(centre.x - hx, yTop, centre.z + dz), v(centre.x + hx, yTop, centre.z + dz),
-      rB, rA,
-    ]);
-  }
-  for (const [x, apex] of [[centre.x - hx, rA], [centre.x + hx, rB]] as [number, Vector3][]) {
-    out.push([
-      v(x, yTop, centre.z - hz), v(x, yTop, centre.z + hz), apex, apex,
-    ]);
-  }
+  // The near roof plane and the far one are mirror images, so they have to be
+  // wound in opposite directions to both face outward. Same for the two gable
+  // ends. See the note in `boxQuads`.
+  out.push([
+    v(centre.x - hx, yTop, centre.z + hz), v(centre.x + hx, yTop, centre.z + hz),
+    rB, rA,
+  ]);
+  out.push([
+    v(centre.x + hx, yTop, centre.z - hz), v(centre.x - hx, yTop, centre.z - hz),
+    rA, rB,
+  ]);
+  out.push([
+    v(centre.x - hx, yTop, centre.z - hz), v(centre.x - hx, yTop, centre.z + hz),
+    rA, rA,
+  ]);
+  out.push([
+    v(centre.x + hx, yTop, centre.z + hz), v(centre.x + hx, yTop, centre.z - hz),
+    rB, rB,
+  ]);
   return out;
 }
 

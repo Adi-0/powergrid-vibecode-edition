@@ -596,13 +596,29 @@ some of the map's names looked like they were pointing outside California.
 | A crowded corner drops names entirely | Every caption tried twice, the second time without its number |
 | Nothing said which places open up | Eden Vale and Metcalf say so when pointed at |
 
+### What the fourth pass changed
+
+The judgement was about the drawings themselves: *diagrams like these are
+functionally great, but visually confusing — the flat icons overlaid and
+loosely wired don't really feel immersive, can we create actual structures?*
+
+| Symptom | What it became |
+|---|---|
+| A power station drawn as flat symbols on a site plan | Every item is a volume at its real size: gable turbine halls, banded boilers with their steam drums, tapered stacks, a louvred cooling tower with a fan deck, generators as drums on plinths |
+| A service drawn as five icons floating in a ghost outline | A house with a slab, four walls, a door and windows, cut away by taking the roof off; a green box on a concrete plinth; a meter on the outside wall, a panel on the inside one, a rod in the ground |
+| Buildings made of glass | Camera-facing faces filled with the colour of the paper. Three separate bugs: a fill that spilled off its own face, faces wound so they were culled, and a fill sorted per object instead of per stroke |
+| Every flat roof in the atlas quietly open to the sky | One inverted cross product in `boxQuads`. `test/volumes.test.ts` now checks every face of every primitive points outward |
+| A wire either wholly in front of a wall or wholly behind it | Runs are drawn in pieces, each sorting on its own depth, so the service-entrance conductors go into the wall and come out inside |
+| A symbol bigger than the object it names | A symbol is called out on a leader only while the built thing is under about thirty pixels. Zoom in and notation gives way to the thing |
+| A transformer serving twelve houses with one wire leaving it | A neighbour in outline and two more laterals running off the page |
+
 ---
 
 ## Running it
 
 ```
 npm install
-npm test          # 663 tests
+npm test          # 667 tests
 npm run typecheck
 npm run dev
 ```

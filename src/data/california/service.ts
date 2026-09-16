@@ -138,6 +138,16 @@ export interface ServiceNode {
  * meter on the outside wall, a short run through the wall to the panel, and one
  * branch circuit followed all the way to a socket in the kitchen. The distances
  * are ordinary suburban ones.
+ *
+ * THE COORDINATES ARE ARCHITECTURAL, not schematic. Each position is a real
+ * place on a real house: the meter on the outside face of the south wall, the
+ * panel on the inside face of the west wall two metres round the corner from
+ * it, the electrode in the ground outside the foundation, the receptacle on
+ * the kitchen wall at the far end. `src/render/service-volumes.ts` builds that
+ * house at these dimensions, so moving a node here moves a thing on a wall
+ * there. Every straight-line distance below is shorter than the route length
+ * declared for the run that covers it, which is the direction that has to
+ * hold: wire takes the long way round.
  */
 export const SERVICE_NODES: ServiceNode[] = [
   {
@@ -161,7 +171,7 @@ export const SERVICE_NODES: ServiceNode[] = [
   },
   {
     id: 'METER', kind: 'meter', name: 'Revenue meter',
-    at: [12.0, 4.4, 1.55], volts: 240,
+    at: [12.0, 2.72, 1.55], volts: 240,
     rating: 'Form 2S, 200 A socket, class 200',
     note:
       'The boundary of ownership: everything on the supply side belongs to the ' +
@@ -170,7 +180,7 @@ export const SERVICE_NODES: ServiceNode[] = [
   },
   {
     id: 'PANEL', kind: 'panel', name: 'Main panel',
-    at: [13.4, 6.4, 1.35], volts: 240,
+    at: [10.76, 5.8, 1.35], volts: 240,
     rating: '200 A main breaker, 240/120 V, 40 spaces',
     note:
       'Two vertical bus bars, one fed by each hot leg, with the neutral bar ' +
@@ -180,7 +190,7 @@ export const SERVICE_NODES: ServiceNode[] = [
   },
   {
     id: 'GROUND_ROD', kind: 'ground-rod', name: 'Grounding electrode',
-    at: [13.4, 5.2, -1.4], volts: 0,
+    at: [11.2, 2.4, -1.4], volts: 0,
     rating: '2.4 m copper-clad rod, 6 AWG copper electrode conductor',
     note:
       'A rod driven into the earth and bonded to the neutral bar. It does not ' +
@@ -191,7 +201,7 @@ export const SERVICE_NODES: ServiceNode[] = [
   },
   {
     id: 'BRK_KITCHEN', kind: 'breaker', name: 'Kitchen small-appliance breaker',
-    at: [14.2, 7.6, 1.35], volts: 120,
+    at: [10.76, 5.89, 1.66], volts: 120,
     rating: '20 A, 1 pole, 10 kA interrupting',
     note:
       'The protection for one circuit. It opens on a sustained overload after ' +
@@ -201,7 +211,7 @@ export const SERVICE_NODES: ServiceNode[] = [
   },
   {
     id: 'OUTLET', kind: 'outlet', name: 'Kitchen receptacle',
-    at: [18.6, 11.8, 0.35], volts: 120,
+    at: [18.6, 14.3, 0.35], volts: 120,
     rating: 'NEMA 5-15R duplex, 125 V, 15 A',
     note:
       'The end of the line. Between this socket and a turbine four hundred ' +
@@ -237,12 +247,12 @@ export const SERVICE_RUNS: ServiceRun[] = [
     note: 'The lateral turns up the wall in a conduit and lands in the meter socket.',
   },
   {
-    from: 'METER', to: 'PANEL', conductor: 'al4_0', lengthM: 3.2,
+    from: 'METER', to: 'PANEL', conductor: 'al4_0', lengthM: 3.8,
     volts: 240, conductorsInLoop: 2, name: 'Service-entrance conductors',
-    note: 'Through the wall to the panel. Unfused on this side of the main breaker, which is why the run is kept short.',
+    note: 'Through the wall and round the corner to the panel. Unfused on this side of the main breaker, which is why the run is kept short.',
   },
   {
-    from: 'PANEL', to: 'GROUND_ROD', conductor: 'cu10', lengthM: 3.0,
+    from: 'PANEL', to: 'GROUND_ROD', conductor: 'cu10', lengthM: 4.8,
     volts: 0, conductorsInLoop: 1, name: 'Grounding electrode conductor',
     note: 'Carries no current in normal operation.',
   },
