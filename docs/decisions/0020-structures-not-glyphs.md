@@ -43,7 +43,9 @@ drums, pipes, louvres, insulator stacks — and their solid faces.
 `plant-volumes.ts` and `service-volumes.ts` build the two sites out of them at
 ordinary dimensions for a 600 MW combined-cycle station and an ordinary
 suburban house. The substation yard was already built this way; it now shares
-the primitives rather than owning them.
+the primitives rather than owning them, and it is filled like the others — a
+yard of transparent tanks was the last place in the atlas where a solid object
+read as glass.
 
 ## A wireframe box is transparent by construction
 
@@ -131,10 +133,21 @@ to the thing.
 
 - **The plant's empty corner**, carried forward from 0018, is still empty
   tarmac — now with buildings around it rather than glyphs.
-- **A label's backing plate punches a paper-coloured hole** in the shaded
-  floor of the house when it lands there. The backing is what makes type
-  readable over the drawing and the shading is what makes the house read as
-  enclosed; at the scale the level arrives at it is a minor blemish, and at
-  three times device scale it is not.
+- **A caption that lands on the shaded floor punches a paper-coloured hole
+  in it.** The halo round every glyph is what makes type readable over line
+  work, and the shading is what makes the house read as enclosed; where a
+  caption sits on the floor the two disagree. It also means a caption laid
+  along a wire erases the bit of wire under it — which is what happened to
+  the kitchen circuit, because the receptacle's name was placed on it. The
+  layout scores a candidate by the ink under it and a 12-pixel cell barely
+  notices a two-pixel wire.
+- **The neighbourhood is still flat.** The ground scene draws a house as a
+  filled footprint and, closer in, as an outline — which is the right answer
+  at four pixels and at nine. There is a third step it does not take: past
+  about thirty pixels a house should become a low gabled mass, so that zooming
+  from the feeder towards one service passes through a street of buildings
+  rather than a street of rectangles and then, suddenly, a house. It needs
+  volumes oriented to the street grid rather than to the world axes, and
+  painter ordering within the layer, neither of which that scene has yet.
 - **The region scale** and the **20–30 m/px gap** are carried forward from
   0018 and 0019 unchanged.

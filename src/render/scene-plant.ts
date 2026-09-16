@@ -37,6 +37,7 @@ import {
 } from './style.js';
 import { plantVolumeFor, plantSolidsFor } from './plant-volumes.js';
 import { volumeSegments, washSegments } from './yard-volumes.js';
+import { Quad, boxEdges, boxQuads, prismEdges, prismQuads } from './volumes.js';
 import { toWorld } from './world.js';
 import {
   SYM_GENERATOR, SYM_TRANSFORMER, placeSymbol, SymbolPath,
@@ -221,6 +222,9 @@ export function drawPlant(
   const selected = options.selectedId ?? null;
   const hovered = options.hoveredId ?? null;
 
+  const midOf = (seg: LineSegment): Vector3 => new Vector3(
+    (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
+    (seg.a[2] + seg.b[2]) / 2);
   const fade = (s: LineSegment): LineSegment =>
     alpha >= 1 ? s : { ...s, opacity: (s.opacity ?? 1) * alpha };
   const mark = (seg: LineSegment, depth: number, haloPx?: number) =>
@@ -276,31 +280,36 @@ export function drawPlant(
         widthPx, color: INK.inkFaint, opacity,
       }, Number.MAX_SAFE_INTEGER - 19);
     };
+    // Scenery is a BUILDING, not a footprint with one corner post.
+    //
+    // That was enough when the plant was symbols on a plan. Beside a turbine
+    // hall with a roof on it, a rectangle ruled on the tarmac labelled
+    // "Control building" reads as a car park.
+    const solid = (edges: ReturnType<typeof boxEdges>, quads: Quad[]): void => {
+      for (const seg of washSegments(quads, camera)) {
+        marks.push({ seg: fade(seg), depth: depthOf(midOf(seg)) + 0.35 });
+      }
+      for (const seg of volumeSegments(edges, 1.0, INK.inkFaint, 1)) {
+        marks.push({
+          seg: fade(seg), depth: depthOf(midOf(seg)), haloPx: HALO_PAD_PX,
+        });
+      }
+    };
     const box = (
       x: number, y: number, w: number, d: number, h: number
     ): void => {
-      const cs: [number, number][] = [
-        [x - w / 2, y - d / 2], [x + w / 2, y - d / 2],
-        [x + w / 2, y + d / 2], [x - w / 2, y + d / 2], [x - w / 2, y - d / 2],
-      ];
-      for (let k = 0; k + 1 < cs.length; k++) {
-        scenery(cs[k][0], cs[k][1], cs[k + 1][0], cs[k + 1][1], 1.0);
-      }
-      if (h > 0) {
-        const a = site(x - w / 2, y + d / 2);
-        mark({
-          a: [a.x, 0, a.z], b: [a.x, h, a.z],
-          widthPx: 0.8, color: INK.inkFaint,
-        }, Number.MAX_SAFE_INTEGER - 19);
-      }
+      const c = site(x, y);
+      solid(boxEdges(c, w, h, d), boxQuads(c, w, h, d));
     };
 
     // The control building, in the corner the switchyard leaves empty.
     box(206, 20, 34, 18, 8);
-    // Water treatment: the cooling tower and the steam cycle both drink.
-    box(206, 140, 26, 22, 4);
-    for (let k = 1; k < 4; k++) {
-      scenery(193 + k * 6.5, 129, 193 + k * 6.5, 151, 0.7, 0.55);
+    // Water treatment: the cooling tower and the steam cycle both drink, and
+    // what a water plant looks like from outside is two tanks and a shed.
+    box(208, 140, 22, 16, 5);
+    for (const [tx, ty] of [[190, 132], [190, 148]] as [number, number][]) {
+      const c = site(tx, ty);
+      solid(prismEdges(c, 3.4, 9, 8), prismQuads(c, 3.4, 9, 8));
     }
     // The road in, past the control building and up the length of the site.
     scenery(260, 12, 30, 12, 0.8, 0.45);

@@ -333,6 +333,24 @@ export function quadNormal(q: Quad): Vector3 {
   return u.cross(w).normalize();
 }
 
+/** The centre of a face. */
+export function quadCentre(q: Quad): Vector3 {
+  return q[0].clone().add(q[1]).add(q[2]).add(q[3]).multiplyScalar(0.25);
+}
+
+/**
+ * The same quad, wound so that its normal points away from `inside`.
+ *
+ * For a solid built by hand out of placed corners — the substation's control
+ * house is placed through the yard's own coordinate frame — getting the
+ * winding right by inspection is a good way to end up with a building that is
+ * open on one side. This asks the geometry instead.
+ */
+export function facingAwayFrom(q: Quad, inside: Vector3): Quad {
+  return quadNormal(q).dot(quadCentre(q).sub(inside)) >= 0
+    ? q : [q[3], q[2], q[1], q[0]];
+}
+
 /** The faces of a solid that the camera can see, given its view direction. */
 export function facingQuads(quads: Quad[], towardCamera: Vector3): Quad[] {
   return quads.filter((q) => quadNormal(q).dot(towardCamera) > 0.001);

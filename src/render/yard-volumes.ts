@@ -25,7 +25,8 @@ import { Vector2, Vector3 } from 'three';
 import { LineSegment } from './line-batch.js';
 import { INK } from './style.js';
 import {
-  Edge, Quad, v, boxEdges, post, insulatorEdges as insulator, facingQuads,
+  Edge, Quad, v, boxEdges, boxQuads, post, insulatorEdges as insulator,
+  facingQuads,
 } from './volumes.js';
 import { IsoCamera } from './iso.js';
 
@@ -156,6 +157,44 @@ export function volumeFor(kind: string, p: Vector3, kV: number): Edge[] {
       return out;
     }
 
+    default:
+      return [];
+  }
+}
+
+/**
+ * The MASSES of a piece of yard equipment — what has to be opaque.
+ *
+ * Only the primary bodies. A porcelain stack, a set of radiator fins, a
+ * portal of steel angle and a disconnect blade are all things you can see
+ * through in life, and at the size they are drawn, filling them would cost
+ * strokes to say something false.
+ */
+export function solidsFor(kind: string, p: Vector3, kV: number): Quad[] {
+  const big = kV > 50;
+  switch (kind) {
+    case 'transformer':
+      return [
+        ...boxQuads(v(p.x, 0.4, p.z), 5.4, 3.2, 3.0),
+        ...boxQuads(v(p.x, 0.9, p.z + 2.1), 4.4, 2.2, 0.5),
+        ...boxQuads(v(p.x, 0, p.z), 6.0, 0.4, 3.6),
+      ];
+    case 'breaker': {
+      const tankY = big ? 1.8 : 1.1;
+      return boxQuads(v(p.x, tankY, p.z), big ? 4.2 : 2.4, 1.1, 1.2);
+    }
+    case 'capacitor':
+      return boxQuads(v(p.x, 0.5, p.z), 3.6, 2.4, 1.4);
+    case 'regulator':
+      return [
+        ...boxQuads(v(p.x, 0.3, p.z), 2.2, 1.8, 1.6),
+        ...boxQuads(v(p.x, 0, p.z), 2.6, 0.3, 2.0),
+      ];
+    case 'ct':
+    case 'pt': {
+      const y = Math.max(0.6, p.y - 0.8);
+      return boxQuads(v(p.x, y, p.z), 1.1, 0.8, 1.1);
+    }
     default:
       return [];
   }

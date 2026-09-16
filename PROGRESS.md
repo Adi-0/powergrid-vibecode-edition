@@ -611,6 +611,7 @@ loosely wired don't really feel immersive, can we create actual structures?*
 | A wire either wholly in front of a wall or wholly behind it | Runs are drawn in pieces, each sorting on its own depth, so the service-entrance conductors go into the wall and come out inside |
 | A symbol bigger than the object it names | A symbol is called out on a leader only while the built thing is under about thirty pixels. Zoom in and notation gives way to the thing |
 | A transformer serving twelve houses with one wire leaving it | A neighbour in outline and two more laterals running off the page |
+| A substation yard of glass crates | The same fill, applied to the tanks, racks and the control house. Only the primary masses: porcelain, radiator fins, steel portals and blades are things you can see through in life |
 
 ---
 

@@ -339,6 +339,10 @@ wrong, each of which looks like something else:
   stroke sorts on where it actually is, with the fill a hair behind its own
   edges.
 
+Only the primary masses are filled. A porcelain insulator stack, a bank of
+radiator fins, a steel portal and a disconnect blade are all things you can see
+through in life, and filling them would cost strokes to say something false.
+
 ### The cutaway removes one plane, not three
 
 To see inside a house you do not need three walls off. The camera is

@@ -55,7 +55,10 @@ import {
 } from './symbols.js';
 import { PickTarget } from './scene-system.js';
 import { flowMark } from './flow.js';
-import { volumeFor, volumeSegments } from './yard-volumes.js';
+import {
+  volumeFor, solidsFor, volumeSegments, washSegments,
+} from './yard-volumes.js';
+import { Quad, facingAwayFrom } from './volumes.js';
 
 /** The centre of the yard, in world metres. Both frames are built around it. */
 export const SUBSTATION_CENTRE: Vector3 = (() => {
@@ -466,6 +469,9 @@ export function drawSubstation(
 
   const fade = (seg: LineSegment): LineSegment =>
     alpha >= 1 ? seg : { ...seg, opacity: (seg.opacity ?? 1) * alpha };
+  const midOf = (seg: LineSegment): Vector3 => new Vector3(
+    (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
+    (seg.a[2] + seg.b[2]) / 2);
   const mark = (seg: LineSegment, depth: number, haloPx?: number) =>
     marks.push(haloPx !== undefined
       ? { seg: fade(seg), depth, haloPx }
@@ -527,6 +533,27 @@ export function drawSubstation(
     const house = { x: 60, y: 38, w: 9, d: 6.5, h: 3.4 };
     const hx0 = house.x - house.w / 2, hx1 = house.x + house.w / 2;
     const hy0 = house.y - house.d / 2, hy1 = house.y + house.d / 2;
+
+    // Filled, so it is a building rather than a crate of air. Its corners are
+    // placed through the yard's own frame, so the faces are oriented by asking
+    // the geometry which way is out rather than by counting corners.
+    const hp = (x: number, y: number, z: number): Vector3 =>
+      frame.place([-3, -3], [x, y, z]);
+    const inside = hp(house.x, house.y, house.h / 2);
+    const lo = [hp(hx0, hy0, 0), hp(hx1, hy0, 0), hp(hx1, hy1, 0), hp(hx0, hy1, 0)];
+    const hi = [hp(hx0, hy0, house.h), hp(hx1, hy0, house.h),
+      hp(hx1, hy1, house.h), hp(hx0, hy1, house.h)];
+    const faces: Quad[] = [[hi[0], hi[1], hi[2], hi[3]]];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      faces.push([lo[i], lo[j], hi[j], hi[i]]);
+    }
+    for (const seg of washSegments(
+      faces.map((q) => facingAwayFrom(q, inside)), camera, 0.95 * t
+    )) {
+      marks.push({ seg: fade(seg), depth: depthOf(midOf(seg)) + 0.08 });
+    }
+
     for (const hgt of [0, house.h]) {
       yardLine([hx0, hy0, hgt], [hx1, hy0, hgt], 1.0, 0.95);
       yardLine([hx1, hy0, hgt], [hx1, hy1, hgt], 1.0, 0.95);
@@ -704,15 +731,27 @@ export function drawSubstation(
       const volumeAlpha = smoothstep(0.35, 0.85, t);
 
       if (volumeAlpha > 0.01) {
+        // THE MASS FIRST, THEN THE EDGES. A wireframe tank is transparent by
+        // construction — the renderer has no depth buffer, and hidden-line
+        // removal happens because a stroke is drawn over a ground-coloured
+        // backing. An edge-only box has nothing in the middle of its faces to
+        // do that with, so a yard of them came out as a yard of glass crates.
+        for (const seg of washSegments(
+          solidsFor(e.kind, p, e.kV), camera, volumeAlpha
+        )) {
+          marks.push({ seg: fade(seg), depth: depthOf(midOf(seg)) + 0.08 });
+        }
         const edges = volumeFor(e.kind, p, e.kV);
         if (edges.length > 0) {
           for (const seg of volumeSegments(
             edges, 1.0 * (isSelected ? 1.6 : 1), color, volumeAlpha
           )) {
-            const mid = new Vector3(
-              (seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2,
-              (seg.a[2] + seg.b[2]) / 2);
-            marks.push({ seg: fade(seg), depth: depthOf(mid) - 5 });
+            // Sorted on where each stroke actually is. A constant offset per
+            // device put one transformer's fill in front of the next one's
+            // bushings.
+            marks.push({
+              seg: fade(seg), depth: depthOf(midOf(seg)), haloPx: HALO_PAD_PX,
+            });
           }
         }
       }
