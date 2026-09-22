@@ -32,3 +32,11 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Units are committed by a priority list and dispatched in merit order, then re-dispatched with a DC network model to respect branch ratings. **Full treatment:** A security-constrained unit commitment (mixed-integer optimisation) with AC network constraints and every contingency.
 - **Simplified:** Hydro and storage follow simple peak-shaving rules on a known day. **Full treatment:** Co-optimisation over days, with forecast uncertainty, water rights, reservoir constraints and market bids.
 - **Simplified:** Costs are fuel plus carbon plus a small variable cost; interties sell in fixed price blocks. **Full treatment:** Bids, start-up costs, no-load costs, and neighbours' actual markets.
+
+## distribution — Feeders and services
+
+- **Simplified:** One feeder (Evergreen 1105) is modelled phase by phase down to each meter; the other feeders on its substation bank are one balanced load. **Full treatment:** Every feeder, every customer, from a utility's GIS.
+- **Simplified:** Neutrals are treated as perfectly grounded (Kron reduction), so neutral-to-earth voltage is zero everywhere. **Full treatment:** Keep the neutral as a conductor with finite grounding resistance at each pole; stray voltage and neutral currents then show up.
+- **Simplified:** Home loads are smooth average profiles with a fixed split between the two 120 V legs and the 240 V air conditioner; appliances are constant power. **Full treatment:** Measured smart-meter data, appliance-level models, motor behaviour at low voltage.
+- **Simplified:** The feeder's unbalance reaches the transmission model only as its total three-phase power. **Full treatment:** A three-phase transmission model near the substation, which would show the negative-sequence current the unbalance causes.
+- **Simplified:** Distribution transformers split their impedance between primary and the two half windings by a fixed rule (0.5R + j0.8X, R + j0.4X). **Full treatment:** Measured impedances for each winding pair.

@@ -1,12 +1,12 @@
 # Progress
 
-Current phase: **2 — Distribution solver + coupling**
+Current phase: **3 — System view**
 
 | Phase | State | Done-condition |
 |---|---|---|
 | 0 Setup | done | Screenshot of a test scene shows visible line work |
 | 1 Transmission solver + network | done | IEEE 14/30 pass; synthetic net converges 24 h; balance holds |
-| 2 Distribution solver + coupling | — | IEEE 13 passes; energy closes across boundary |
+| 2 Distribution solver + coupling | done | IEEE 13 passes; energy closes across boundary |
 | 3 System view | — | 60 fps full network; legend complete; critique recorded |
 | 4 Scrubber, trips, region, transition | — | Live re-solve per interval; honest no-solution |
 | 5 Substation → feeder → service | — | Outlet traceable to transmission; meters + losses = head |
@@ -34,3 +34,12 @@ Current phase: **2 — Distribution solver + coupling**
   duck curve emerges (noon net load < 60 % of evening). N-1 at 18:00: 209/214 within
   emergency ratings; San Diego's import is the deliberate weak point (SWPL loss → no
   operating point). 44 tests pass.
+- **Phase 2 done.** Unbalanced three-phase backward/forward sweep (Kersting generalised
+  matrices): lines, Δ–Yg and Yg–Yg banks, regulators with line-drop compensation,
+  center-tapped service transformers, triplex, switches, wye/delta/120/240 V loads with
+  P/Z/I models. IEEE 13-node: published voltages to 2e-4 pu / 0.013°, LDC finds taps
+  10/8/11, OpenDSS agrees to 3e-4 pu. Evergreen 1105: 636 nodes, 380 homes, one wall
+  outlet (118.4 V at 19:00 with a 1.5 kW hair dryer). Coupling at Evergreen 60 kV
+  converges in 3–4 passes; energy closes across the boundary and at the feeder head to
+  < 0.01 W. 55 tests pass. Known: the sweep uses object-per-complex arithmetic (~150 ms
+  per feeder solve) — to be optimised before the feeder view goes live.

@@ -80,3 +80,17 @@ export function hourly(shape: readonly number[], hour: number): number {
   const f = h - i;
   return shape[i]! * (1 - f) + shape[(i + 1) % 24]! * f;
 }
+
+/**
+ * An average home on a hot day, kW, at the start of each hour (diversified: what one
+ * home contributes to the feeder, not one home's instantaneous peak). Air
+ * conditioning drives the evening peak. Estimate of shape class.
+ */
+export const RESIDENTIAL_KW: readonly number[] = [
+  1.6, 1.4, 1.3, 1.2, 1.2, 1.3, 1.6, 1.9, 1.8, 1.7, 1.8, 2.0, 2.3, 2.6, 3.0, 3.4, 3.9, 4.3, 4.6, 4.6, 4.3, 3.7, 2.9, 2.1,
+];
+
+/** A small grocery store: refrigeration all day, air conditioning while open. kW. */
+export const GROCERY_KW: readonly number[] = [
+  140, 135, 130, 130, 130, 140, 170, 200, 220, 235, 245, 255, 262, 268, 272, 275, 275, 270, 260, 245, 225, 195, 165, 150,
+];

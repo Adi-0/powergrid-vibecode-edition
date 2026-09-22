@@ -91,4 +91,26 @@ temperature with γ_T = −0.37 %/°C; DC/AC 1.3 (utility) and 1.15 (rooftop, wi
 orientation/shading diversity factor); inverter efficiency 98 %. Demand and wind are
 hourly shapes of the CAISO kind (estimates).
 
-(Distribution, protection, machines and dynamics sections follow in later phases.)
+## Distribution (`src/physics/dist/`, `src/data/dist/`)
+
+Kersting's backward/forward sweep with generalised element matrices (decision 0013).
+Validated on the IEEE 13-node feeder: every published node voltage to 2e-4 pu and
+0.013°, the regulator's line-drop compensation lands on the published taps
+(10, 8, 11), and OpenDSS (1/3-point lumping, `tools/ref/ieee13.py`) agrees to 3e-4 pu.
+
+**Evergreen substation and feeder 1105** (synthetic): 60 kV Δ / 12.47 kV Yg bank,
+30 MVA, Z = 0.4 + j8 % (estimate), on-load tap changer ±16 × 0.625 % holding 123 V on
+the 120 V base; three other feeders lumped at 12 kV (18 MW at peak). Feeder: 3.3 km
+trunk of 556.5 kcmil ACSR with 4/0 ACSR neutral (the IEEE 13 crossarm spacing),
+recloser, regulator bank (LDC 122 V, R = 2 V, X = 4 V), 300 kvar capacitor bank, a
+3-phase 300 kVA grocery service at 480Y/277 V, ten fused single-phase 1/0 ACSR
+laterals, 58 pole-top center-tapped transformers (25/50 kVA, Z = 1.2 + j1.8 %,
+estimate), 1/0 AA triplex secondaries and drops, 380 homes (35 % with 4–7 kW rooftop
+solar), and one home's 18 m, 12 AWG copper branch circuit to a wall outlet with a
+1,500 W hair dryer. Home demand: an average hot-day profile scaled per household,
+split between 120 V legs and a 240 V air conditioner.
+
+**Coupling** (decision 0014): iterated at the Evergreen 60 kV bus until the
+substation's demand changes by < 1 VA (3–4 passes); energy closes to ~1e-5 W.
+
+(Protection, machines and dynamics sections follow in later phases.)
