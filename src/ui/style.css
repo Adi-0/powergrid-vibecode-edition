@@ -1,0 +1,477 @@
+/*
+ * Grid Atlas — sheet styles. The reference is a technical drawing: paper, ink,
+ * hairline rules, a border with zone marks, a title block, uppercase lettering for
+ * headings. No gradients, no glows, no shadows, no rounded corners. One typeface.
+ */
+:root {
+  --ground: #efece4;
+  --ink: #14161a;
+  --ink-60: #5f5f5d;
+  --ink-35: #9d9c97;
+  --ink-15: #d3d0c8;
+  --signal: #d93a1e;
+  --rule: 1px solid var(--ink);
+  --hair: 1px solid var(--ink-35);
+  --gutter: 16px;
+  font-family: 'Atlas Sans', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--ground);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Atlas Sans digits are tabular by construction; say so anyway. */
+  font-variant-numeric: tabular-nums;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ground);
+}
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+canvas.gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  outline: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--ground);
+  border: var(--rule);
+  border-radius: 0;
+  padding: 3px 9px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+button:hover {
+  background: var(--ink-15);
+}
+button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ground);
+}
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.caps {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- sheet frame */
+.sheet {
+  position: absolute;
+  inset: 8px;
+  border: var(--hair);
+  pointer-events: none;
+}
+.sheet .zone {
+  position: absolute;
+  font-size: 10px;
+  color: var(--ink-60);
+  letter-spacing: 0.05em;
+}
+.sheet .tick {
+  position: absolute;
+  background: var(--ink-35);
+}
+
+/* ---------------------------------------------------------------- labels */
+.labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  visibility: hidden;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  line-height: 1.15;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+  padding: 0 2px;
+  will-change: transform;
+}
+.label.site {
+  font-weight: 600;
+}
+.label.site.minor {
+  font-weight: 400;
+  color: var(--ink-60);
+}
+.label.region {
+  background: none;
+  color: var(--ink-60);
+  letter-spacing: 0.35em;
+  font-size: 11px;
+}
+.label.sea {
+  background: none;
+  color: var(--ink-60);
+  letter-spacing: 0.5em;
+  font-size: 11px;
+}
+.label.dim {
+  color: var(--ink-35);
+}
+.label.selected {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+.label .qty {
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
+/* ---------------------------------------------------------------- panels */
+.panel {
+  position: absolute;
+  background: var(--ground);
+  border: var(--rule);
+}
+.panel > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: var(--rule);
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
+}
+.panel > .body {
+  padding: 8px;
+}
+
+.titlebar {
+  top: 20px;
+  left: 20px;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+}
+.titlebar .mark {
+  border-right: var(--rule);
+  padding: 6px 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+.titlebar .crumbs {
+  padding: 6px 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+.titlebar .crumbs .sep {
+  color: var(--ink-35);
+}
+.titlebar .crumbs .here {
+  font-weight: 600;
+}
+
+.tools {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  gap: 6px;
+}
+
+/* KEY (legend): left column, above the title block */
+.legend {
+  left: 20px;
+  top: 64px;
+  width: 256px;
+  max-height: calc(100% - 64px - 196px);
+  overflow-y: auto;
+}
+.legend.collapsed .body {
+  display: none;
+}
+.legend.collapsed > header {
+  border-bottom: none;
+}
+.legend .row {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+.legend .row svg {
+  display: block;
+}
+.legend .group + .group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: var(--hair);
+}
+.legend .note {
+  color: var(--ink-60);
+  font-size: 11px;
+}
+.legend .signal {
+  color: var(--signal);
+}
+
+/* Inspector */
+.inspector {
+  right: 20px;
+  top: 64px;
+  width: 372px;
+  max-height: calc(100% - 230px);
+  display: flex;
+  flex-direction: column;
+}
+.inspector[hidden] {
+  display: none;
+}
+.inspector .body {
+  overflow-y: auto;
+}
+.inspector h2 {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.inspector .kind {
+  color: var(--ink-60);
+  font-size: 11.5px;
+}
+.inspector p {
+  margin: 6px 0;
+}
+.inspector h3 {
+  /* sentence case: headings carry units, symbols and terms ("kV", "π model") that
+     uppercase lettering would corrupt (KV, Π) */
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: var(--hair);
+  padding-bottom: 2px;
+}
+.inspector table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.inspector td {
+  padding: 2px 0;
+  vertical-align: baseline;
+}
+.inspector td:last-child {
+  text-align: right;
+}
+.inspector .scale {
+  color: var(--ink-60);
+  font-size: 11px;
+}
+.inspector .close {
+  border: none;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+/* Title block: bottom of the left column, over the ocean */
+.titleblock {
+  left: 20px;
+  bottom: 20px;
+  width: 360px;
+  font-size: 11.5px;
+}
+.titleblock table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.titleblock td {
+  border-top: var(--hair);
+  padding: 3px 8px;
+  vertical-align: top;
+}
+.titleblock tr:first-child td {
+  border-top: none;
+}
+.titleblock td.k {
+  width: 88px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--ink-60);
+}
+.titleblock .status.bad {
+  color: var(--signal);
+}
+
+/* quantities */
+.qty {
+  white-space: nowrap;
+}
+.qty .sym {
+  font-style: italic;
+}
+.qty .unit {
+  color: var(--ink-60);
+}
+/* descriptive subscripts (f for "from", loss) are upright; symbols italic */
+.qty .sym sub,
+.math sub,
+.math sup {
+  font-style: normal;
+  font-size: 0.75em;
+  line-height: 0;
+}
+.math i {
+  font-style: italic;
+  padding-right: 0.04em;
+}
+.math {
+  white-space: nowrap;
+}
+.qty .conv {
+  margin-left: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-60);
+  vertical-align: 1px;
+}
+.qty .base {
+  color: var(--ink-60);
+  font-size: 11px;
+}
+
+/* glossary terms */
+.term {
+  border-bottom: 1px dotted var(--ink-60);
+  cursor: help;
+}
+.term.first {
+  border-bottom-style: solid;
+}
+.tip {
+  position: absolute;
+  z-index: 50;
+  max-width: 320px;
+  padding: 6px 8px;
+  background: var(--ground);
+  border: var(--rule);
+  font-size: 12px;
+  pointer-events: none;
+}
+.tip .t {
+  font-weight: 600;
+}
+.tip .n {
+  font-style: italic;
+  color: var(--ink-60);
+}
+
+/* status line while the day solves */
+.progress {
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.progress[hidden] {
+  display: none;
+}
+
+/* narrow screens: panels become sheets along the bottom */
+@media (max-width: 760px) {
+  .legend {
+    left: var(--gutter);
+    right: var(--gutter);
+    top: calc(var(--gutter) + 44px);
+    width: auto;
+    max-height: calc(100% - var(--gutter) * 3 - 44px - var(--tb-h, 160px));
+  }
+  .titleblock tr.aux {
+    display: none;
+  }
+  .progress {
+    top: auto;
+    bottom: calc(var(--gutter) * 2 + var(--tb-h, 160px));
+  }
+  .titleblock {
+    left: var(--gutter);
+    right: var(--gutter);
+    width: auto;
+    bottom: var(--gutter);
+  }
+  .inspector {
+    left: var(--gutter);
+    right: var(--gutter);
+    width: auto;
+    top: auto;
+    bottom: var(--gutter);
+    max-height: 55%;
+    z-index: 5;
+  }
+  .titlebar {
+    left: var(--gutter);
+    top: var(--gutter);
+  }
+  .tools {
+    right: var(--gutter);
+    top: calc(var(--gutter) + 38px);
+  }
+  .sheet .zone {
+    display: none;
+  }
+}
+
+/* drawing furniture: north arrow and scale bar */
+.furniture {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 10.5px;
+  color: var(--ink-60);
+}
+.furniture .cap {
+  margin-top: -8px;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .furniture {
+    display: none;
+  }
+}

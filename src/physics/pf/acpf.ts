@@ -82,6 +82,8 @@ export interface IslandResult {
   /** Total imbalance picked up by participating units, per unit. */
   lambda: number;
   iterations: PFIteration[];
+  /** Newton iterations taken in total (across limit-handling passes). */
+  newtonIterations: number;
   /** Generators pinned at a P or Q limit during the solve. */
   pinnedP: number[];
   pinnedQ: number[];
@@ -156,7 +158,7 @@ function solveIsland(
   const gens = c.gens.map((g, i) => ({ g, i })).filter(({ g }) => g.inService && local.has(g.bus));
   const hasLoad = buses.some((b) => Math.abs(c.buses[b]!.pd) > 1e-9 || Math.abs(c.buses[b]!.qd) > 1e-9);
 
-  const result: IslandResult = { buses, status: 'converged', refBus: buses[0]!, lambda: 0, iterations: [], pinnedP: [], pinnedQ: [] };
+  const result: IslandResult = { buses, status: 'converged', refBus: buses[0]!, lambda: 0, iterations: [], newtonIterations: 0, pinnedP: [], pinnedQ: [] };
 
   if (gens.length === 0) {
     // No source: this island is dark. Voltages are zero; its load is unserved.
@@ -367,6 +369,7 @@ function solveIsland(
         break;
       }
       if (it === opts.maxIter) break;
+      result.newtonIterations++;
       // Jacobian, dense, rows = equations, cols = unknowns.
       const J = new Float64Array(nx * nx);
       for (let i = 0; i < n; i++) {

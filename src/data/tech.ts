@@ -246,7 +246,7 @@ export const TECH: Record<TechId, Technology> = {
   },
   battery: {
     id: 'battery',
-    label: 'Battery storage (4 h)',
+    label: 'Battery storage (4\u00a0h)',
     plain: 'Lithium-ion batteries charge when power is plentiful and discharge when it is scarce; inverter-connected.',
     synchronous: false,
     H_s: 0,

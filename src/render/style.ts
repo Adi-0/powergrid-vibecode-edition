@@ -66,18 +66,20 @@ export interface VoltageClass {
   /** Nominal line-to-line voltage range in kV that falls in this class. */
   kvMin: number;
   kvMax: number;
+  /** The class's representative nominal voltage, kV line-to-line (for the key). */
+  kvNominal: number;
   weight: number;
   dash: DashName;
   role: string;
 }
 
 export const VOLTAGE_CLASSES: readonly VoltageClass[] = [
-  { id: 'ehv500', label: '500 kV', kvMin: 345, kvMax: 800, weight: 4.6, dash: 'solid', role: 'Bulk transmission' },
-  { id: 'hv230', label: '230 kV', kvMin: 200, kvMax: 345, weight: 3.0, dash: 'solid', role: 'Transmission' },
-  { id: 'hv115', label: '115 kV', kvMin: 100, kvMax: 200, weight: 2.1, dash: 'long', role: 'Transmission' },
-  { id: 'sub69', label: '60–70 kV', kvMin: 44, kvMax: 100, weight: 1.6, dash: 'dashDot', role: 'Subtransmission' },
-  { id: 'mv12', label: '4–35 kV', kvMin: 2.4, kvMax: 44, weight: 1.25, dash: 'solid', role: 'Primary distribution' },
-  { id: 'lv240', label: '120/240 V', kvMin: 0, kvMax: 2.4, weight: 0.9, dash: 'short', role: 'Secondary / service' },
+  { id: 'ehv500', label: '500 kV', kvMin: 345, kvMax: 800, kvNominal: 500, weight: 3.4, dash: 'solid', role: 'Bulk transmission' },
+  { id: 'hv230', label: '230 kV', kvMin: 200, kvMax: 345, kvNominal: 230, weight: 2.1, dash: 'solid', role: 'Transmission' },
+  { id: 'hv115', label: '115 kV', kvMin: 100, kvMax: 200, kvNominal: 115, weight: 1.6, dash: 'long', role: 'Transmission' },
+  { id: 'sub69', label: '60–70 kV', kvMin: 44, kvMax: 100, kvNominal: 60, weight: 1.3, dash: 'dashDot', role: 'Subtransmission' },
+  { id: 'mv12', label: '4–35 kV', kvMin: 2.4, kvMax: 44, kvNominal: 12.47, weight: 1.1, dash: 'solid', role: 'Primary distribution' },
+  { id: 'lv240', label: '120/240 V', kvMin: 0, kvMax: 2.4, kvNominal: 0.24, weight: 0.8, dash: 'short', role: 'Secondary / service' },
 ];
 
 export function voltageClassFor(kvLL: number): VoltageClass {
@@ -95,3 +97,9 @@ export const PEN = {
   outline: 1.2, // equipment outlines in iso
   coast: 0.8,
 } as const;
+
+/** Flows the key draws chevron samples for, MW. */
+export const FLOW_LEGEND_MW = [500, 2000] as const;
+
+/** Scale-bar lengths the sheet may choose from, km. */
+export const SCALE_STEPS_KM = [5, 10, 20, 50, 100, 200, 500] as const;

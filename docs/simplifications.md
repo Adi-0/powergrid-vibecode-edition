@@ -14,6 +14,12 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Time is quasi-static: each moment is an independent steady-state solution (economic dispatch, then power flow). Nothing between intervals is simulated. **Full treatment:** Unit commitment with start-up costs and minimum run times, and time-domain simulation between operating points.
 - **Simplified:** One modelled day: a hot, clear late-summer weekday. **Full treatment:** Many days across seasons and weather, with forecast error and cloud.
 
+## system — The state sheet
+
+- **Simplified:** Each circuit is drawn as a straight line between its two substations. **Full treatment:** Real corridors follow terrain, rights of way and river crossings; line lengths in the model are the great-circle distance times a routing factor (1.15 unless a line gives its own length), not surveyed routes.
+- **Simplified:** Geography is projected equirectangularly about the middle of the state, accurate to a few percent. **Full treatment:** A conformal projection (e.g. California Albers or UTM zones) for surveyed distances.
+- **Simplified:** The state is drawn as a slab 30 km thick so its coast reads as a cut section; the thickness means nothing. Neighbouring states are drawn only in a band around California. **Full treatment:** Not applicable — this is drawing convention, stated so it is not mistaken for data.
+
 ## transmission — The transmission network
 
 - **Simplified:** Balanced, positive-sequence model: the three phases are assumed identical, so one phase stands for all three. **Full treatment:** A three-phase model where unbalance matters (it rarely does at transmission voltages, which is why the field uses positive sequence).

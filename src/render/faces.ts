@@ -119,13 +119,6 @@ export class FaceBatch {
     }
   }
 
-  /** Triangles from an indexed mesh (e.g. an earcut polygon). */
-  triangles(verts: readonly Vec3[], indices: readonly number[], s: FaceStyle = {}): void {
-    for (let i = 0; i + 2 < indices.length; i += 3) {
-      this.tri(verts[indices[i]!]!, verts[indices[i + 1]!]!, verts[indices[i + 2]!]!, s);
-    }
-  }
-
   clear(): void {
     this.pos = [];
     this.col = [];
