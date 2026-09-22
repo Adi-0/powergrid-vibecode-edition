@@ -271,6 +271,12 @@ button:focus-visible,
   color: var(--ink-60);
   font-size: 11.5px;
 }
+.inspector .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
 .inspector p {
   margin: 6px 0;
 }
@@ -419,14 +425,14 @@ button:focus-visible,
     right: var(--gutter);
     top: calc(var(--gutter) + 44px);
     width: auto;
-    max-height: calc(100% - var(--gutter) * 3 - 44px - var(--tb-h, 160px));
+    max-height: calc(100% - var(--gutter) * 3 - 44px - var(--tb-h, 160px) - 120px);
   }
   .titleblock tr.aux {
     display: none;
   }
   .progress {
     top: auto;
-    bottom: calc(var(--gutter) * 2 + var(--tb-h, 160px));
+    bottom: calc(var(--gutter) * 2 + var(--tb-h, 160px) + 120px);
   }
   .titleblock {
     left: var(--gutter);
@@ -456,12 +462,134 @@ button:focus-visible,
   }
 }
 
+/* the day strip: bottom, right of the title block */
+.scrubber {
+  left: 400px;
+  right: 20px;
+  bottom: 20px;
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+.scrubber > header .right {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 12px;
+}
+.scrubber > header .play {
+  font-size: 10px;
+  padding: 1px 7px;
+}
+.scrubber > .body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 4px;
+  min-height: 0;
+}
+.scrubber .plot {
+  position: relative;
+  flex: 1;
+  min-height: 30px;
+  cursor: ew-resize;
+  touch-action: none;
+  outline-offset: 2px;
+}
+.scrubber .plot svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.scrubber .plot .scale {
+  position: absolute;
+  left: 2px;
+  top: -2px;
+  font-size: 10px;
+  color: var(--ink-60);
+  background: var(--ground);
+  padding: 0 2px;
+}
+.scrubber .plot .scale.base {
+  top: auto;
+  bottom: 3px;
+}
+.scrubber .axis {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: var(--ink-60);
+}
+.scrubber .axis .tick {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-50%);
+}
+.scrubber .axis .tick:first-child {
+  transform: none;
+}
+.scrubber .axis .tick:last-child {
+  transform: translateX(-100%);
+}
+.scrubber .key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-size: 10.5px;
+  color: var(--ink-60);
+}
+.scrubber .key .k {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* a notice about the state of the solution: no operating point, part of the grid dark */
+.notice {
+  left: 50%;
+  top: 56px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 40px));
+  z-index: 6;
+}
+.notice[hidden] {
+  display: none;
+}
+.notice.bad {
+  border-color: var(--signal);
+}
+.notice.bad > header {
+  color: var(--signal);
+  border-bottom-color: var(--signal);
+}
+.notice .body p {
+  margin: 0 0 6px;
+}
+.notice .list {
+  margin: 0 0 6px;
+  padding-left: 16px;
+}
+.notice .list li {
+  margin: 2px 0;
+}
+.notice .list button {
+  font-size: 10px;
+  padding: 0 6px;
+  margin-left: 4px;
+}
+.notice .actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* drawing furniture: north arrow and scale bar */
 .furniture {
   position: absolute;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
+  left: 404px;
+  bottom: 182px;
   pointer-events: none;
   font-size: 10.5px;
   color: var(--ink-60);
@@ -473,5 +601,18 @@ button:focus-visible,
 @media (max-width: 760px) {
   .furniture {
     display: none;
+  }
+  .scrubber {
+    left: var(--gutter);
+    right: var(--gutter);
+    bottom: calc(var(--gutter) + var(--tb-h, 160px) + 8px);
+    height: 112px;
+  }
+  .scrubber .key {
+    display: none;
+  }
+  .notice {
+    top: calc(var(--gutter) + 44px);
+    z-index: 7;
   }
 }

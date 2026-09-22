@@ -47,6 +47,24 @@ export function siteView(grid: Grid, s: Snapshot, siteId: string): { name: strin
   const t = s.t;
   const buses = grid.buses.filter((b) => b.site.id === siteId && !b.terminalOf);
   const sections: Section[] = [];
+  // no operating point, or cut off: there are no voltages or flows to report
+  const noSolution = s.outcome === 'none';
+  const dark = !noSolution && buses.every((b) => !s.energized[b.index]);
+  if (noSolution || dark) {
+    const pdDark = buses.reduce((a, b) => a + s.pd[b.index]!, 0);
+    sections.push({
+      title: span(noSolution ? 'No operating point' : 'No supply'),
+      text: noSolution
+        ? span('The power flow found no steady state for this interval, so there are no voltages or flows here to report. The notice over the sheet says why.')
+        : span(
+            'Cut off from every generator: no voltage, no current. The demand this substation serves, ',
+            el(qty(pdDark, 'MW', solver(`t${t}.site.${siteId}.pd`), { phases: '3φ' })),
+            ', is unserved (a blackout here, not a low voltage).',
+          ),
+      rows: [],
+    });
+    return { name: site.name, kind: siteKind(grid, siteId), ...(siteIntro(grid, siteId) ? { intro: siteIntro(grid, siteId)! } : {}), sections };
+  }
   // voltages
   sections.push({
     title: span('[[bus|Bus]] voltages'),
@@ -142,13 +160,22 @@ export function siteView(grid: Grid, s: Snapshot, siteId: string): { name: strin
       },
     ],
   });
+  const intro = siteIntro(grid, siteId);
+  return { name: site.name, kind: siteKind(grid, siteId), ...(intro ? { intro } : {}), sections };
+}
+
+function siteKind(grid: Grid, siteId: string): Node {
+  const site = grid.sites.find((x) => x.id === siteId)!;
   const region = REGIONS[site.region];
-  const kind = span(
+  return span(
     site.outOfState ? '[[intertie|Intertie]] point · ' : '[[substation|Substation]] · ',
     dataText(site.outOfState ?? region.name, data(`network.site.${siteId}.region`)),
   );
-  const intro = site.plain ? span(dataText(site.plain, data(`network.site.${siteId}.plain`))) : undefined;
-  return { name: site.name, kind, ...(intro ? { intro } : {}), sections };
+}
+
+function siteIntro(grid: Grid, siteId: string): Node | undefined {
+  const site = grid.sites.find((x) => x.id === siteId)!;
+  return site.plain ? span(dataText(site.plain, data(`network.site.${siteId}.plain`))) : undefined;
 }
 
 export function branchView(grid: Grid, s: Snapshot, k: number): { name: string; kind: Node; intro?: Node; sections: Section[] } {
@@ -171,10 +198,24 @@ export function branchView(grid: Grid, s: Snapshot, k: number): { name: string; 
   );
   const pfq = solver(`t${t}.branch.${id}.pf`);
   const ptq = solver(`t${t}.branch.${id}.pt`);
+  const noSolution = s.outcome === 'none';
+  const dark = !s.energized[br.from.index] && !s.energized[br.to.index];
   if (!s.inService[k]) {
-    sections.push({ title: span('Out of service'), text: span('This circuit is open: it carries nothing, and its flow has moved onto the rest of the network.'), rows: [] });
+    sections.push({
+      title: span('Out of service'),
+      text: span(
+        noSolution
+          ? 'This circuit is open. With it out, the power flow found no steady state (see the notice over the sheet).'
+          : 'This circuit is open: it carries nothing, and its flow has moved onto the rest of the network.',
+      ),
+      rows: [],
+    });
+  } else if (noSolution) {
+    sections.push({ title: span('No operating point'), text: span('The power flow found no steady state for this interval, so there is no flow here to report.'), rows: [] });
+  } else if (dark) {
+    sections.push({ title: span('No supply'), text: span('Both ends are cut off from every generator: the circuit is energised by nothing and carries nothing.'), rows: [] });
   }
-  sections.push({
+  if (s.inService[k] && !noSolution && !dark) sections.push({
     title: span('Flow'),
     text: span(
       'Reference direction: from ',
@@ -218,7 +259,7 @@ export function branchView(grid: Grid, s: Snapshot, k: number): { name: string; 
   // end voltages
   const vf = s.vm[br.from.index]!;
   const vt = s.vm[br.to.index]!;
-  sections.push({
+  if (!noSolution && !dark) sections.push({
     title: span('Voltages at the ends ([[phasor|phasors]], [[rms|RMS]])'),
     rows: [
       {

@@ -8,7 +8,7 @@ import { converterSymbol, crossSymbol, generatorSymbol, substationSymbol, warnin
 import type { Grid, GridBranch } from '../model/grid';
 import { SegmentIndex, type Outlines, type Ring } from '../model/outline';
 import type { Snapshot } from '../model/snapshot';
-import type { IsoCamera } from '../render/iso';
+import { projectToView, type IsoCamera } from '../render/iso';
 import { project } from '../model/geo';
 
 /**
@@ -74,6 +74,7 @@ export class SystemLevel {
   /** Voltage classes present in the drawing. */
   readonly classes: VoltageClass[] = [];
   snapshot: Snapshot | null = null;
+  private selection: Selection | null = null;
 
   constructor(
     readonly grid: Grid,
@@ -86,6 +87,7 @@ export class SystemLevel {
     this.faces.commit();
     this.glyphs.commit();
     this.marks.commit();
+    this.highlight(this.selection);
     this.flow.commit();
     this.glyphs.mesh.renderOrder = 30;
     this.marks.mesh.renderOrder = 31;
@@ -325,28 +327,26 @@ export class SystemLevel {
   applySnapshot(s: Snapshot): void {
     this.snapshot = s;
     this.marks.clear();
+    // No operating point: there are no flows or voltages to draw. The network is
+    // shown in ink 35 %, still, so nothing reads as a solved state.
+    const none = s.outcome === 'none';
     for (const c of this.circuits) {
       const k = c.branch;
       const br0 = this.grid.branches[k]!;
-      const alive = s.inService[k] === 1 && s.energized[br0.from.index] === 1 && s.energized[br0.to.index] === 1;
-      const over = s.loading[k]! > 1.0;
+      const alive = !none && s.inService[k] === 1 && s.energized[br0.from.index] === 1 && s.energized[br0.to.index] === 1;
+      const over = alive && s.loading[k]! > 1.0;
       const mw = s.pf[k]!; // + means power enters at the from end: flows from → to
       if (!s.inService[k]) {
         this.lines.setColor(c.seg, INK_35);
         this.lines.setPattern(c.seg, 'hidden');
         this.flow.set(c.flow, { sizePx: 0, speed: 0, color: INK, alpha: 0, side: this.sideOf(c) });
-        const br = this.grid.branches[k]!;
-        const a = br.from.site.id;
-        const b = br.to.site.id;
-        const pa = this.sites.find((x) => x.id === a)!.pos;
-        const pb = this.sites.find((x) => x.id === b)!.pos;
-        const mid: Vec3 = [(pa[0] + pb[0]) / 2, 0, (pa[2] + pb[2]) / 2];
-        crossSymbol(9).polys.forEach((p) => this.marks.glyph(mid, p, { width: PEN.medium, color: INK }));
+        const [mid, off] = this.midMark(c);
+        crossSymbol(9).polys.forEach((p) => this.marks.glyph(mid, p.map(([x, y]) => [x + off[0], y + off[1]] as [number, number]), { width: PEN.medium, color: INK }));
         continue;
       }
       const shown = this.drawn(c);
       this.lines.setColor(c.seg, over ? SIGNAL : alive ? INK : INK_35, shown ? 1 : 0);
-      this.lines.setPattern(c.seg, alive ? c.cls.dash : 'hidden');
+      this.lines.setPattern(c.seg, alive || none ? c.cls.dash : 'hidden');
       const speed = chevronSpeed(mw) * Math.sign(mw);
       this.flow.set(c.flow, {
         sizePx: alive ? chevronSize(mw) : 0,
@@ -358,24 +358,35 @@ export class SystemLevel {
       });
       if (over) {
         // pair the colour with a mark: a warning triangle at mid-span
-        const br = this.grid.branches[k]!;
-        const pa = this.sites.find((x) => x.id === br.from.site.id)!.pos;
-        const pb = this.sites.find((x) => x.id === br.to.site.id)!.pos;
-        const mid: Vec3 = [(pa[0] + pb[0]) / 2, 0, (pa[2] + pb[2]) / 2];
-        warningSymbol(13).polys.forEach((p, i) => this.marks.glyph(mid, p, { width: PEN.medium, color: SIGNAL }, i === 0));
+        const [mid, off] = this.midMark(c);
+        warningSymbol(13).polys.forEach((p, i) => this.marks.glyph(mid, p.map(([x, y]) => [x + off[0], y + off[1]] as [number, number]), { width: PEN.medium, color: SIGNAL }, i === 0));
       }
     }
     // dead sites (no source) and voltage out of range
+    const gen = new Set(this.genGlyphs);
     for (const site of this.sites) {
       const buses = this.grid.buses.filter((b) => b.site.id === site.id);
-      const dead = buses.every((b) => !s.energized[b.index]);
-      const out = buses.some((b) => s.energized[b.index] && (s.vm[b.index]! < 0.95 || s.vm[b.index]! > (b.kv >= 345 ? 1.1 : 1.05)));
+      const dead = !none && buses.every((b) => !s.energized[b.index]);
+      const out = !none && buses.some((b) => s.energized[b.index] && (s.vm[b.index]! < 0.95 || s.vm[b.index]! > (b.kv >= 345 ? 1.1 : 1.05)));
       const [first, n] = this.siteGlyphRange.get(site.id)!;
-      const gen = new Set(this.genGlyphs);
-      for (let i = first; i < first + n; i++) this.glyphs.setColor(i, dead ? SIGNAL : INK, gen.has(i) && !this.genVisible ? 0 : 1);
+      for (let i = first; i < first + n; i++) this.glyphs.setColor(i, dead ? SIGNAL : none ? INK_35 : INK, gen.has(i) && !this.genVisible ? 0 : 1);
       if (dead || out) warningSymbol(12).polys.forEach((p, i) => this.marks.glyph(site.pos, p.map(([x, y]) => [x - 12, y + 12] as [number, number]), { width: PEN.medium, color: SIGNAL }, i === 0));
     }
     this.marks.commit();
+  }
+
+  /** Mid-span of a circuit, and the pixel offset that puts a mark on its own stroke. */
+  private midMark(c: CircuitDraw): [Vec3, [number, number]] {
+    const br = this.grid.branches[c.branch]!;
+    const pa = this.sites.find((x) => x.id === br.from.site.id)!.pos;
+    const pb = this.sites.find((x) => x.id === br.to.site.id)!.pos;
+    const mid: Vec3 = [(pa[0] + pb[0]) / 2, 0, (pa[2] + pb[2]) / 2];
+    // the projection never rotates, so a corridor's direction on screen is fixed
+    const [ax, ay] = projectToView(pa[0], 0, pa[2]);
+    const [bx, by] = projectToView(pb[0], 0, pb[2]);
+    const L = Math.hypot(bx - ax, by - ay) || 1;
+    const side = this.sideOf(c);
+    return [mid, [(-(by - ay) / L) * side, ((bx - ax) / L) * side]];
   }
 
   private sideOf(c: CircuitDraw): number {
@@ -439,7 +450,13 @@ export class SystemLevel {
    * drawn heavier. Returns the sites that stay, so their labels can stay too.
    */
   highlight(sel: Selection | null): Set<string> | null {
+    this.selection = sel;
     const g = this.grid;
+    const snap = this.snapshot;
+    // something wrong (the signal colour) is never dimmed by a selection
+    const wrong = (k: number) => !!snap && snap.outcome !== 'none' && snap.inService[k] === 1 && snap.loading[k]! > 1.0;
+    // nor is what the reader changed (a tripped circuit)
+    const changed = (k: number) => !!snap && snap.inService[k] === 0;
     let keepBranch: (k: number) => boolean = () => true;
     let keepSites: Set<string> | null = null;
     if (sel?.kind === 'branch') {
@@ -456,13 +473,15 @@ export class SystemLevel {
     }
     for (const c of this.circuits) {
       const keep = keepBranch(c.branch);
-      const dim = keep ? 0 : 0.78;
+      const dim = keep || wrong(c.branch) || changed(c.branch) ? 0 : 0.78;
       this.lines.setDim(c.seg, dim);
       this.flow.setDim(c.flow, dim);
       this.lines.setWidth(c.seg, c.cls.weight + (sel?.kind === 'branch' && keep ? 1.6 : 0));
     }
+    const darkSite = (id: string) =>
+      !!snap && snap.outcome === 'partial' && this.grid.buses.filter((b) => b.site.id === id).every((b) => !snap.energized[b.index]);
     for (const [id, [first, n]] of this.siteGlyphRange) {
-      const dim = keepSites && !keepSites.has(id) ? 0.7 : 0;
+      const dim = keepSites && !keepSites.has(id) && !darkSite(id) ? 0.7 : 0;
       for (let i = first; i < first + n; i++) this.glyphs.setDim(i, dim);
     }
     return keepSites;

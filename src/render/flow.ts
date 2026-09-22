@@ -35,6 +35,7 @@ uniform vec2 uResolution;
 uniform float uPixelRatio;
 flat out vec4 vSeg;
 flat out vec3 vZ;
+flat out vec3 vPlane;
 out vec4 vFlow;
 out vec4 vColor;
 vec3 screenOf(vec3 p) {
@@ -56,6 +57,9 @@ void main() {
   gl_Position = vec4(p / uResolution * 2.0 - 1.0, z, 1.0);
   vSeg = vec4(A.xy + side, dir);
   vZ = vec3(A.z, B.z, len);
+  // depth of the plane under each fragment, as for offset strokes (lines.ts)
+  vec3 G = screenOf(aStart + vec3(0.70710678, 0.0, -0.70710678));
+  vPlane = vec3(A.y, B.y, (G.z - A.z) / max(G.y - A.y, 1e-6));
   vFlow = vec4(aFlow.x * uPixelRatio, aFlow.y * uPixelRatio, 0.0, aFlow.w * uPixelRatio);
   vColor = vec4(aColor.rgb, aColor.a * (1.0 - aDim));
 }
@@ -65,6 +69,7 @@ const FRAG = /* glsl */ `
 precision highp float;
 flat in vec4 vSeg;
 flat in vec3 vZ;
+flat in vec3 vPlane;
 in vec4 vFlow;
 in vec4 vColor;
 uniform float uTime;
@@ -76,7 +81,8 @@ void main() {
   vec2 q = gl_FragCoord.xy - vSeg.xy;
   vec2 vLocal = vec2(dot(q, vSeg.zw), dot(q, vec2(-vSeg.w, vSeg.z)));
   float vLen = vZ.z;
-  gl_FragDepth = 0.5 + 0.5 * mix(vZ.x, vZ.y, clamp(vLocal.x / max(vLen, 1e-4), 0.0, 1.0));
+  float f = clamp(vLocal.x / max(vLen, 1e-4), 0.0, 1.0);
+  gl_FragDepth = 0.5 + 0.5 * (mix(vZ.x, vZ.y, f) + vPlane.z * (gl_FragCoord.y - mix(vPlane.x, vPlane.y, f)));
   float W = vFlow.x;              // chevron width across the line
   float speed = vFlow.y;          // signed
   float dirSign = speed >= 0.0 ? 1.0 : -1.0;
@@ -188,6 +194,7 @@ export class FlowBatch {
 
   commit(): void {
     const g = this.geometry;
+    if (this.attrFlow) g.dispose(); // see LineBatch.commit
     this.attrDim = new THREE.InstancedBufferAttribute(new Float32Array(this.dim), 1);
     this.attrDim.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aDim', this.attrDim);

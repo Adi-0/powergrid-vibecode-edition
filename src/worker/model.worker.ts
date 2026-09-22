@@ -1,41 +1,118 @@
 /// <reference lib="webworker" />
 import { Grid } from '../model/grid';
-import { dispatchDay } from '../model/dispatch';
+import { dispatchDay, type DaySchedule } from '../model/dispatch';
 import { operate, type OperatingPoint } from '../model/operate';
-import { snapshot, transferables } from '../model/snapshot';
+import { snapshot, transferables, type Snapshot } from '../model/snapshot';
+import type { PFCase } from '../physics/pf/case';
 
 /**
  * The solver thread. It owns the model and the solvers so the drawing thread never
- * waits on arithmetic. The day is dispatched, then the evening peak is solved first
- * (so the map has flows within a moment), then every interval in order.
+ * waits on arithmetic.
+ *
+ * At start it dispatches the day and solves the evening peak first (so the map has
+ * flows within a moment), then every interval in order, twice: the first pass finds
+ * the losses, the second dispatches with them. Between intervals it answers `solve`
+ * requests — a time of day and a set of tripped branches — with a fresh power flow,
+ * so whatever the reader scrubs to or trips is solved when asked, never looked up.
  */
-export type ToWorker = { type: 'init'; focus: number };
+export type ToWorker = { type: 'init'; focus: number } | { type: 'solve'; t: number; outages: number[]; seq: number };
+
+/** The day as dispatched: what the time strip draws. MW per interval. */
+export interface DaySummary {
+  pass: 1 | 2;
+  startHour: Float64Array;
+  grossMW: Float64Array;
+  btmMW: Float64Array;
+  /** Demand seen by the grid (gross − rooftop solar). */
+  netLoadMW: Float64Array;
+  solarMW: Float64Array;
+  windMW: Float64Array;
+  /** Grid demand less utility solar and wind: what the rest of the fleet must follow. */
+  residualMW: Float64Array;
+  energyPrice: Float64Array;
+}
+
 export type FromWorker =
   | { type: 'progress'; stage: string; done: number; total: number }
-  | { type: 'interval'; snap: ReturnType<typeof snapshot> }
+  | { type: 'schedule'; day: DaySummary }
+  | { type: 'interval'; snap: Snapshot }
+  | { type: 'solved'; snap: Snapshot; ms: number }
   | { type: 'day-done'; ms: number };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let grid: Grid;
+let base: PFCase;
+let schedule: DaySchedule | null = null;
+/** Base-case solutions of the current schedule (warm starts for requests). */
+let baseOps: Array<OperatingPoint | undefined> = [];
+let pending: Extract<ToWorker, { type: 'solve' }> | null = null;
 
 ctx.onmessage = (ev: MessageEvent<ToWorker>) => {
   const msg = ev.data;
-  if (msg.type === 'init') runDayProgressive(msg.focus);
+  if (msg.type === 'init') void runDay(msg.focus);
+  else if (msg.type === 'solve') {
+    pending = msg; // only the latest request matters
+    if (schedule) answer();
+  }
 };
 
 function post(m: FromWorker, transfer: Transferable[] = []): void {
   ctx.postMessage(m, transfer);
 }
 
-function runDayProgressive(focus: number): void {
+/** Let queued messages in (a macrotask boundary). */
+const yieldToMessages = () => new Promise<void>((r) => setTimeout(r, 0));
+
+function answer(): void {
+  const req = pending;
+  if (!req || !schedule) return;
+  pending = null;
+  const t0 = performance.now();
+  const step = schedule.steps[req.t]!;
+  const warm = baseOps[req.t];
+  const outages = [...new Set(req.outages)].sort((a, b) => a - b);
+  // With something tripped this is the moment after: the dispatch stays as planned
+  // and governors (droop) cover the change. See docs/simplifications.md.
+  const op = operate(grid, step, base, {
+    participation: outages.length ? 'governor' : 'agc',
+    branchOutages: new Set(outages),
+    ...(warm && warm.status === 'converged' ? { warm: warm.result, shuntSteps: warm.shuntSteps } : {}),
+  });
+  const s = snapshot(grid, op, req.seq, outages);
+  post({ type: 'solved', snap: s, ms: performance.now() - t0 }, transferables(s));
+}
+
+function summary(s: DaySchedule, pass: 1 | 2): DaySummary {
+  const f = (g: (i: number) => number) => Float64Array.from(s.steps.map((_, i) => g(i)));
+  const st = s.steps;
+  return {
+    pass,
+    startHour: f((i) => st[i]!.iv.startHour),
+    grossMW: f((i) => st[i]!.grossLoadMW),
+    btmMW: f((i) => st[i]!.btmMW),
+    netLoadMW: f((i) => st[i]!.netLoadMW),
+    solarMW: f((i) => st[i]!.solarMW),
+    windMW: f((i) => st[i]!.windMW),
+    residualMW: f((i) => st[i]!.netLoadMW - st[i]!.solarMW - st[i]!.windMW),
+    energyPrice: f((i) => st[i]!.energyPrice),
+  };
+}
+
+async function runDay(focus: number): Promise<void> {
   const t0 = performance.now();
   grid = new Grid();
-  const base = grid.baseCase();
+  base = grid.baseCase();
   post({ type: 'progress', stage: 'dispatch', done: 0, total: 1 });
   // first pass: dispatch with estimated losses, and the focus interval straight away
   const first = dispatchDay(grid);
+  schedule = first;
+  baseOps = [];
+  post({ type: 'schedule', day: summary(first, 1) });
   const focusOp = operate(grid, first.steps[focus]!, base, { participation: 'agc' });
+  baseOps[focus] = focusOp;
   sendSnap(focusOp);
+  answer();
+  const total = first.steps.length * 2;
   // full sequence for losses, then the final dispatch and its solutions
   const pts1: OperatingPoint[] = [];
   let prev: OperatingPoint | undefined;
@@ -45,11 +122,15 @@ function runDayProgressive(focus: number): void {
       ...(prev && prev.status === 'converged' ? { warm: prev.result, shuntSteps: prev.shuntSteps } : {}),
     });
     pts1.push(op);
+    baseOps[step.iv.index] = op;
     prev = op;
-    post({ type: 'progress', stage: 'losses', done: pts1.length, total: first.steps.length * 2 });
+    post({ type: 'progress', stage: 'losses', done: pts1.length, total });
+    await yieldToMessages();
+    answer();
   }
   const lossMW = Float64Array.from(pts1.map((p, t) => (p.status === 'converged' ? p.lossesMW : first.steps[t]!.lossEstimateMW)));
   const sched = dispatchDay(grid, { lossMW });
+  const ops2: Array<OperatingPoint | undefined> = [];
   prev = undefined;
   let k = 0;
   for (const step of sched.steps) {
@@ -57,11 +138,19 @@ function runDayProgressive(focus: number): void {
       participation: 'agc',
       ...(prev && prev.status === 'converged' ? { warm: prev.result, shuntSteps: prev.shuntSteps } : {}),
     });
+    ops2[step.iv.index] = op;
     sendSnap(op);
     prev = op;
-    post({ type: 'progress', stage: 'solve', done: first.steps.length + ++k, total: first.steps.length * 2 });
+    post({ type: 'progress', stage: 'solve', done: first.steps.length + ++k, total });
+    await yieldToMessages();
+    answer();
   }
+  // the final schedule takes over for requests from here on
+  schedule = sched;
+  baseOps = ops2;
+  post({ type: 'schedule', day: summary(sched, 2) });
   post({ type: 'day-done', ms: performance.now() - t0 });
+  answer();
 }
 
 function sendSnap(op: OperatingPoint): void {

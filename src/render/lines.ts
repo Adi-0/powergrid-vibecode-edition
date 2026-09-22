@@ -40,6 +40,7 @@ uniform float uMorph;
 
 flat out vec4 vSeg;   // segment start (device px) and direction
 flat out vec3 vZ;     // NDC depth at start and end, and length (device px)
+flat out vec3 vPlane; // anchors' screen y at start and end, and depth per px up the screen
 out float vHalfW;
 out float vDash;
 out float vPattern;
@@ -52,19 +53,26 @@ vec3 screenOf(vec3 p) {
 }
 
 void main() {
-  vec3 A = screenOf(aStart);
-  vec3 B = screenOf(aEnd);
-  A.xy += aPx.xy * uPixelRatio;
-  B.xy += aPx.zw * uPixelRatio;
+  // world anchors on screen (A0, B0) and the pixel offsets added to them
+  vec3 A0 = screenOf(aStart);
+  vec3 B0 = screenOf(aEnd);
+  vec4 off = aPx * uPixelRatio;
   float t = 1.0;
   if (uMorph < 0.9999) {
     t = smoothstep(aCollapse.w, aCollapse.w + 0.5, uMorph);
     vec3 C = screenOf(aCollapse.xyz);
-    vec3 CA = vec3(C.xy + aCollapsePx.xy * uPixelRatio, C.z);
-    vec3 CB = vec3(C.xy + aCollapsePx.zw * uPixelRatio, C.z);
-    A = mix(CA, A, t);
-    B = mix(CB, B, t);
+    A0 = mix(C, A0, t);
+    B0 = mix(C, B0, t);
+    off = mix(aCollapsePx * uPixelRatio, off, t);
   }
+  vec3 A = vec3(A0.xy + off.xy, A0.z);
+  vec3 B = vec3(B0.xy + off.zw, B0.z);
+  // Depth per device pixel up the screen for a horizontal plane (depends only on the
+  // camera). A stroke shifted off its anchor in pixels takes the depth of the plane
+  // its anchor sits in, at the pixel it is drawn on — so a symbol or a parallel
+  // circuit lies on the ground rather than floating at its anchor's depth.
+  vec3 G = screenOf(aStart + vec3(0.70710678, 0.0, -0.70710678));
+  float g = (G.z - screenOf(aStart).z) / max(G.y - screenOf(aStart).y, 1e-6);
   vec2 d = B.xy - A.xy;
   float len = length(d);
   vec2 dir = len > 1e-4 ? d / len : vec2(1.0, 0.0);
@@ -81,6 +89,7 @@ void main() {
   gl_Position = vec4(p / uResolution * 2.0 - 1.0, z, 1.0);
   vSeg = vec4(A.xy, dir);
   vZ = vec3(A.z, B.z, len);
+  vPlane = vec3(A0.y, B0.y, g);
   vHalfW = hw;
   vDash = aStyle.z * uPxPerUnit * uPixelRatio;
   vPattern = aStyle.y;
@@ -94,6 +103,7 @@ const FRAG = /* glsl */ `
 precision highp float;
 flat in vec4 vSeg;
 flat in vec3 vZ;
+flat in vec3 vPlane;
 in float vHalfW;
 in float vDash;
 in float vPattern;
@@ -114,7 +124,8 @@ void main() {
   vec2 q = gl_FragCoord.xy - vSeg.xy;
   vec2 vLocal = vec2(dot(q, vSeg.zw), dot(q, vec2(-vSeg.w, vSeg.z)));
   float vLen = vZ.z;
-  gl_FragDepth = 0.5 + 0.5 * mix(vZ.x, vZ.y, clamp(vLocal.x / max(vLen, 1e-4), 0.0, 1.0));
+  float f = clamp(vLocal.x / max(vLen, 1e-4), 0.0, 1.0);
+  gl_FragDepth = 0.5 + 0.5 * (mix(vZ.x, vZ.y, f) + vPlane.z * (gl_FragCoord.y - mix(vPlane.x, vPlane.y, f)));
   float dist;
   if (vLocal.x < 0.0) dist = length(vLocal);
   else if (vLocal.x > vLen) dist = length(vec2(vLocal.x - vLen, vLocal.y));
@@ -329,6 +340,9 @@ export class LineBatch {
 
   /** Upload buffers. Call after adding segments. */
   commit(): void {
+    // three.js fixes an instanced geometry's drawable count when it is first bound
+    // and forgets it only on dispose; a batch that grows must be disposed first.
+    if (this.attrs) this.geometry.dispose();
     const attrs = {} as Record<AttrName, THREE.InstancedBufferAttribute>;
     for (const k of Object.keys(SIZES) as AttrName[]) {
       const a = new THREE.InstancedBufferAttribute(new Float32Array(this.data[k]), SIZES[k]);

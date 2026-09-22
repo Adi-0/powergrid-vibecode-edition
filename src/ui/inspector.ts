@@ -13,6 +13,13 @@ export interface Section {
   text?: Content;
 }
 
+/** Something the reader can do to the selected object (trip it, open it). */
+export interface Action {
+  label: string;
+  title?: string;
+  run: () => void;
+}
+
 const node = (c: Content): Node => (typeof c === 'string' ? rich(c) : c);
 
 export class Inspector {
@@ -41,7 +48,7 @@ export class Inspector {
     parent.appendChild(this.root);
   }
 
-  show(opts: { header: string; name: Content; kind: Content; intro?: Content; sections: Section[] }): void {
+  show(opts: { header: string; name: Content; kind: Content; intro?: Content; actions?: Action[]; sections: Section[] }): void {
     this.root.hidden = false;
     this.titleEl.textContent = opts.header;
     const b = this.body;
@@ -53,6 +60,18 @@ export class Inspector {
     kind.className = 'kind';
     kind.appendChild(node(opts.kind));
     b.append(h2, kind);
+    if (opts.actions?.length) {
+      const bar = document.createElement('div');
+      bar.className = 'actions';
+      for (const a of opts.actions) {
+        const btn = document.createElement('button');
+        btn.textContent = a.label;
+        if (a.title) btn.title = a.title;
+        btn.addEventListener('click', a.run);
+        bar.appendChild(btn);
+      }
+      b.appendChild(bar);
+    }
     if (opts.intro) {
       const p = document.createElement('p');
       p.appendChild(node(opts.intro));

@@ -8,10 +8,34 @@ import type { OperatingPoint } from './operate';
  * Every array is a solver output; the display layer tags each shown value with the
  * key it came from (e.g. "solver:t76.branch.12.pf").
  */
+/** An island other than the main one, as the display needs it. */
+export interface IslandSummary {
+  status: string;
+  buses: number[];
+  loadMW: number;
+  reason: string;
+}
+
 export interface Snapshot {
   t: number;
   startHour: number;
+  /** Request this solve answered (0: the day's own sequence). */
+  seq: number;
+  /** Branches out of service in this scenario, sorted ("" key when none). */
+  outages: number[];
+  /** Solver status: the worst island's. */
   status: string;
+  /**
+   * What the display reports. 'solved': every energised island converged.
+   * 'partial': the main island (the one carrying most demand) converged, but some
+   * buses are dark — cut off from every source, or in an island with no operating
+   * point. 'none': the main island has no steady-state operating point.
+   */
+  outcome: 'solved' | 'partial' | 'none';
+  /** Islands other than the main one that are dark or failed. */
+  darkIslands: IslandSummary[];
+  /** Demand in dark islands, MW (unserved). */
+  unservedMW: number;
   reason: string;
   iterations: number;
   maxMismatchPu: number;
@@ -52,7 +76,7 @@ export interface Snapshot {
   participation: string;
 }
 
-export function snapshot(grid: Grid, op: OperatingPoint): Snapshot {
+export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = []): Snapshot {
   const nb = grid.branches.length;
   const pf = new Float64Array(nb);
   const qf = new Float64Array(nb);
@@ -88,12 +112,28 @@ export function snapshot(grid: Grid, op: OperatingPoint): Snapshot {
   });
   const s = op.step;
   const bal = op.balance;
+  // islands: the main one carries the most demand
+  const islands = op.result.islands.map((isl) => ({
+    status: isl.status as string,
+    buses: isl.buses,
+    loadMW: isl.buses.reduce((a, b) => a + Math.max(0, pd[b]!), 0),
+    reason: isl.reason ?? '',
+  }));
+  const main = islands.reduce((m, x) => (x.loadMW > m.loadMW || (x.loadMW === m.loadMW && x.buses.length > m.buses.length) ? x : m), islands[0]!);
+  const darkIslands = islands.filter((x) => x !== main && x.buses.some((b) => !op.result.energized[b]));
+  const unservedMW = darkIslands.reduce((a, x) => a + x.loadMW, 0);
+  const outcome: Snapshot['outcome'] = main.status !== 'converged' ? 'none' : darkIslands.some((x) => x.loadMW > 1e-6) ? 'partial' : 'solved';
   const iters = op.result.islands.reduce((a, i) => a + i.newtonIterations, 0);
   return {
     t: s.iv.index,
     startHour: s.iv.startHour,
+    seq,
+    outages,
     status: op.status,
-    reason: op.result.islands.find((i) => i.reason)?.reason ?? '',
+    outcome,
+    darkIslands,
+    unservedMW,
+    reason: outcome === 'none' ? main.reason : (darkIslands.find((x) => x.reason)?.reason ?? ''),
     iterations: iters,
     maxMismatchPu: op.result.maxMismatch,
     vm: op.result.vm.slice(),

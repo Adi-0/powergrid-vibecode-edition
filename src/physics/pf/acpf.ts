@@ -685,8 +685,8 @@ function divergenceReason(s: PFStatus): string {
     case 'singular':
       return 'The equations lost a unique answer: the network is at (or past) the most power it can carry at a stable voltage — the nose of the P–V curve. Beyond it, voltage collapses.';
     case 'diverged':
-      return 'The Newton iterations ran away instead of settling. No steady-state operating point exists near this condition: the network cannot deliver this power at any voltage it can hold (voltage collapse).';
+      return 'The Newton iterations ran away instead of settling. That is how the equations behave when the network cannot deliver this power at any voltage it can hold (voltage collapse). Failing to find an operating point is strong evidence that none exists, not proof.';
     default:
-      return 'The Newton iterations did not settle within the allowed number of steps. No steady-state operating point was found.';
+      return 'The Newton iterations did not settle within the allowed number of steps. No steady-state operating point was found; this usually means none exists, though it is not proof.';
   }
 }

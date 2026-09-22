@@ -92,6 +92,7 @@ export interface LegendState {
   classes: VoltageClass[];
   showSignal: boolean;
   showOutOfService: boolean;
+  noSolution: boolean;
 }
 
 export class Legend {
@@ -125,7 +126,7 @@ export class Legend {
   }
 
   update(s: LegendState): void {
-    const key = JSON.stringify([s.classes.map((c) => c.id), s.showSignal, s.showOutOfService]);
+    const key = JSON.stringify([s.classes.map((c) => c.id), s.showSignal, s.showOutOfService, s.noSolution]);
     if (key === this.last) return;
     this.last = key;
     const b = this.body;
@@ -180,6 +181,7 @@ export class Legend {
         svgX.append(...Array.from(symbolSample(crossSymbol(9), 1.4).childNodes));
         g4.appendChild(row(svgX, 'Out of service (tripped)'));
       }
+      if (s.noSolution) g4.appendChild(row(strokeSample(2.1, 'solid', INK_35), 'Grey and still: no operating point, so nothing drawn is a solved flow'));
       b.appendChild(g4);
     }
   }

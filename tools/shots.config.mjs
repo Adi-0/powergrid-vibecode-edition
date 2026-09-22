@@ -55,6 +55,23 @@ const perf = async (page) => {
   };
 };
 
+/** Wait until the sheet shows the answer to the reader's latest request. */
+const waitSolved = async (page) =>
+  page.waitForFunction(() => {
+    const a = window.__app;
+    return a.current && a.current.seq > 0 && a.current.seq === a.seq && !a.inFlight;
+  }, null, { timeout: 90000 });
+
+const tripByName = (names) => async (page) => {
+  await waitSnap(page);
+  await page.evaluate((names) => {
+    const app = window.__app;
+    for (const n of names) app.trip(app.grid.branches.findIndex((b) => b.id === n));
+    app.select({ kind: 'branch', index: app.grid.branches.findIndex((b) => b.id === names[0]) });
+  }, names);
+  await waitSolved(page);
+};
+
 const both = (...probes) => async (page) => {
   const rs = [];
   for (const p of probes) rs.push(await p(page));
@@ -116,5 +133,34 @@ export default [
     },
     probe: provenance,
   },
+  {
+    name: 'system-noon',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.setTime(50));
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  { name: 'system-trip', url: '', width: 1440, height: 900, timeout: 90000, settle: 600, before: tripByName(['SANTIAGO–SAN_ONOFRE 230 #1']), probe: provenance },
+  {
+    name: 'system-trip-show',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 1200,
+    before: async (page) => {
+      await tripByName(['SANTIAGO–SAN_ONOFRE 230 #1'])(page);
+      await page.evaluate(() => document.querySelector('.notice .list button').click());
+    },
+    probe: provenance,
+  },
+  { name: 'system-nosol', url: '', width: 1440, height: 900, timeout: 90000, settle: 600, before: tripByName(['PALO_VERDE–IMPERIAL_VALLEY 500 #1']), probe: provenance },
   { name: 'system-mobile', url: '', width: 390, height: 844, dpr: 2, timeout: 90000, settle: 800, before: waitSnap, probe: provenance },
 ];
