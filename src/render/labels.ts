@@ -21,6 +21,8 @@ export interface LabelItem {
   dy?: number;
   /** Always shown (e.g. the selected object's label), ignoring collisions with lower items. */
   pinned?: boolean;
+  /** Provenance key when the text carries figures (see ui/quantity.ts). */
+  prov?: string;
 }
 
 interface Placed {
@@ -54,6 +56,7 @@ export class LabelLayer {
       if (!p) {
         const el = document.createElement('div');
         el.className = `label ${item.className}`;
+        if (item.prov) el.dataset.prov = item.prov;
         if (item.build) item.build(el);
         else el.textContent = item.text ?? '';
         this.root.appendChild(el);
@@ -62,6 +65,8 @@ export class LabelLayer {
       } else {
         p.item = item;
         p.el.className = `label ${item.className}`;
+        if (item.prov) p.el.dataset.prov = item.prov;
+        else delete p.el.dataset.prov;
         if (!item.build) p.el.textContent = item.text ?? '';
       }
     }

@@ -93,3 +93,35 @@ italic, a descriptive subscript upright (P<sub>f</sub>, P<sub>loss</sub>). Formu
 follow ISO 80000-2 (italic quantity symbols, upright j and words). Headings on panels
 are capitals; headings inside the inspector are sentence case, because they carry
 units and symbols ("500 kV", "π model") that capitals would corrupt.
+
+## Paper tooth
+
+At close zoom only (from 8 px per km, full at 24), a faint grain multiplies the finished
+frame: value noise at the sheet's scale, fixed to the screen like the border (the paper
+does not move when the drawing is panned). At most 4.5 % darker; ink stays ink. It is
+texture, not shading.
+
+## Notices
+
+When a solution is not whole and healthy, a notice sits at the top of the sheet: a
+panel with a signal-coloured rule and heading — "No operating point", "Part of the grid
+is dark", "Over a limit" — the reason in words, and what the reader can do (Show,
+Restore everything). It is the only panel that uses the signal colour for its frame.
+
+## The day strip
+
+Across the bottom: the dispatched day as a line chart. Dashed ink 60 %: what customers
+use; thin ink: from the grid after rooftop solar; heavy ink: what is left for the rest
+of the fleet (the duck); the band between the last two — utility solar and wind —
+hatched at 45°. Both ends of the scale are labelled, since it does not start at zero.
+The cursor (ink) is where the reader asked; a wide grey mark is the interval on the
+sheet, solved.
+
+## Region level
+
+See decision 0017. Layer plates: chain line, hairline, ink 35 %, lettered in spaced
+semibold capitals, ink 60 %. Substation axis: hidden-line dashes, hairline, ink 35 %.
+Busbar: 22 px, 3.2 px. Transformer: 1.4 px stroke between busbars, banks 8 px apart,
+two 4.2 px circles. Generation riser: 1.0 px, symbol at its foot. Demand drop: 1.0 px to
+a 1.4 px load arrow. Exit: a 1.4 px tick in ink 60 % and the far substation's name.
+DC link: 2.1 px dotted, a converter symbol near each end.

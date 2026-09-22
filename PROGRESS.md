@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **4 — Scrubber, trips, region view, first transition**
+Current phase: **5 — Substation → feeder → service**
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -8,7 +8,7 @@ Current phase: **4 — Scrubber, trips, region view, first transition**
 | 1 Transmission solver + network | done | IEEE 14/30 pass; synthetic net converges 24 h; balance holds |
 | 2 Distribution solver + coupling | done | IEEE 13 passes; energy closes across boundary |
 | 3 System view | done | 60 fps full network; legend complete; critique recorded |
-| 4 Scrubber, trips, region, transition | — | Live re-solve per interval; honest no-solution |
+| 4 Scrubber, trips, region, transition | done | Live re-solve per interval; honest no-solution |
 | 5 Substation → feeder → service | — | Outlet traceable to transmission; meters + losses = head |
 | 6 Math panel | — | Arithmetic-consistency test passes on every panel |
 | 7 Plant + machine + SFR | — | Plant energy closes; SMIB equal-area fixture |
@@ -57,3 +57,18 @@ Current phase: **4 — Scrubber, trips, region view, first transition**
   max main-thread per frame, 8 draw calls, 9.5k triangles. GPU frame rate could not be
   measured here (software rasteriser only) — stated, not claimed. Critique:
   `docs/critique/phase-3.md`. 59 tests pass.
+- **Phase 4 done.** The solver thread answers solve requests (interval + tripped
+  branches) between the day's own intervals; the sheet shows an interval only once it
+  has been solved for what the reader asked (decision 0016). Day strip with the duck,
+  keyboard stepping and playback (every shown interval solved live). Trips and restores
+  from the inspector; outcomes solved / partly dark / none drawn honestly on the map,
+  title block, inspector and a notice, with a limits notice and camera flights to
+  overloads. Region level for the Bay Area as an exploded axonometric of voltage
+  layers, with transformers, generation risers, demand drops and the region's energy
+  balance; System ↔ Region transition is the fold of those layers (decision 0017).
+  Transformer inspector. Paper tooth at close zoom. Test: every branch tripped alone at
+  19:00 and 12:30 either balances to 1 µW or reports no operating point with a reason
+  (1 of 217 at 19:00: the Southwest Powerlink); cutting Evergreen off reports exactly
+  its demand as unserved; an islanded unit's output is made up elsewhere. Rendering
+  fixes: offset strokes' depth, instanced batches that grow. Critique:
+  `docs/critique/phase-4.md`. 63 tests pass.

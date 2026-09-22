@@ -45,7 +45,9 @@ export interface LabelSpec {
   priority: number;
   /** Minimum zoom (px per km) at which the label may show. */
   minZoom: number;
-  kind: 'site' | 'plant' | 'region' | 'sea';
+  kind: 'site' | 'plant' | 'region' | 'sea' | 'layer' | 'exit';
+  /** Provenance of any figures in the text (e.g. "500 kV" on a layer). */
+  prov?: string;
 }
 
 interface CircuitDraw {
@@ -75,6 +77,11 @@ export class SystemLevel {
   readonly classes: VoltageClass[] = [];
   snapshot: Snapshot | null = null;
   private selection: Selection | null = null;
+  /**
+   * While a region is open: its substations (whose drawing the region takes over, `fade`
+   * of the way), with the rest of the network kept faint as context.
+   */
+  private context: { sites: Set<string>; fade: number } | null = null;
 
   constructor(
     readonly grid: Grid,
@@ -375,6 +382,17 @@ export class SystemLevel {
     this.marks.commit();
   }
 
+  /**
+   * Hand the network to a lower level (or take it back): circuits, flows, site symbols
+   * and marks are hidden; the state, its neighbours and the coast stay as the ground.
+   */
+  setNetworkShown(on: boolean, regionSites?: Set<string>, fade = 1): void {
+    this.context = on || !regionSites ? null : { sites: regionSites, fade };
+    this.flow.opacity = on ? 1 : 0;
+    this.marks.opacity = on ? 1 : 0;
+    this.highlight(this.selection);
+  }
+
   /** Mid-span of a circuit, and the pixel offset that puts a mark on its own stroke. */
   private midMark(c: CircuitDraw): [Vec3, [number, number]] {
     const br = this.grid.branches[c.branch]!;
@@ -471,9 +489,14 @@ export class SystemLevel {
         if (keepBranch(k)) keepSites!.add(b.from.site.id).add(b.to.site.id);
       });
     }
+    const ctx = this.context;
     for (const c of this.circuits) {
       const keep = keepBranch(c.branch);
-      const dim = keep || wrong(c.branch) || changed(c.branch) ? 0 : 0.78;
+      let dim = keep || wrong(c.branch) || changed(c.branch) ? 0 : 0.78;
+      if (ctx) {
+        const b = g.branches[c.branch]!;
+        dim = ctx.sites.has(b.from.site.id) || ctx.sites.has(b.to.site.id) ? 1 : 0.86;
+      }
       this.lines.setDim(c.seg, dim);
       this.flow.setDim(c.flow, dim);
       this.lines.setWidth(c.seg, c.cls.weight + (sel?.kind === 'branch' && keep ? 1.6 : 0));
@@ -481,7 +504,8 @@ export class SystemLevel {
     const darkSite = (id: string) =>
       !!snap && snap.outcome === 'partial' && this.grid.buses.filter((b) => b.site.id === id).every((b) => !snap.energized[b.index]);
     for (const [id, [first, n]] of this.siteGlyphRange) {
-      const dim = keepSites && !keepSites.has(id) && !darkSite(id) ? 0.7 : 0;
+      let dim = keepSites && !keepSites.has(id) && !darkSite(id) ? 0.7 : 0;
+      if (ctx) dim = ctx.sites.has(id) ? ctx.fade : Math.max(0.8 * ctx.fade, dim);
       for (let i = first; i < first + n; i++) this.glyphs.setDim(i, dim);
     }
     return keepSites;

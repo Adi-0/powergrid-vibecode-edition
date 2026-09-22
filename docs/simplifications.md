@@ -20,6 +20,18 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Geography is projected equirectangularly about the middle of the state, accurate to a few percent. **Full treatment:** A conformal projection (e.g. California Albers or UTM zones) for surveyed distances.
 - **Simplified:** The state is drawn as a slab 30 km thick so its coast reads as a cut section; the thickness means nothing. Neighbouring states are drawn only in a band around California. **Full treatment:** Not applicable — this is drawing convention, stated so it is not mistaken for data.
 
+## trip — Tripping a circuit
+
+- **Simplified:** A trip is shown as the moment after: the dispatch stays as planned with the circuit in service, and generators' governors cover the change in losses. **Full treatment:** Within minutes, operators re-dispatch generation (security-constrained economic dispatch with the circuit out) to bring any overloaded circuit back under its rating, and protection may already have acted.
+- **Simplified:** A circuit is either in service or open at both ends; nothing between. **Full treatment:** Breaker failure, one end open (the line charging from the other), and automatic reclosing.
+- **Simplified:** When the power flow finds no operating point, the sheet says so and draws nothing as solved. Failing to find one is strong evidence that none exists, not proof. **Full treatment:** Continuation power flow traces the P–V curve to its nose and proves where the operating point disappears.
+
+## region — A region's layers
+
+- **Simplified:** Layer heights mean nothing but order (lowest voltage lowest); the spacing is chosen for legibility. **Full treatment:** Not applicable — drawing convention.
+- **Simplified:** Each substation's buses of one voltage are one bus; its transformers of one kind are drawn as banks side by side. **Full treatment:** Breaker-and-a-half or double-bus arrangements with bus sections, drawn at the Substation level.
+- **Simplified:** A region's losses are computed by difference (generated + arriving − taken). **Full treatment:** The same number summed branch by branch; they agree because the power flow conserves power, which the tests check.
+
 ## transmission — The transmission network
 
 - **Simplified:** Balanced, positive-sequence model: the three phases are assumed identical, so one phase stands for all three. **Full treatment:** A three-phase model where unbalance matters (it rarely does at transmission voltages, which is why the field uses positive sequence).

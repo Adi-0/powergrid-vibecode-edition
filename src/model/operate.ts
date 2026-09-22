@@ -162,8 +162,9 @@ function operateOnce(grid: Grid, step: IntervalDispatch, base: PFCase, opts: Ope
   }
   const result = res!;
   const flows = branchFlows(pf, result);
-  const converged = result.status === 'converged' || result.status === 'no-source';
-  const balance = converged ? powerBalance(pf, result, flows) : null;
+  // Islands without an operating point are dark (not energised), so the balance over
+  // energised buses is the balance of everything that has a solution.
+  const balance = result.energized.some((e) => e === 1) ? powerBalance(pf, result, flows) : null;
   const genMW = new Float64Array(grid.gens.length);
   grid.gens.forEach((_, i) => (genMW[i] = result.pg[i]! * S_BASE));
   let losses = 0;

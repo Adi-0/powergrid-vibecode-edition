@@ -73,6 +73,7 @@ export const TERMS: Term[] = [
   T('rating', 'Rating', 'The most apparent power equipment may carry continuously.', 'MVA'),
   T('emergency-rating', 'Emergency rating', 'A higher rating allowed for a few hours after a failure elsewhere, while operators re-arrange things.'),
   T('loading', 'Loading', 'The flow on a branch as a percentage of its rating.'),
+  T('region', 'Region', 'Part of the grid drawn on its own: its substations, every circuit among them at every voltage, and the circuits that cross its edge.'),
   T('losses', 'Losses', 'Power turned into heat in lines and transformers on the way; about 1–3 % of demand on a transmission system.', 'I²R'),
   T('intertie', 'Intertie', 'A line connecting one grid to a neighbouring one.'),
   T('hvdc', 'HVDC', 'High-voltage direct current: a link whose flow is set by power-electronic converters rather than by the network.'),

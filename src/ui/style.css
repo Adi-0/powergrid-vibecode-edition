@@ -135,6 +135,20 @@ button:focus-visible,
   letter-spacing: 0.5em;
   font-size: 11px;
 }
+.label.layer {
+  background: none;
+  color: var(--ink-60);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+.label.exit {
+  background: none;
+  color: var(--ink-60);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
 .label.dim {
   color: var(--ink-35);
 }
@@ -214,7 +228,7 @@ button:focus-visible,
   left: 20px;
   top: 64px;
   width: 256px;
-  max-height: calc(100% - 64px - 196px);
+  max-height: calc(100% - 64px - var(--tb-h, 180px) - 36px);
   overflow-y: auto;
 }
 .legend.collapsed .body {
@@ -336,7 +350,8 @@ button:focus-visible,
   font-size: 10px;
   color: var(--ink-60);
 }
-.titleblock .status.bad {
+.titleblock .status.bad,
+.titleblock .status .bad {
   color: var(--signal);
 }
 

@@ -147,6 +147,24 @@ export default [
     },
     probe: provenance,
   },
+  {
+    name: 'system-play',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => document.querySelector('.scrubber .play').click());
+      await page.waitForTimeout(5000);
+    },
+    // playback advances only through intervals that were solved when shown
+    probe: async (page) => {
+      const r = await page.evaluate(() => ({ seq: window.__app.seq, shown: window.__app.current.t, asked: window.__app.t }));
+      return { ok: r.seq >= 3 && Math.abs(r.asked - r.shown) <= 1, value: r };
+    },
+  },
   { name: 'system-trip', url: '', width: 1440, height: 900, timeout: 90000, settle: 600, before: tripByName(['SANTIAGO–SAN_ONOFRE 230 #1']), probe: provenance },
   {
     name: 'system-trip-show',
@@ -162,5 +180,106 @@ export default [
     probe: provenance,
   },
   { name: 'system-nosol', url: '', width: 1440, height: 900, timeout: 90000, settle: 600, before: tripByName(['PALO_VERDE–IMPERIAL_VALLEY 500 #1']), probe: provenance },
+  {
+    name: 'region-bay',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'region-bay-xfmr',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => {
+        const app = window.__app;
+        const k = app.grid.branches.findIndex((b) => b.kind === 'transformer' && b.from.site.id === 'METCALF' && b.to.kv === 60);
+        app.select({ kind: 'branch', index: k });
+      });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'region-exit',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => window.__app.exitRegion());
+      await page.waitForFunction(() => window.__app.level === 'system' && !window.__app.transitioning, null, { timeout: 30000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'region-bay-dark',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => {
+        const app = window.__app;
+        app.grid.branches.forEach((b, k) => {
+          if (b.from.site.id === 'EVERGREEN' || b.to.site.id === 'EVERGREEN') app.trip(k);
+        });
+        app.select({ kind: 'site', id: 'EVERGREEN' });
+      });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'region-bay-fold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 300,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => {
+        window.__app.freezeMorph = 0.5;
+        window.__app.enterRegion('bay');
+      });
+      await page.waitForFunction(() => window.__app.level === 'region', null, { timeout: 30000 });
+      await page.waitForTimeout(2500);
+    },
+  },
+  {
+    name: 'system-close',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.focusSite('METCALF', 30));
+    },
+    probe: provenance,
+  },
   { name: 'system-mobile', url: '', width: 390, height: 844, dpr: 2, timeout: 90000, settle: 800, before: waitSnap, probe: provenance },
 ];

@@ -14,7 +14,10 @@ import { drawSheet } from '../ui/sheet';
 import { Furniture } from '../ui/furniture';
 import { clockEl, data, dataText, derived, el, input, qty, siQty, solver } from '../ui/quantity';
 import { rich } from '../ui/glossary';
-import { branchView, siteView } from './inspect-system';
+import { branchView, regionView, siteView, transformerView } from './inspect-system';
+import { RegionLevel } from '../levels/region';
+import { PaperTooth } from '../render/paper';
+import { REGIONS, type RegionId } from '../data/ca/network';
 import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
 import type { Action } from '../ui/inspector';
@@ -55,7 +58,18 @@ export class App {
   private notice!: HTMLElement;
   private playTimer = 0;
   /** A camera move in progress (navigation, eased). */
-  private flight: { t0: number; ms: number; from: [number, number, number]; to: [number, number, number] } | null = null
+  private flight: { t0: number; ms: number; from: [number, number, number]; to: [number, number, number]; done?: () => void } | null = null;
+  /** Which level the sheet shows. */
+  level: 'system' | 'region' = 'system';
+  region: RegionLevel | null = null;
+  private regions = new Map<RegionId, RegionLevel>();
+  /** A level transition in progress (the fold between levels). */
+  private anim: { t0: number; ms: number; from: number; to: number; frame: (m: number) => void; done: () => void } | null = null;
+  /** For tests: hold a transition at this fold (0 flat … 1 exploded). */
+  freezeMorph: number | null = null;
+  private crumbs!: HTMLElement;
+  private regionFitZoom = 0;
+  private readonly paper = new PaperTooth()
   selection: Selection | null = null;
   private pixelRatio = 1;
   private cameraDirty = true;
@@ -76,12 +90,13 @@ export class App {
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     this.system = new SystemLevel(this.grid, outlines());
     this.scene.add(this.system.group);
+    this.scene.add(this.paper.mesh);
     this.labels = new LabelLayer(root);
     drawSheet(root);
     this.buildChrome();
     this.legend = new Legend(root);
     this.inspector = new Inspector(root);
-    this.inspector.onClose = () => this.select(null);
+    this.inspector.onClose = () => (this.selection ? this.select(null) : this.inspector.hide());
     this.furniture = new Furniture(root);
     installTermTips(root);
     this.resize();
@@ -103,10 +118,8 @@ export class App {
     const crumbs = document.createElement('nav');
     crumbs.className = 'crumbs';
     crumbs.setAttribute('aria-label', 'Where you are');
-    const here = document.createElement('span');
-    here.className = 'here';
-    here.textContent = 'California · System';
-    crumbs.appendChild(here);
+    this.crumbs = crumbs;
+    this.updateCrumbs();
     bar.append(mark, crumbs);
     this.root.appendChild(bar);
 
@@ -177,11 +190,12 @@ export class App {
   private setCurrent(s: Snapshot): void {
     this.current = s;
     this.system.applySnapshot(s);
+    this.region?.applySnapshot(s);
     this.scrubber.setSolved(s.t, DAY.intervalMin);
     this.updateTitleblock();
     this.updateNotice();
     this.updateLegend();
-    if (this.selection) this.inspect();
+    if (this.selection || this.region) this.inspect();
     this.onReady();
   }
 
@@ -273,8 +287,8 @@ export class App {
       h.append(document.createTextNode('Part of the grid is dark'));
       const buses = s.darkIslands.reduce((a, x) => a + x.buses.length, 0);
       p.append(
-        el(qty(buses, 'buses', solver(`t${s.t}.darkBuses`), { digits: 0 })),
-        rich(' are cut off from every source; '),
+        el(qty(buses, buses === 1 ? 'bus' : 'buses', solver(`t${s.t}.darkBuses`), { digits: 0 })),
+        rich(buses === 1 ? ' is cut off from every source; ' : ' are cut off from every source; '),
         el(qty(s.unservedMW, 'MW', solver(`t${s.t}.unserved`))),
         rich(' of demand is unserved. The rest of the grid has a solution, shown. '),
       );
@@ -341,12 +355,12 @@ export class App {
               el(qty(s.iterations, 'iterations', solver(`t${s.t}.iterations`), { digits: 0 })),
               '; largest [[mismatch]] ',
               el(siQty(s.maxMismatchPu * S_BASE * 1e6, 'W', solver(`t${s.t}.mismatch`))),
-              s.outcome === 'partial' ? span('; ', el(qty(s.unservedMW, 'MW', solver(`t${s.t}.unserved`))), ' unserved') : '',
+              s.outcome === 'partial' ? badSpan(span('; ', el(qty(s.unservedMW, 'MW', solver(`t${s.t}.unserved`))), ' unserved')) : '',
             )
           : span('No steady-state operating point (see the notice).'),
       );
       st.classList.add('status');
-      if (s.outcome !== 'solved') st.classList.add('bad');
+      if (s.outcome === 'none') st.classList.add('bad');
       if (this.outages.size) {
         const names = [...this.outages].map((k) => this.grid.branches[k]!);
         row(
@@ -480,8 +494,10 @@ export class App {
 
   private clampTarget(): void {
     const t = this.cam.target;
-    t.x = Math.max(-750, Math.min(750, t.x));
-    t.z = Math.max(-650, Math.min(650, t.z));
+    // the System frame spans the state; a region's frame is centred on the region
+    const [ox, oz] = this.region ? this.region.center : [0, 0];
+    t.x = Math.max(-750 - ox, Math.min(750 - ox, t.x));
+    t.z = Math.max(-650 - oz, Math.min(650 - oz, t.z));
     t.y = 0;
   }
 
@@ -530,6 +546,13 @@ export class App {
       pinch = 0;
     };
     c.addEventListener('pointerup', up);
+    c.addEventListener('dblclick', (e) => {
+      const hit = this.pick(e.offsetX, e.offsetY);
+      if (this.level === 'system' && hit?.kind === 'site') {
+        const site = this.grid.sites.find((x) => x.id === hit.id);
+        if (site) this.enterRegion(site.region);
+      }
+    });
     c.addEventListener('pointercancel', (e) => pointers.delete(e.pointerId));
     c.addEventListener(
       'wheel',
@@ -565,7 +588,14 @@ export class App {
           this.zoomAt(this.cam.width / 2, this.cam.height / 2, 0.8);
           break;
         case 'Escape':
-          this.select(null);
+          if (this.selection) this.select(null);
+          else if (this.region) this.exitRegion();
+          break;
+        case 'Enter':
+          if (this.level === 'system' && this.selection?.kind === 'site' && document.activeElement === this.canvas) {
+            const site = this.grid.sites.find((x) => this.selection?.kind === 'site' && x.id === this.selection.id);
+            if (site) this.enterRegion(site.region);
+          }
           break;
         case '[':
         case ']':
@@ -584,13 +614,164 @@ export class App {
     });
   }
 
+  private pick(x: number, y: number): Selection | null {
+    if (this.anim) return null;
+    return this.region ? this.region.pick(x, y, this.cam) : this.system.pick(x, y, this.cam);
+  }
+
   private hover(x: number, y: number): void {
-    const hit = this.system.pick(x, y, this.cam);
-    this.canvas.style.cursor = hit ? 'pointer' : 'grab';
+    this.canvas.style.cursor = this.pick(x, y) ? 'pointer' : 'grab';
   }
 
   private click(x: number, y: number): void {
-    this.select(this.system.pick(x, y, this.cam));
+    this.select(this.pick(x, y));
+  }
+
+  // ------------------------------------------------------------------ levels
+  private updateCrumbs(): void {
+    const c = this.crumbs;
+    c.replaceChildren();
+    if (!this.region) {
+      const here = document.createElement('span');
+      here.className = 'here';
+      here.textContent = 'California · System';
+      c.appendChild(here);
+      return;
+    }
+    const up = document.createElement('button');
+    up.className = 'crumb';
+    up.textContent = 'California · System';
+    up.title = 'Back to the whole state (Esc)';
+    up.addEventListener('click', () => this.exitRegion());
+    const sep = document.createElement('span');
+    sep.className = 'sep';
+    sep.textContent = '›';
+    const here = document.createElement('span');
+    here.className = 'here';
+    here.append(dataText(this.region.name, data(`network.region.${this.region.id}.name`)));
+    c.append(up, sep, here);
+  }
+
+  /** Where the camera must be (System frame) for the exploded region to fill the free area. */
+  private regionFit(r: RegionLevel): { x: number; z: number; zoom: number } {
+    const pts = r.corners.flatMap((c) => [c, [c[0], r.height, c[2]] as const]);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const p of pts) {
+      const [vx, vy] = projectToView(p[0], p[1], p[2]);
+      x0 = Math.min(x0, vx);
+      x1 = Math.max(x1, vx);
+      y0 = Math.min(y0, vy);
+      y1 = Math.max(y1, vy);
+    }
+    const free = this.freeRect(true); // the region's balance opens in the inspector
+    const zoom = Math.min(free.w / (x1 - x0), (free.h - 30) / (y1 - y0)) * 0.94;
+    // the ground point (y = 0) that projects to the middle of that box
+    const [ax, ay] = projectToView(1, 0, 0);
+    const [bx, by] = projectToView(0, 0, 1);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const det = ax * by - bx * ay;
+    const gx = (cx * by - bx * cy) / det;
+    const gz = (ax * cy - cx * ay) / det;
+    return { x: gx + r.center[0], z: gz + r.center[1], zoom };
+  }
+
+  /** System → Region: fly to the region, hand the network to it, and unfold its layers. */
+  enterRegion(id: RegionId): void {
+    if (this.level !== 'system' || this.anim || id === 'tie') return;
+    this.scrubber.setPlaying(false);
+    let r = this.regions.get(id);
+    if (!r) {
+      r = new RegionLevel(this.grid, id);
+      this.regions.set(id, r);
+    }
+    const reg = r;
+    const fit = this.regionFit(reg);
+    this.regionFitZoom = fit.zoom;
+    this.flyTo(fit.x, fit.z, fit.zoom, 700, () => {
+      // hand-off: the region's frame, its drawing folded flat exactly over the System sheet's
+      this.level = 'region';
+      this.region = reg;
+      if (this.current) reg.applySnapshot(this.current);
+      reg.highlight(this.selection);
+      reg.morph = 0;
+      this.scene.add(reg.group);
+      this.system.group.position.set(-reg.center[0], 0, -reg.center[1]);
+      this.cam.target.x -= reg.center[0];
+      this.cam.target.z -= reg.center[1];
+      this.system.setNetworkShown(false, new Set(reg.siteIds), 0);
+      this.labels.set([]);
+      this.updateCrumbs();
+      this.updateLegend();
+      this.animate(0, 1, 1500, (m) => this.foldFrame(m), () => {
+        this.refreshLabels();
+        this.updateLegend();
+        this.inspect();
+      });
+    }, this.freeRect(true));
+  }
+
+  /** Region → System: fold the layers flat, then hand the network back. */
+  exitRegion(): void {
+    const r = this.region;
+    if (!r || this.anim) return;
+    this.scrubber.setPlaying(false);
+    this.labels.set([]);
+    this.animate(r.morph, 0, 1100, (m) => this.foldFrame(m), () => {
+      this.scene.remove(r.group);
+      this.system.group.position.set(0, 0, 0);
+      this.cam.target.x += r.center[0];
+      this.cam.target.z += r.center[1];
+      this.system.setNetworkShown(true);
+      this.level = 'system';
+      this.region = null;
+      this.focusSites = this.system.highlight(this.selection);
+      this.updateCrumbs();
+      this.refreshLabels();
+      this.updateLegend();
+      if (this.selection) this.inspect();
+      else this.inspector.hide();
+    });
+  }
+
+  /** One frame of the fold: layers rise, and the System's symbols give way to the Region's. */
+  private foldFrame(m: number): void {
+    const r = this.region;
+    if (!r) return;
+    r.morph = m;
+    this.system.setNetworkShown(false, new Set(r.siteIds), Math.max(0, Math.min(1, (m - 0.35) / 0.5)));
+    this.cameraDirty = true;
+  }
+
+  private animate(from: number, to: number, ms: number, frame: (m: number) => void, done: () => void): void {
+    if (this.reducedMotion) {
+      frame(to);
+      done();
+      return;
+    }
+    frame(from);
+    this.anim = { t0: performance.now(), ms, from, to, frame, done };
+  }
+
+  private advanceAnim(now: number): void {
+    const a = this.anim;
+    if (!a) return;
+    const u = Math.min(1, (now - a.t0) / a.ms);
+    const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+    let m = a.from + (a.to - a.from) * e;
+    if (this.freezeMorph !== null) m = a.from + (a.to - a.from) * Math.min(e, Math.abs(this.freezeMorph - a.from) / Math.max(1e-9, Math.abs(a.to - a.from)));
+    a.frame(m);
+    if (u >= 1 && this.freezeMorph === null) {
+      this.anim = null;
+      a.done();
+    }
+  }
+
+  get transitioning(): boolean {
+    return !!this.anim || !!this.flight;
   }
 
   /** Keyboard: step through places in order of importance. */
@@ -604,7 +785,8 @@ export class App {
   select(sel: Selection | null): void {
     this.selection = sel;
     this.focusSites = this.system.highlight(sel);
-    if (!sel) this.inspector.hide();
+    if (this.region) this.focusSites = this.region.highlight(sel);
+    if (!sel && !this.region) this.inspector.hide();
     else this.inspect();
     this.refreshLabels();
   }
@@ -612,23 +794,37 @@ export class App {
   private inspect(): void {
     const s = this.current;
     const sel = this.selection;
-    if (!s || !sel) return;
+    if (!s) return;
+    if (!sel) {
+      // in a region with nothing selected: the region's own balance
+      if (this.region) {
+        const v = regionView(this.grid, s, this.region.id, this.region.siteIds);
+        this.inspector.show({ header: 'Region', name: v.name, kind: v.kind, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+      }
+      return;
+    }
     if (sel.kind === 'site') {
       const v = siteView(this.grid, s, sel.id);
-      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+      const site = this.grid.sites.find((x) => x.id === sel.id)!;
+      const actions: Action[] = [];
+      if (this.level === 'system' && site.region !== 'tie')
+        actions.push({ label: `Open ${REGIONS[site.region].name}`, title: 'Unfold the region into its voltage layers (Enter)', run: () => this.enterRegion(site.region) });
+      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
     } else if (sel.kind === 'branch') {
       const k = sel.index;
-      const v = branchView(this.grid, s, k);
+      const isX = this.grid.branches[k]!.kind === 'transformer';
+      const v = isX ? transformerView(this.grid, s, k) : branchView(this.grid, s, k);
       const out = this.outages.has(k);
+      const what = isX ? 'transformer' : 'circuit';
       const actions: Action[] = [
         out
-          ? { label: 'Restore this circuit', title: 'Close its breakers again', run: () => this.restore(k) }
-          : { label: 'Trip this circuit', title: 'Open the breakers at both ends and solve again', run: () => this.trip(k) },
+          ? { label: `Restore this ${what}`, title: 'Close its breakers again', run: () => this.restore(k) }
+          : { label: `Trip this ${what}`, title: 'Open the breakers at both ends and solve again', run: () => this.trip(k) },
       ];
       if (this.outages.size > (out ? 1 : 0)) actions.push({ label: 'Restore everything', run: () => this.restore('all') });
       this.inspector.show({
-        header: 'Selected circuit',
-        name: dataText(v.name, data(`network.line.${this.grid.branches[k]!.id}.name`)),
+        header: isX ? 'Selected transformer' : 'Selected circuit',
+        name: dataText(v.name, data(`network.${isX ? 'xfmr' : 'line'}.${this.grid.branches[k]!.id}.name`)),
         kind: v.kind,
         actions,
         ...(v.intro ? { intro: v.intro } : {}),
@@ -640,7 +836,8 @@ export class App {
   // ------------------------------------------------------------------ labels & legend
   private refreshLabels(): void {
     const sel = this.selection;
-    const items: LabelItem[] = this.system.labels.map((l) => {
+    const specs = this.region ? this.region.labels : this.system.labels;
+    const items: LabelItem[] = specs.map((l) => {
       const site = l.kind === 'site' ? l.id.slice(5) : null;
       const selected = sel?.kind === 'site' && site === sel.id;
       // with a selection, the places it connects to keep their names and the rest recede
@@ -654,7 +851,8 @@ export class App {
         className: `${l.kind}${l.priority < 4 && l.kind === 'site' ? ' minor' : ''}${selected ? ' selected' : ''}${dim ? ' dim' : ''}`,
         text: l.text,
         ...(l.kind === 'site' ? { dx: 0, dy: 0 } : {}),
-        pinned: selected || (sel?.kind === 'branch' && kept),
+        ...(l.prov ? { prov: l.prov } : {}),
+        pinned: selected || (sel?.kind === 'branch' && kept) || l.kind === 'layer',
       };
     });
     this.labels.set(items);
@@ -664,7 +862,8 @@ export class App {
   private updateLegend(): void {
     const s = this.current;
     this.legend.update({
-      classes: this.system.visibleClasses(this.cam.pxPerUnit),
+      level: this.region ? 'region' : 'system',
+      classes: this.region ? this.region.classes : this.system.visibleClasses(this.cam.pxPerUnit),
       showSignal: true,
       showOutOfService: !!s && s.inService.some((x) => x === 0),
       noSolution: s?.outcome === 'none',
@@ -688,6 +887,7 @@ export class App {
     const c0 = performance.now();
     const time = this.reducedMotion ? 0 : (now - this.start) / 1000;
     this.advanceFlight(performance.now());
+    this.advanceAnim(performance.now());
     this.cam.update();
     const w = this.cam.width;
     const h = this.cam.height;
@@ -695,6 +895,10 @@ export class App {
     for (const b of [this.system.lines, this.system.glyphs, this.system.marks]) b.frame({ width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time });
     this.system.flow.frame(w, h, pr, time);
     this.system.faces.frame(pr);
+    this.region?.frame({ width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time });
+    this.paper.frame(this.cam.pxPerUnit, pr);
+    // zooming well out of a region folds it back into the state
+    if (this.region && !this.anim && !this.flight && this.cam.pxPerUnit < this.regionFitZoom * 0.4) this.exitRegion();
     if (this.cam.pxPerUnit !== this.lastZoom) {
       this.system.setZoom(this.cam.pxPerUnit);
       this.updateLegend();
@@ -756,17 +960,16 @@ export class App {
   }
 
   /** The part of the canvas the panels leave free, px. */
-  private freeRect(): { x: number; y: number; w: number; h: number } {
+  private freeRect(withInspector = !this.inspector.root.hidden): { x: number; y: number; w: number; h: number } {
     const w = this.cam.width;
     const h = this.cam.height;
     if (w < 760) return { x: 16, y: 100, w: w - 32, h: h - 100 - (this.titleblock.offsetHeight + 150) };
-    const right = this.inspector.root.hidden ? 40 : 20 + this.inspector.root.offsetWidth + 20;
+    const right = withInspector ? 20 + 372 + 20 : 40;
     return { x: 300, y: 56, w: w - 300 - right, h: h - 56 - 196 };
   }
 
   /** Move the camera so ground point (x, z) sits in the middle of the free area at `zoom`. */
-  flyTo(x: number, z: number, zoom: number, ms = 700): void {
-    const free = this.freeRect();
+  flyTo(x: number, z: number, zoom: number, ms = 700, done?: () => void, free = this.freeRect()): void {
     // the ground offset that puts (x, z) at the free area's centre rather than the canvas's
     const save = { t: this.cam.target.clone(), z: this.cam.pxPerUnit };
     this.cam.pxPerUnit = zoom;
@@ -782,10 +985,12 @@ export class App {
     if (this.reducedMotion || ms <= 0) {
       this.cam.target.set(to[0], 0, to[1]);
       this.cam.pxPerUnit = to[2];
+      this.cam.update();
       this.cameraDirty = true;
+      done?.();
       return;
     }
-    this.flight = { t0: performance.now(), ms, from, to };
+    this.flight = { t0: performance.now(), ms, from, to, ...(done ? { done } : {}) };
   }
 
   private advanceFlight(now: number): void {
@@ -796,7 +1001,11 @@ export class App {
     this.cam.target.set(f.from[0] + (f.to[0] - f.from[0]) * e, 0, f.from[1] + (f.to[1] - f.from[1]) * e);
     this.cam.pxPerUnit = f.from[2] * (f.to[2] / f.from[2]) ** e;
     this.cameraDirty = true;
-    if (u >= 1) this.flight = null;
+    if (u >= 1) {
+      this.flight = null;
+      this.cam.update();
+      f.done?.();
+    }
   }
 
   /** Centre the view on a site at a zoom (px per km). */
@@ -819,4 +1028,10 @@ function span(...parts: Array<Node | string>): HTMLSpanElement {
   const s = document.createElement('span');
   for (const p of parts) s.append(typeof p === 'string' ? rich(p) : p);
   return s;
+}
+
+/** Text in the signal colour: something is wrong. */
+function badSpan(inner: HTMLElement): HTMLSpanElement {
+  inner.classList.add('bad');
+  return inner;
 }
