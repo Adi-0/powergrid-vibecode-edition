@@ -1,0 +1,22 @@
+/* Atlas Sans: IBM Plex Sans subset + ANGLE (tools/font/build_font.py). OFL 1.1. */
+@font-face {
+  font-family: 'Atlas Sans';
+  src: url('../assets/fonts/AtlasSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Atlas Sans';
+  src: url('../assets/fonts/AtlasSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Atlas Sans';
+  src: url('../assets/fonts/AtlasSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
