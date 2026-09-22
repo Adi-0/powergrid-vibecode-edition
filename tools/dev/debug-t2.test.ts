@@ -1,0 +1,21 @@
+import { it } from 'vitest';
+import { Grid } from '../../src/model/grid';
+import { runDay } from '../../src/model/day';
+import { operate } from '../../src/model/operate';
+import { solveAC } from '../../src/physics/pf/acpf';
+it('t2', () => {
+  const g = new Grid();
+  const run = runDay(g);
+  const prev = run.points[94]!;
+  const step = run.schedule.steps[95]!;
+  const a = operate(g, step, g.baseCase(), { participation: 'agc', warm: prev.result, shuntSteps: prev.shuntSteps, record: true });
+  console.log('warm+shunts', a.status, a.result.islands[0]!.iterations.map((i) => i.maxMismatch.toExponential(0)).join(' ').slice(0, 300));
+  const b = operate(g, step, g.baseCase(), { participation: 'agc' });
+  console.log('cold', b.status);
+  const r = solveAC(a.pf, { slack: 'distributed', initial: prev.result, enforceQLimits: false, record: true });
+  console.log('relaxed', r.status, r.islands[0]!.iterations.map((i) => i.maxMismatch.toExponential(0)).join(' '));
+  const r2 = solveAC(a.pf, { slack: 'distributed', start: 'dc', enforceQLimits: false, record: true });
+  console.log('relaxed dc', r2.status, r2.islands[0]!.iterations.map((i) => `${i.maxMismatch.toExponential(0)}@${g.buses[i.worstBus]!.id}${i.worstKind}`).join(' '));
+  let d = 0; step.genMW.forEach((v, i) => (d += Math.abs(v - prev.step.genMW[i]!)));
+  console.log('dispatch change MW', d.toFixed(0));
+});

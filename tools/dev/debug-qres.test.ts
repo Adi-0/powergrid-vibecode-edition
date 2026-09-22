@@ -1,0 +1,22 @@
+import { it } from 'vitest';
+import { Grid, S_BASE } from '../../src/model/grid';
+import { runDay } from '../../src/model/day';
+import { operate } from '../../src/model/operate';
+import { solveAC } from '../../src/physics/pf/acpf';
+it('qres', () => {
+  const g = new Grid();
+  const run = runDay(g);
+  const base = run.points[72]!;
+  const pinned = base.result.islands[0]!.pinnedQ.map((i) => g.gens[i]!.id);
+  console.log('base pinnedQ', pinned.join(', '));
+  let qres = 0;
+  g.gens.forEach((gg, i) => { if (base.pf.gens[i]!.inService && gg.regulates && gg.bus.site.region !== 'north' && ['la', 'sd', 'inland'].includes(gg.bus.site.region)) qres += gg.qmaxMVAr - base.result.qg[i]! * S_BASE; });
+  console.log('southern Q reserve MVAr', qres.toFixed(0));
+  const k = g.branches.findIndex((b) => b.id === 'MIDWAY–VINCENT 500 #1');
+  const op = operate(g, base.step, g.baseCase(), { participation: 'governor', branchOutages: new Set([k]), warm: base.result, shuntSteps: base.shuntSteps });
+  const r = solveAC(op.pf, { slack: 'distributed', initial: base.result, enforceQLimits: false });
+  const over = g.gens.map((gg, i) => ({ id: gg.id, q: r.qg[i]! * S_BASE, qb: base.result.qg[i]! * S_BASE, qmax: gg.qmaxMVAr, on: op.pf.gens[i]!.inService })).filter((x) => x.on && x.q > x.qmax + 1);
+  console.log('over Qmax after ctg:', over.map((x) => `${x.id} ${x.qb.toFixed(0)}→${x.q.toFixed(0)}/${x.qmax.toFixed(0)}`).join(', '));
+  const shunts = g.shunts.map((sh, j) => `${sh.bus.id}:${base.shuntSteps[j]}/${sh.steps}`).filter((x) => ['LA', 'SA', 'MI', 'SE', 'BA', 'HA', 'SC', 'SY', 'EN', 'MO', 'VI', 'SAN', 'OT', 'GO'].some((p) => x.startsWith(p)));
+  console.log('shunts', shunts.join(' '));
+});
