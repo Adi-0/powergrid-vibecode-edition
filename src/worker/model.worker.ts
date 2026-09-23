@@ -21,7 +21,7 @@ import { feederSnap } from '../model/feederSnapshot';
 export type ToWorker =
   | { type: 'init'; focus: number }
   /** `detail`: also solve the Evergreen substation and feeder, coupled at its 60 kV bus. */
-  | { type: 'solve'; t: number; outages: number[]; seq: number; detail?: boolean; plantOutages?: string[]; vset?: Array<[number, number]> };
+  | { type: 'solve'; t: number; outages: number[]; seq: number; detail?: boolean; plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[] };
 
 /** The day as dispatched: what the time strip draws. MW per interval. */
 export interface DaySummary {
@@ -80,7 +80,8 @@ function answer(): void {
   const outages = [...new Set(req.outages)].sort((a, b) => a - b);
   const plantOutages = [...new Set(req.plantOutages ?? [])].sort();
   const vset = req.vset ?? [];
-  const scenario = { plantOutages, vset };
+  const feederOpen = [...new Set(req.feederOpen ?? [])].sort();
+  const scenario = { plantOutages, vset, feederOpen };
   // With something tripped this is the moment after: the dispatch stays as planned
   // and governors (droop) cover the change. See docs/simplifications.md.
   const opts = {
@@ -88,6 +89,7 @@ function answer(): void {
     branchOutages: new Set(outages),
     plantOutages: new Set(plantOutages),
     vset: new Map(vset),
+    feederOpen: new Set(feederOpen),
     ...(warm && warm.status === 'converged' ? { warm: warm.result, shuntSteps: warm.shuntSteps } : {}),
   };
   let s: Snapshot;

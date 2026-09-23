@@ -7,7 +7,10 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../src/math/panels';
+import { faultStudy } from '../src/model/faultStudy';
+import { faultOnFeeder, feederSource } from '../src/model/feederFault';
+import { simulateProtection } from '../src/model/protection';
 import { tripResponse } from '../src/model/frequency';
 
 /**
@@ -111,6 +114,28 @@ describe('math panels', () => {
       }
       check(frequencyPanel(tripResponse(g, s, 'ML1')), 'trip ML1');
       check(frequencyPanel(tripResponse(g, s, 'DIABLO')), 'trip DIABLO');
+    });
+
+    it(`fault levels at every bus, and feeder faults, at interval ${t}`, () => {
+      const w = day.points[t]!;
+      const cp = coupledSolve(g, w.step, g.baseCase(), fd, { participation: 'agc', warm: w.result, shuntSteps: w.shuntSteps });
+      const s: Snapshot = { ...snapshot(g, cp.op), feeder: feederSnap(cp) };
+      const fs = faultStudy(g, s);
+      let n = 0;
+      for (const b of g.buses) {
+        if (!s.energized[b.index] || b.terminalOf) continue;
+        const p = busFaultPanel(g, s, fs, b.index);
+        if (p) (check(p, `fault ${b.id}`), n++);
+      }
+      expect(n).toBeGreaterThan(60);
+      const src = feederSource(g, fs);
+      for (const [node, kind] of [['F4', 'slg'], ['F4', '3ph'], ['F4', 'll'], ['F1', 'slg'], [fd.layout.laterals[9]!.nodes.at(-1)!, 'slg'], [fd.layout.laterals[0]!.nodes[0]!, 'slg']] as const) {
+        const res = faultOnFeeder(fd, s, src, node, kind)!;
+        const mags = res.I.map((x) => x.abs());
+        const lat = fd.layout.laterals.find((l) => l.nodes.includes(node));
+        const prot = simulateProtection({ devices: res.devices, Iph: Math.max(...mags), Ires: res.residual.abs(), Ifuse: lat ? mags[lat.phase]! : 0, permanent: true });
+        check(feederFaultPanel(s, { node, permanent: true, res, prot, outHomes: 0, momentaryHomes: 0 }), `feeder fault ${node} ${kind}`);
+      }
     });
 
     it(`substation, feeder, meters and the outlet at interval ${t}`, () => {

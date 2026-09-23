@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **8 — Faults + protection**
+Current phase: **9 — Breadth + guided path**
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -12,7 +12,7 @@ Current phase: **8 — Faults + protection**
 | 5 Substation → feeder → service | done | Outlet traceable to transmission; meters + losses = head |
 | 6 Math panel | done | Arithmetic-consistency test passes on every panel |
 | 7 Plant + machine + SFR | done | Plant energy closes; SMIB equal-area fixture |
-| 8 Faults + protection | — | Textbook fault fixture; coordinated sequence |
+| 8 Faults + protection | done | Textbook fault fixture; coordinated sequence |
 | 9 Breadth + guided path | — | — |
 
 ## Log
@@ -134,3 +134,19 @@ Current phase: **8 — Faults + protection**
     - Machine: E_f and δ from terminal quantities.
     - Frequency: df/dt and the settled frequency in closed form; the nadir is marked as integrated.
   - Critique: `docs/critique/phase-7.md`. 99 tests pass; 35 screenshot views, all 31 probes OK (the other four are transition stills).
+- **Phase 8 done.** Decision 0021.
+  - **Symmetrical-component faults on the transmission network.**
+    - Zero-sequence paths follow each transformer's windings; Δ–Y shifts are included.
+    - Checked against OpenDSS on a textbook-class four-bus system (four fault types; currents, branch currents, voltages to 2×10⁻⁴ pu).
+    - California fault levels: 10–27 kA at 500 kV, 34–48 kA at 230 kV, 12 kA at Evergreen 60 kV. The study builds in about 20 ms.
+    - A place's inspector shows its buses' fault levels, with the working.
+  - **Phase-domain feeder faults**, checked against OpenDSS's IEEE 13 short-circuit matrices.
+  - **Protection on feeder 1105:**
+    - breaker relay on IEEE C37.112 curves (50/51/50N/51N);
+    - 2F2S recloser;
+    - 100T lateral fuses.
+
+    It is simulated as a time-stepped sequence, played on the sheet in real time: fault-current chevrons, devices opening, and sections without supply in the signal colour. A time–current chart and an event timeline sit in the inspector.
+  - **After the sequence:** a real coupled re-solve with the devices open. For example, after FU-L10 clears, 43 homes are out and meters plus losses still equal the head.
+  - **Coordination test:** every permanent fault is cleared by the nearest device, and the CTI of at least 0.3 s holds. Fuse saving holds where the current allows.
+  - Critique: `docs/critique/phase-8.md`. 129 tests pass; 38 screenshot views, all 34 probes OK (the other four are transition stills).

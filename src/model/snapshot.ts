@@ -28,6 +28,8 @@ export interface Snapshot {
   plantOutages: string[];
   /** Excitation changed from schedule: [generator index, voltage set-point pu]. */
   vset: Array<[number, number]>;
+  /** Feeder devices held open after a fault. */
+  feederOpen: string[];
   /** Solver status: the worst island's. */
   status: string;
   /**
@@ -83,7 +85,7 @@ export interface Snapshot {
   feeder?: FeederSnap;
 }
 
-export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]> } = {}): Snapshot {
+export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[] } = {}): Snapshot {
   const nb = grid.branches.length;
   const pf = new Float64Array(nb);
   const qf = new Float64Array(nb);
@@ -138,6 +140,7 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
     outages,
     plantOutages: scenario.plantOutages ?? [],
     vset: scenario.vset ?? [],
+    feederOpen: scenario.feederOpen ?? [],
     status: op.status,
     outcome,
     darkIslands,

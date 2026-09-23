@@ -25,6 +25,11 @@ import { PlantLevel } from '../levels/plant';
 import { MachineLevel } from '../levels/machine';
 import { equipView, machineView, plantView } from './inspect-plant';
 import { tripResponse, type TripResponse } from '../model/frequency';
+import { faultStudy, type FaultStudy } from '../model/faultStudy';
+import { faultOnFeeder, feederSource } from '../model/feederFault';
+import { simulateProtection } from '../model/protection';
+import { pathBetween, type FeederFaultKind } from '../physics/dist/fault';
+import { busFaultSection, feederFaultView, type FeederEvent } from './inspect-fault';
 import type { Level, LevelKind } from '../levels/level';
 import type { Vec3 } from '../render/lines';
 import { PaperTooth } from '../render/paper';
@@ -33,12 +38,19 @@ import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
 
 /**
  * The application: one sheet (the System level for now), its camera and input, the
  * solver thread, and the panels around the drawing.
  */
+/** Is `to` downstream of `from` on the feeder (following closed and open switches alike)? */
+function pathBetweenIds(fd: Feeder, from: string, to: string): boolean {
+  const parent = new Map(fd.base.branches.map((b) => [b.to, b.from]));
+  for (let n: string | undefined = to; n; n = parent.get(n)) if (n === from) return true;
+  return false;
+}
+
 export class App {
   readonly root: HTMLElement;
   readonly canvas: HTMLCanvasElement;
@@ -69,6 +81,16 @@ export class App {
   tripEvent: TripResponse | null = null;
   /** Excitation changed by the reader: generator index → voltage set-point, pu. */
   readonly vset = new Map<number, number>();
+  /** Feeder devices left open by protection after a fault. */
+  readonly feederOpen = new Set<string>();
+  /** A fault on the feeder and its protection sequence (playing while `faultPlaying`). */
+  feederEvent: FeederEvent | null = null;
+  private faultStart = 0;
+  private faultPlaying = false;
+  private faultState = '';
+  private faultCache: { seq: number; t: number; fs: FaultStudy } | null = null;
+  /** For the screenshot harness: hold the protection playback at this time, s. */
+  freezeFault: number | null = null;
   private seq = 0;
   private inFlight = false;
   private stale = false;
@@ -211,13 +233,14 @@ export class App {
       this.plantOutages.clear();
       this.vset.clear();
       this.tripEvent = null;
+      this.clearFeederFault(false);
     } else this.outages.delete(k);
     this.requestSolve();
   }
 
   /** Anything changed from the day as scheduled. */
   get scenarioActive(): boolean {
-    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0;
+    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0 || this.feederOpen.size > 0;
   }
 
   /**
@@ -237,6 +260,130 @@ export class App {
     this.plantOutages.delete(id);
     if (this.tripEvent?.plantId === id) this.tripEvent = null;
     this.requestSolve();
+  }
+
+  /** The sequence networks at the interval on the sheet (built once per solution). */
+  faultStudyNow(): FaultStudy | null {
+    const s = this.current;
+    if (!s || s.outcome === 'none') return null;
+    if (!this.faultCache || this.faultCache.seq !== s.seq || this.faultCache.t !== s.t) this.faultCache = { seq: s.seq, t: s.t, fs: faultStudy(this.grid, s) };
+    return this.faultCache.fs;
+  }
+
+  /**
+   * A fault on feeder 1105 at a node: the fault current from the transmission system's
+   * Thevenin through the bank and down the feeder, and the protection's sequence,
+   * simulated, then played on the sheet in real time.
+   */
+  faultFeeder(node: string, permanent: boolean, kind: FeederFaultKind = 'slg'): void {
+    const s = this.current;
+    const fl = this.feederLevel;
+    if (!s || !s.feeder || !fl || this.top !== fl) return;
+    const fs = this.faultStudyNow();
+    if (!fs) return;
+    const fd = this.feederModel();
+    const res = faultOnFeeder(fd, s, feederSource(this.grid, fs), node, kind);
+    if (!res) return;
+    const mags = res.I.map((x) => x.abs());
+    const lat = fd.layout.laterals.find((l) => l.nodes.includes(node));
+    const prot = simulateProtection({ devices: res.devices, Iph: Math.max(...mags), Ires: res.residual.abs(), Ifuse: lat ? mags[lat.phase]! : 0, permanent });
+    const homesBeyond = (devs: string[]) => {
+      const out = new Set<string>();
+      for (const d of devs) {
+        const b = fd.base.branches.find((x) => x.id === d);
+        if (!b) continue;
+        for (const h of fd.layout.homes) if (pathBetweenIds(fd, b.to, h.meter)) out.add(h.id);
+      }
+      return out;
+    };
+    const outH = homesBeyond(prot.open);
+    const momH = [...homesBeyond(prot.momentary)].filter((h) => !outH.has(h));
+    this.clearFeederFault(false);
+    this.feederEvent = { node, permanent, res, prot, outHomes: outH.size, momentaryHomes: momH.length };
+    this.faultStart = performance.now();
+    this.faultPlaying = true;
+    this.faultState = '';
+    this.select(null);
+    this.updateLegend();
+    // bring the fault and the device that protects it into view
+    const guard = [...res.devices].reverse().find((d) => d !== 'CB-1105') ?? 'CB-1105';
+    const pts = [fl.pointOf(node), fl.pointOf(guard) ?? fl.origin].filter((p): p is Vec3 => !!p);
+    const fit = this.fitOf(pts, 120);
+    this.flyTo(fit.x, fit.z, Math.min(fit.zoom, this.cam.pxPerUnit * 6), 700, undefined, this.freeRect(true));
+  }
+
+  /** Camera fit for a set of points in the level's frame, with a margin in px. */
+  private fitOf(pts: Vec3[], marginPx: number): { x: number; z: number; zoom: number } {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const p of pts) {
+      const [vx, vy] = projectToView(p[0], p[1], p[2]);
+      x0 = Math.min(x0, vx);
+      x1 = Math.max(x1, vx);
+      y0 = Math.min(y0, vy);
+      y1 = Math.max(y1, vy);
+    }
+    const free = this.freeRect(true);
+    const zoom = Math.min((free.w - 2 * marginPx) / Math.max(1e-6, x1 - x0), (free.h - 2 * marginPx) / Math.max(1e-6, y1 - y0));
+    const [ax, ay] = projectToView(1, 0, 0);
+    const [bx, by] = projectToView(0, 0, 1);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const det = ax * by - bx * ay;
+    return { x: (cx * by - bx * cy) / det, z: (ax * cy - cx * ay) / det, zoom };
+  }
+
+  /** Repair the fault: every device closed again, the feeder back to normal. */
+  clearFeederFault(solve = true): void {
+    this.feederEvent = null;
+    this.faultPlaying = false;
+    this.faultState = '';
+    this.feederLevel?.setFault(null);
+    const had = this.feederOpen.size > 0;
+    this.feederOpen.clear();
+    this.updateLegend();
+    if (solve && had) this.requestSolve();
+    else if (solve) this.inspect();
+  }
+
+  /** Play the protection sequence: what is open and whether current flows, at the time on the clock. */
+  private tickFault(now: number): void {
+    const ev = this.feederEvent;
+    const fl = this.feederLevel;
+    if (!ev || !fl || !this.faultPlaying) return;
+    const tp = this.freezeFault ?? (this.reducedMotion ? Infinity : (now - this.faultStart) / 1000);
+    const open = new Set<string>();
+    for (const e of ev.prot.events) {
+      if (e.t > tp) break;
+      if (e.what === 'open' || e.what === 'clear') open.add(e.device);
+      if (e.what === 'reclose') open.delete(e.device);
+    }
+    const conducting = ev.prot.conducting.some(([a, b]) => tp >= a && tp < b);
+    const done = tp > ev.prot.clearedAt + 1.2;
+    const key = `${[...open].sort().join()}|${conducting}|${done}`;
+    // the cursor on the timeline moves every frame; the drawing only when something changes
+    const cur = this.inspector.root.querySelector<SVGLineElement>('svg[aria-label="The protection sequence in time"] line.cursor');
+    if (cur) {
+      const x = Number(cur.dataset.x0) + Math.min(1, tp / Number(cur.dataset.tend)) * Number(cur.dataset.w);
+      cur.setAttribute('x1', String(x));
+      cur.setAttribute('x2', String(x));
+    }
+    if (key === this.faultState) return;
+    this.faultState = key;
+    const fd = this.feederModel();
+    const path = new Set((pathBetween(fd.base, 'EV-12', ev.node) ?? []).map((b) => fd.base.branches.indexOf(b)));
+    if (done) {
+      this.faultPlaying = false;
+      // the steady state after: devices left open, the section beyond them without supply
+      for (const d of ev.prot.open) this.feederOpen.add(d);
+      fl.setFault(ev.permanent ? { node: ev.node, conducting: false, open: new Set(ev.prot.open), path } : null);
+      this.requestSolve();
+      this.inspect();
+      return;
+    }
+    fl.setFault({ node: ev.node, conducting, open, path });
   }
 
   /** Move a generator's voltage set-point (its excitation); null returns it to schedule. */
@@ -259,6 +406,7 @@ export class App {
       t: this.t,
       outages: [...this.outages],
       plantOutages: [...this.plantOutages],
+      feederOpen: [...this.feederOpen],
       vset: [...this.vset],
       seq: ++this.seq,
       detail: this.stack.some((l) => l.needsDetail),
@@ -1160,9 +1308,28 @@ export class App {
     }
     if (top instanceof FeederLevel) {
       const f = this.feederModel();
+      const ev = this.feederEvent;
+      if (ev && !sel) {
+        const tp = this.freezeFault ?? (this.faultPlaying ? (performance.now() - this.faultStart) / 1000 : ev.prot.clearedAt + 1.2);
+        return show('Fault', feederFaultView(f, s, ev, tp), [{ label: 'Repair and restore', title: 'A crew repairs the fault; every device closes again', run: () => this.clearFeederFault() }]);
+      }
       if (!sel) return show('Feeder', feederView(s, f));
+      // a fault can be put on any primary line or pole
+      const faultActs = (node: string): Action[] => {
+        const n = f.base.nodes.get(node);
+        if (!n || n.kind !== 'primary' || node.startsWith('EV-')) return [];
+        const acts: Action[] = [
+          { label: 'Fault here, temporary', title: 'A flashover that goes out once the current stops', run: () => this.faultFeeder(node, false) },
+          { label: 'Fault here, permanent', title: 'Something stays in contact: protection must isolate it', run: () => this.faultFeeder(node, true) },
+        ];
+        if (n.phases.length === 3) acts.push({ label: 'Three-phase fault', title: 'All three phases together, permanent', run: () => this.faultFeeder(node, true, '3ph') });
+        return acts;
+      };
       if (sel.kind === 'dist') {
-        if (sel.what === 'line' || sel.what === 'device') return show('Selected', feederElementView(s, f, sel.id, sel.what));
+        if (sel.what === 'line' || sel.what === 'device') {
+          const b = f.base.branches.find((x) => x.id === sel.id);
+          return show('Selected', feederElementView(s, f, sel.id, sel.what), b && sel.what === 'line' ? faultActs(b.to) : []);
+        }
         if (sel.what === 'transformer')
           return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Open this service', title: 'Down the pole to the homes (Enter)', run: () => this.enterService(sel.id) }]);
         if (sel.what === 'home') {
@@ -1231,7 +1398,9 @@ export class App {
         actions.push({ label: 'Open the combined-cycle plant', title: 'Unfold the node into Moss Landing’s first unit', run: () => this.enterPlant() });
       if (this.top instanceof RegionLevel && site.id === 'EVERGREEN')
         actions.push({ label: 'Open the substation', title: 'Unfold the busbar into the substation yard (Enter)', run: () => this.enterSubstation() });
-      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+      const fs = this.faultStudyNow();
+      const fsec = fs ? busFaultSection(this.grid, s, fs, sel.id) : null;
+      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: fsec ? [...v.sections, fsec] : v.sections });
     } else if (sel.kind === 'branch') {
       const k = sel.index;
       const isX = this.grid.branches[k]!.kind === 'transformer';
@@ -1266,6 +1435,7 @@ export class App {
     else if (top instanceof SubstationLevel) out.push(substationPanel(s));
     else if (top instanceof FeederLevel) {
       const f = this.feederModel();
+      if (this.feederEvent && !sel) out.push(feederFaultPanel(s, this.feederEvent));
       if (sel?.kind === 'dist' && sel.what === 'home') out.push(meterPanel(s, f, sel.id));
       out.push(feederPanel(s, f));
     } else if (top instanceof ServiceLevel) {
@@ -1274,6 +1444,8 @@ export class App {
       else out.push(outletPanel(s, f));
     } else if (sel?.kind === 'site') {
       for (const b of this.grid.buses) if (b.site.id === sel.id && !b.terminalOf) out.push(busPanel(this.grid, s, b.index));
+      const fs = this.faultStudyNow();
+      if (fs) for (const b of this.grid.buses) if (b.site.id === sel.id && !b.terminalOf && s.energized[b.index]) out.push(busFaultPanel(this.grid, s, fs, b.index));
     } else if (sel?.kind === 'branch') out.push(branchPanel(this.grid, s, sel.index));
     else if (!sel && top instanceof RegionLevel) out.push(regionPanel(this.grid, s, top.siteIds, top.id));
     return out.filter((p): p is Panel => p !== null);
@@ -1314,6 +1486,7 @@ export class App {
       showSignal: true,
       showOutOfService: (!!s && s.inService.some((x) => x === 0)) || this.plantOutages.size > 0,
       noSolution: s?.outcome === 'none',
+      fault: this.top instanceof FeederLevel && (this.feederEvent !== null || this.feederOpen.size > 0),
     });
   }
 
@@ -1335,6 +1508,7 @@ export class App {
     const time = this.reducedMotion ? 0 : (now - this.start) / 1000;
     this.advanceFlight(performance.now());
     this.advanceAnim(performance.now());
+    this.tickFault(performance.now());
     this.cam.update();
     const w = this.cam.width;
     const h = this.cam.height;

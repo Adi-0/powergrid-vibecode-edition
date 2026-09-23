@@ -59,7 +59,7 @@ export function coupledSolve(
     if (!op.result.energized[busIdx]) break;
     const v = op.result.vm[busIdx]!;
     const a = op.result.va[busIdx]!;
-    fs = solveFeeder(feeder, hour, v, a, ltc);
+    fs = solveFeeder(feeder, hour, v, a, ltc, opts.feederOpen);
     ltc = fs.ltcStep;
     const sD = fs.substationS;
     history.push({ vPu: v, angleDeg: (a * 180) / Math.PI, sMW: sD.re / 1e6, qMVAr: sD.im / 1e6 });
@@ -75,7 +75,7 @@ export function coupledSolve(
   }
   if (!fs) {
     // no source at the boundary: the substation and feeder are dark
-    fs = solveFeeder(feeder, hour, 0, 0, ltc);
+    fs = solveFeeder(feeder, hour, 0, 0, ltc, opts.feederOpen);
     history.push({ vPu: 0, angleDeg: 0, sMW: 0, qMVAr: 0 });
     change = 0;
   }

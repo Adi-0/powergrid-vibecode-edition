@@ -9,6 +9,9 @@ import { add, atan, cos, div, mul, neg, num, par, ref, sigDigits, sin, sq, sqrt,
 import { CCGT, plantState } from '../model/ccgt';
 import { machineOf, phasors } from '../model/machine';
 import type { TripResponse } from '../model/frequency';
+import { busFaultLevel, type FaultStudy } from '../model/faultStudy';
+import { C37_112, PROTECTION } from '../data/dist/protection';
+import type { FeederEvent } from '../app/inspect-fault';
 
 /**
  * Math panels for what can be selected: the working behind the numbers the inspector
@@ -578,5 +581,145 @@ export function frequencyPanel(r: TripResponse): Panel {
       },
       { label: 'Settled frequency', general: 'f = f_0 + Δf', sym: 'f', expr: add(F0(), ref(1)), unit: 'Hz', digits: 4, prov: key('settled'), solver: r.settledHz },
     ],
+  };
+}
+
+// ---------------------------------------------------------------- faults
+
+/** A transmission bus's fault levels from its sequence Thevenin impedances. */
+export function busFaultPanel(grid: Grid, s: Snapshot, fs: FaultStudy, busIndex: number): Panel | null {
+  const b = grid.buses[busIndex]!;
+  const f = busFaultLevel(grid, fs, busIndex);
+  const t = s.t;
+  const key = (k: string) => `derived:t${t}.bus.${b.id}.fault.${k}`;
+  const zkey = (k: string) => `solver:t${t}.bus.${b.id}.fault.${k}`;
+  const d = (v: number) => sigDigits(v, 9); // inputs: enough figures that a small |Z| still divides accurately
+  const V = () => num(f.vpre.abs(), 7, 'pu', `solver:t${t}.bus.${b.id}.vm`, '|V_f|');
+  const Ib = () => num(fs.iBaseKA[busIndex]!, 8, 'kA', `derived:bus.${b.id}.iBase`, 'I_{base}');
+  const r1 = f.z1.re;
+  const x1 = f.z1.im;
+  const z2 = f.r1.z2;
+  const z0 = f.r1.z0;
+  const steps: Step[] = [
+    { label: 'Positive-sequence Thevenin impedance at the bus (from Z_bus)', general: '|Z_1| = √(R_1² + X_1²)', sym: '|Z_1|', expr: sqrt(add(sq(num(r1, d(r1), 'pu', zkey('R1'), 'R_1')), sq(num(x1, d(x1), 'pu', zkey('X1'), 'X_1')))), unit: 'pu', digits: sigDigits(f.z1.abs(), 8), prov: key('Z1'), solver: f.z1.abs() },
+    { label: 'Three-phase fault current, per unit', general: 'I_{3φ} = |V_f| / |Z_1|', sym: 'I_{3φ}', expr: div(V(), ref(0)), unit: 'pu', digits: sigDigits(f.r3.ia.abs(), 6), prov: key('i3pu'), solver: f.r3.ia.abs() },
+    { label: 'In kiloamperes (the base current at this voltage)', general: 'I_{3φ} × I_{base},  I_{base} = S_{base} / (√3 V_{base})', sym: 'I_{3φ}', expr: mul(ref(1), Ib()), unit: 'kA', digits: sigDigits(f.i3kA, 5), prov: key('i3'), solver: f.i3kA },
+  ];
+  if (Number.isFinite(z0.re)) {
+    const rs = r1 + z2.re + z0.re;
+    const xs = x1 + z2.im + z0.im;
+    steps.push(
+      {
+        label: 'Resistances of the three sequence networks in series (a line-to-ground fault connects them so)',
+        general: 'R_Σ = R_1 + R_2 + R_0',
+        sym: 'R_Σ',
+        expr: add(add(num(r1, d(r1), 'pu', zkey('R1'), 'R_1'), num(z2.re, d(z2.re), 'pu', zkey('R2'), 'R_2')), num(z0.re, d(z0.re), 'pu', zkey('R0'), 'R_0')),
+        unit: 'pu',
+        digits: sigDigits(rs, 8),
+        prov: key('Rsum'),
+        solver: rs,
+      },
+      {
+        label: 'And their reactances',
+        general: 'X_Σ = X_1 + X_2 + X_0',
+        sym: 'X_Σ',
+        expr: add(add(num(x1, d(x1), 'pu', zkey('X1'), 'X_1'), num(z2.im, d(z2.im), 'pu', zkey('X2'), 'X_2')), num(z0.im, d(z0.im), 'pu', zkey('X0'), 'X_0')),
+        unit: 'pu',
+        digits: sigDigits(xs, 8),
+        prov: key('Xsum'),
+        solver: xs,
+      },
+      {
+        label: 'Line-to-ground fault current, $I_a = 3I_0$',
+        general: 'I_{LG} = 3|V_f| / √(R_Σ² + X_Σ²) × I_{base}',
+        sym: 'I_{LG}',
+        expr: mul(div(mul(num(3, 0, '', 'notation:three'), V()), sqrt(add(sq(ref(3)), sq(ref(4))))), Ib()),
+        unit: 'kA',
+        digits: sigDigits(f.i1kA, 5),
+        prov: key('i1'),
+        solver: f.i1kA,
+      },
+    );
+  }
+  return {
+    title: 'Fault current at the {0} bus',
+    introNums: [{ k: 'num', value: b.kv, digits: 0, unit: 'kV', prov: `data:network.bus.${b.id}.kv` }],
+    intro: 'Symmetrical components: a three-phase fault sees only the positive-sequence network; a line-to-ground fault connects all three in series. Pre-fault voltage from the power flow; loads neglected.',
+    steps,
+  };
+}
+
+/** The feeder fault and the protection's times, from the fault current. */
+export function feederFaultPanel(s: Snapshot, ev: FeederEvent): Panel {
+  const r = ev.res;
+  const t = s.t;
+  const key = (k: string) => `derived:t${t}.fault.${ev.node}.${k}`;
+  const zkey = (k: string) => `solver:t${t}.fault.${ev.node}.${k}`;
+  const steps: Step[] = [];
+  const p = r.phases[0]!;
+  const ground = r.kind === 'slg' || r.kind === 'dlg';
+  let Iref: Expr;
+  let Ival: number;
+  if (r.kind === 'slg') {
+    const z = r.Z.get(p, p);
+    const V = r.vpre[p]!.abs();
+    steps.push(
+      { label: 'Thevenin impedance of the faulted phase (source, bank and lines)', general: '|Z_{pp}| = √(R² + X²)', sym: '|Z_{pp}|', expr: sqrt(add(sq(num(z.re, 6, 'Ω', zkey('R'), 'R')), sq(num(z.im, 6, 'Ω', zkey('X'), 'X')))), unit: 'Ω', digits: 6, prov: key('Z'), solver: z.abs() },
+      { label: 'Fault current: the pre-fault voltage over the impedance (a bolted fault on one phase)', general: 'I_f = |V_p| / |Z_{pp}|', sym: 'I_f', expr: div(num(V, 3, 'V', zkey('V'), '|V_p|'), ref(0)), unit: 'A', digits: 2, prov: key('I'), solver: r.I[p]!.abs() },
+    );
+    Iref = ref(1);
+    Ival = r.I[p]!.abs();
+  } else {
+    // a three-phase or line-to-line fault: a small matrix solve, not closed form; its result is the input here
+    Ival = ground ? r.residual.abs() : Math.max(...r.I.map((x) => x.abs()));
+    Iref = num(Ival, 2, 'A', zkey(ground ? '3I0' : 'Iph'), 'I_f');
+  }
+  const CB = PROTECTION.breaker;
+  const RC = PROTECTION.recloser;
+  const vi = C37_112.VI;
+  const onR = r.devices.includes(RC.id);
+  const fuse = r.devices.find((d) => d.startsWith('FU-'));
+  const n0 = steps.length;
+  if (fuse) {
+    steps.push({
+      label: 'The lateral fuse’s minimum melting time (its fitted curve)',
+      general: 't_{mm} = K / ((I_f / I_m)² − 1)',
+      sym: 't_{mm}',
+      expr: div(num(PROTECTION.fuse.K, 0, 's', 'data:protection.fuse.K', 'K'), par(sub(sq(par(div(Iref, num(PROTECTION.fuse.rating * PROTECTION.fuse.imOverRating, 0, 'A', 'data:protection.fuse.Im', 'I_m')))), num(1, 0, '', 'notation:one')))),
+      unit: 's',
+      digits: 4,
+      prov: key('fuseMelt'),
+    });
+  }
+  const pickupR = ground ? RC.groundMin : RC.phaseMin;
+  const set = ground ? CB.n51 : CB.p51;
+  if (onR) {
+    steps.push({
+      label: `The recloser’s delayed curve ([[c37112|C37.112]] very inverse, ${ground ? 'ground' : 'phase'} minimum trip), plus interrupting time`,
+      general: 't_R = TDS (A / (M² − 1) + B) + t_{int},  M = I_f / I_{min}',
+      sym: 't_R',
+      expr: add(mul(num(RC.slow.tds, 1, '', 'data:protection.recloser.slow.tds', 'TDS'), par(add(div(num(vi.A, 2, '', 'data:c37112.VI.A', 'A'), par(sub(sq(par(div(Iref, num(pickupR, 0, 'A', 'data:protection.recloser.min', 'I_{min}')))), num(1, 0, '', 'notation:one')))), num(vi.B, 3, '', 'data:c37112.VI.B', 'B')))), num(RC.interruptS, 2, 's', 'data:protection.recloser.interruptS', 't_{int}')),
+      unit: 's',
+      digits: 4,
+      prov: key('recloser'),
+    });
+  }
+  const iR = steps.length - 1;
+  steps.push({
+    label: `The breaker’s ${ground ? '[[c372|51N]] (ground)' : '[[c372|51]] (phase)'} time-overcurrent element, plus the breaker’s opening time`,
+    general: 't_B = TDS (A / (M² − 1) + B) + t_{open},  M = I_f / I_{pickup}',
+    sym: 't_B',
+    expr: add(mul(num(set.tds, 1, '', `data:protection.breaker.${ground ? 'n51' : 'p51'}.tds`, 'TDS'), par(add(div(num(vi.A, 2, '', 'data:c37112.VI.A', 'A'), par(sub(sq(par(div(Iref, num(set.pickup, 0, 'A', `data:protection.breaker.${ground ? 'n51' : 'p51'}.pickup`, 'I_{pickup}')))), num(1, 0, '', 'notation:one')))), num(vi.B, 3, '', 'data:c37112.VI.B', 'B')))), num(CB.openS, 2, 's', 'data:protection.breaker.openS', 't_{open}')),
+    unit: 's',
+    digits: 4,
+    prov: key('breaker'),
+  });
+  if (onR)
+    steps.push({ label: 'The margin the breaker leaves the recloser (at least the coordination time interval)', general: 't_B − t_R', sym: 'Δt', expr: sub(ref(steps.length - 1), ref(iR)), unit: 's', digits: 4, prov: key('cti') });
+  void n0;
+  return {
+    title: 'The fault, and how fast each device acts',
+    intro: 'Relay curves are [[c37112|IEEE C37.112]]’s; the fuse’s is fitted to the shape of a T-link’s. Load is neglected in the fault current.',
+    steps,
   };
 }

@@ -375,6 +375,103 @@ export default [
     probe: provenance,
   },
   {
+    name: 'feeder-fault-mid',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      // a permanent fault on the trunk beyond the recloser, held during the second fast shot
+      await page.evaluate(() => {
+        window.__app.freezeFault = 2.07;
+        window.__app.faultFeeder('F4', true);
+      });
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const f = await page.evaluate(() => {
+        const e = window.__app.feederEvent;
+        return { open: e.prot.open, trips: e.prot.events.filter((x) => x.what === 'trip').map((x) => x.device + ':' + (x.how ?? '')) };
+      });
+      return { ok: r.ok && f.open.join() === 'RCL-1', value: [r.value, f] };
+    },
+  },
+  {
+    name: 'feeder-fault-lateral',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      // a permanent fault at the far end of lateral L10: the fuse clears it; hold the view after the sequence
+      await page.evaluate(() => {
+        const app = window.__app;
+        const lat = app.feederModel().layout.laterals.find((l) => l.id === 'L10');
+        app.freezeFault = 1e9;
+        app.faultFeeder(lat.nodes[lat.nodes.length - 1], true);
+      });
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feederOpen.length > 0 && !window.__app.inFlight, null, { timeout: 60000 });
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const f = await page.evaluate(() => {
+        const app = window.__app;
+        const s = app.current;
+        const lat = app.feederModel().layout.laterals.find((l) => l.id === 'L10');
+        return { open: s.feederOpen, out: app.feederEvent.outHomes, headKW: s.feeder.headP / 1000 };
+      });
+      return { ok: r.ok && f.open.join() === 'FU-L10' && f.out > 0, value: [r.value, f] };
+    },
+  },
+  {
+    name: 'feeder-fault-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        const app = window.__app;
+        const lat = app.feederModel().layout.laterals.find((l) => l.id === 'L7');
+        app.freezeFault = 1e9;
+        app.faultFeeder(lat.nodes[lat.nodes.length - 1], true);
+        app.inspector.toggleWorking(true);
+      });
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feederOpen.length > 0 && !window.__app.inFlight, null, { timeout: 60000 });
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'service-outlet',
     url: '',
     width: 1440,

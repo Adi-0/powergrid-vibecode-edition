@@ -28,6 +28,27 @@ describe('substation → feeder → service', () => {
     return { f: feederSnap(cp), vm60: s.vm[b]!, va60: (s.va[b]! * 180) / Math.PI };
   };
 
+  it('after a fuse clears: its homes are out, and meters + losses = head still holds', () => {
+    const w = day.points[76]!;
+    const lat = fd.layout.laterals.find((l) => l.id === 'L10')!;
+    const cp = coupledSolve(g, w.step, g.baseCase(), fd, { participation: 'agc', warm: w.result, shuntSteps: w.shuntSteps, feederOpen: new Set([lat.fuse]) });
+    const f = feederSnap(cp);
+    const base = solve(76).f;
+    const homes = new Set(fd.layout.homes.filter((h) => fd.layout.transformers.find((t) => t.id === h.transformer && lat.nodes.includes(t.primary))).map((h) => h.id));
+    expect(homes.size).toBeGreaterThan(0);
+    let meters = 0;
+    f.loadIds.forEach((id, i) => {
+      if (homes.has(id.split(':')[0]!)) expect(f.loadP[i]).toBe(0);
+      if (!id.startsWith('OTHER:')) meters += f.loadP[i]!;
+    });
+    let loss = 0;
+    fd.base.branches.forEach((b, k) => {
+      if (b.id !== 'EV-BANK') loss += f.flows[k * 4]! - f.flows[k * 4 + 2]!;
+    });
+    expect(Math.abs(meters + loss - f.headP)).toBeLessThan(1e-3);
+    expect(f.headP).toBeLessThan(base.headP);
+  });
+
   for (const t of [76, 50, 12]) {
     it(`interval ${t}: meters + losses = feeder head, and the substation closes too`, () => {
       const { f } = solve(t);

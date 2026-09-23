@@ -27,6 +27,8 @@ export interface OperateOptions {
   branchOutages?: ReadonlySet<number>;
   /** Plant ids forced offline (their output lost). */
   plantOutages?: ReadonlySet<string>;
+  /** Feeder 1105's switches, fuses or reclosers held open (after a fault), by branch id. */
+  feederOpen?: ReadonlySet<string>;
   /** Voltage set-points changed from the schedule (excitation), per generator index, pu. */
   vset?: ReadonlyMap<number, number>;
   /** Start from this solution (speeds up a sequence of intervals). */

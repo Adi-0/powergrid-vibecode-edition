@@ -105,3 +105,12 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 ## smib — Transient stability (tested, not yet drawn)
 
 - **Simplified:** A single machine against an infinite bus, classical model (constant voltage behind transient reactance, no damping). **Full treatment:** Multi-machine transient stability with detailed machine, exciter and governor models.
+
+## fault — Faults and protection
+
+- **Simplified:** Transmission faults use symmetrical components with pre-fault voltages from the power flow. Loads are neglected. Machines sit behind their subtransient reactance (the first cycles only). **Full treatment:** Time-varying fault current (subtransient, transient and synchronous stages, with DC offset); IEC 60909 or IEEE C37.010 rating calculations for breakers.
+- **Simplified:** Inverter-based plants (solar, wind, batteries) contribute no fault current. **Full treatment:** Each inverter's current-limited, control-dependent response (typically 1.1–1.5 times rated), which grid codes now specify.
+- **Simplified:** Parallel lines' zero-sequence mutual coupling is ignored. Banks with a delta tertiary use an estimated split of their impedance into the T equivalent. **Full treatment:** Mutual coupling between circuits on shared towers; nameplate H–L, H–T and L–T impedances.
+- **Simplified:** On the feeder the step regulator is taken at neutral tap for the fault impedance. The fault is bolted (no arc or ground resistance). **Full treatment:** The regulator's actual ratio; fault resistance, which dominates high-impedance ground faults.
+- **Simplified:** Fuses use a curve fitted to the shape of a T-link, not a manufacturer's table. Fuses do not cool between recloser shots. **Full treatment:** Published minimum-melt and total-clearing curves, and preloading and cooling.
+- **Simplified:** The feeder breaker trips and stays open (no reclosing of its own). **Full treatment:** The breaker's own reclosing relay (79) and sequence coordination with the recloser.

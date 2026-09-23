@@ -127,3 +127,16 @@ export function crossSymbol(s = 8, cx = 0, cy = 0): Symbol {
     closed: [false, false],
   };
 }
+
+/** A fault: the one-line diagram's lightning arrow, striking down to the point. Paired with the signal colour. */
+export function faultSymbol(s = 16, cx = 0, cy = 0): Symbol {
+  const k = s / 16;
+  const P = (x: number, y: number): [number, number] => [cx + x * k, cy + y * k];
+  return {
+    polys: [
+      [P(-3, 16), P(3, 8), P(-2, 7), P(3, 0)],
+      [P(-1.2, 3.2), P(3, 0), P(2.6, 4.6)],
+    ],
+    closed: [false, false],
+  };
+}

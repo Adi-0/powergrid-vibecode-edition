@@ -1,11 +1,11 @@
 import type * as THREE from 'three';
 import type { Vec3 } from '../render/lines';
 import { INK, INK_35, INK_60, PEN, SIGNAL, voltageClassFor, type VoltageClass } from '../render/style';
-import { circle, rect, transformerSymbol, warningSymbol, type Symbol } from '../render/symbols';
+import { circle, crossSymbol, faultSymbol, rect, transformerSymbol, warningSymbol, type Symbol } from '../render/symbols';
 import type { IsoCamera } from '../render/iso';
 import type { Snapshot } from '../model/snapshot';
 import { nodeIndex, type Feeder } from '../model/feeder';
-import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
+import { FLOW_MAX_PX, FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 import { NORTH_MAP, Sketch, en } from './sketch';
 
 /**
@@ -44,7 +44,20 @@ export class FeederLevel implements Level {
   /** The feeder's first pole outside the substation: what the substation's feeder exit unfolds into. */
   readonly origin: Vec3;
   private morphValue = 1;
-  private lines: Array<{ k: number; seg: number; flow: number }> = [];
+  private lines: Array<{ k: number; seg: number; flow: number; from: string }> = [];
+  /** Each home's drawn strokes (drop and outline), to show it without supply. */
+  private homeSegs: Array<{ id: string; first: number; count: number }> = [];
+  /** Where each protective device sits (for its open mark). */
+  private devAt = new Map<string, Vec3>();
+  private children = new Map<string, string[]>();
+  private nodeAt = new Map<string, Vec3>();
+  private last: Snapshot | null = null;
+  /**
+   * A fault on the feeder and the protection's state as its sequence plays: where it
+   * is, whether fault current is flowing now, which devices are open, and the branches
+   * the fault current flows through.
+   */
+  private fault: { node: string; conducting: boolean; open: Set<string>; path: Set<number> } | null = null;
   private homeMarks: Array<{ i: number; at: Vec3 }> = [];
   private extent: Vec3[] = [];
   private selection: Selection | null = null;
@@ -64,6 +77,7 @@ export class FeederLevel implements Level {
     const dist = new Map<string, number>([['F0', 0]]);
     const kids = new Map<string, string[]>();
     for (const b of net.branches) kids.set(b.from, [...(kids.get(b.from) ?? []), b.to]);
+    this.children = kids;
     for (let q = ['F0']; q.length; ) {
       const next: string[] = [];
       for (const n of q) {
@@ -100,6 +114,7 @@ export class FeederLevel implements Level {
     const primary = (id: string) => net.nodes.get(id)?.kind === 'primary' && !id.startsWith('EV-') && !id.endsWith('-480');
     for (const [id] of net.nodes) {
       if (!primary(id)) continue;
+      this.nodeAt.set(id, at(id, POLE));
       sk.stagger = stag(id);
       sk.seg(at(id, 0), at(id, POLE), { width: PEN.hairline, color: INK_60 });
     }
@@ -111,7 +126,7 @@ export class FeederLevel implements Level {
       const c = at(b.to, POLE);
       const seg = sk.seg(a, c, { width: three ? trunkW : latW, color: INK });
       const flow = sk.flowSeg(a, c);
-      this.lines.push({ k, seg, flow });
+      this.lines.push({ k, seg, flow, from: b.from });
       sk.target({ kind: 'dist', what: 'line', id: b.id }, [a, c]);
     });
     // devices on the trunk
@@ -119,6 +134,7 @@ export class FeederLevel implements Level {
       sk.stagger = stag(node);
       const p = at(node, POLE);
       sk.symbol(p, sym, PEN.thin, 0, dy);
+      this.devAt.set(id, p);
       sk.target({ kind: 'dist', what: 'device', id }, [p]);
       this.labels.push({ id: `fd:${id}`, text, anchor: p, priority: 7, minZoom: 0, kind: 'equip' });
     };
@@ -130,6 +146,7 @@ export class FeederLevel implements Level {
       sk.stagger = stag(lat.nodes[0]!);
       const p = at(lat.nodes[0]!, POLE);
       sk.symbol(p, { polys: [rect(4, 8)], closed: [true] }, PEN.thin);
+      this.devAt.set(lat.fuse, p);
       sk.target({ kind: 'dist', what: 'device', id: lat.fuse }, [p]);
       const end = at(lat.nodes[lat.nodes.length - 1]!, POLE);
       this.labels.push({ id: `fd:${lat.id}`, text: `${lat.id} · phase ${'abc'[lat.phase]}`, anchor: end, priority: 4, minZoom: 0, kind: 'equip', prov: `data:evergreen.layout.laterals.${lat.id}` });
@@ -158,6 +175,7 @@ export class FeederLevel implements Level {
       sk.stagger = stag(h.id);
       const [e, n] = EN(h);
       const from = dropFrom.get(h.id);
+      const first = sk.lines.count;
       if (from) sk.seg(at(from, POLE - 2), en(e, EAVE, n), { width: lv.weight, color: INK, dash: lv.dash });
       const c = sk.box(e, 0, n, 10, 3.6, 8, { width: PEN.fine, color: INK });
       if (h.pvKW > 0) {
@@ -166,6 +184,7 @@ export class FeederLevel implements Level {
         sk.poly(r, { width: PEN.hairline, color: INK }, true);
         sk.seg(r[0]!, r[2]!, { width: PEN.hairline, color: INK });
       }
+      this.homeSegs.push({ id: h.id, first, count: sk.lines.count - first });
       sk.target({ kind: 'dist', what: 'home', id: h.id }, c, true);
       this.homeMarks.push({ i: idx.get(h.id)!, at: en(e, 3.6, n) });
     }
@@ -200,25 +219,72 @@ export class FeederLevel implements Level {
     return [voltageClassFor(12.47), voltageClassFor(0.24)];
   }
 
+  /** Show a fault and the protection's state (null: no fault). */
+  setFault(fault: { node: string; conducting: boolean; open: Set<string>; path: Set<number> } | null): void {
+    this.fault = fault;
+    if (this.last) this.applySnapshot(this.last);
+  }
+
+  /** Nodes beyond a device (everything its opening leaves without supply). */
+  private beyond(devices: Iterable<string>): Set<string> {
+    const out = new Set<string>();
+    for (const d of devices) {
+      const b = this.feeder.base.branches.find((x) => x.id === d);
+      if (!b) continue;
+      for (let q = [b.to]; q.length; ) {
+        const next: string[] = [];
+        for (const n of q) {
+          if (out.has(n)) continue;
+          out.add(n);
+          next.push(...(this.children.get(n) ?? []));
+        }
+        q = next;
+      }
+    }
+    return out;
+  }
+
   applySnapshot(s: Snapshot): void {
+    this.last = s;
     const sk = this.sk;
     const f = s.feeder;
     const none = s.outcome === 'none' || !f;
     const dark = !!f && f.boundaryP === 0 && f.headP === 0;
     const sc = this.flowScale;
+    const flt = this.fault;
+    const open = new Set<string>([...s.feederOpen, ...(flt ? flt.open : [])]);
+    // without supply: beyond an open device (load shed — the signal colour, with a dash)
+    const out = this.beyond(open);
     for (const l of this.lines) {
       const kw = f ? f.flows[l.k * 4]! / 1000 : 0;
-      sk.lines.setColor(l.seg, dark ? SIGNAL : none ? INK_35 : INK, 1);
-      sk.flow.set(l.flow, { sizePx: chevronSizeFor(kw, sc), speed: chevronSpeedFor(kw, sc) * Math.sign(kw), color: INK, alpha: !none && !dark && Math.abs(kw) > 0.05 ? 1 : 0 });
+      const lost = out.has(l.from) || open.has(this.feeder.base.branches[l.k]!.id);
+      sk.lines.setColor(l.seg, dark || lost ? SIGNAL : none ? INK_35 : INK, 1);
+      sk.lines.setPattern(l.seg, lost ? 'hidden' : 'solid');
+      if (flt) {
+        // while the fault plays out: the fault current along its path, while it flows
+        const on = flt.conducting && flt.path.has(l.k);
+        sk.flow.set(l.flow, { sizePx: FLOW_MAX_PX, speed: on ? 60 : 0, color: SIGNAL, alpha: on ? 1 : 0 });
+      } else sk.flow.set(l.flow, { sizePx: chevronSizeFor(kw, sc), speed: chevronSpeedFor(kw, sc) * Math.sign(kw), color: INK, alpha: !none && !dark && !lost && Math.abs(kw) > 0.05 ? 1 : 0 });
+    }
+    const homeOut = new Set(this.feeder.layout.homes.filter((h) => out.has(h.meter) || out.has(h.id)).map((h) => h.id));
+    for (const h of this.homeSegs) for (let i = h.first; i < h.first + h.count; i++) sk.lines.setColor(i, homeOut.has(h.id) ? SIGNAL : INK, 1);
+    sk.marks.clear();
+    // the fault itself, and every device that is open
+    if (flt) {
+      const p = this.nodeAt.get(flt.node);
+      if (p) faultSymbol(18).polys.forEach((poly) => sk.marks.glyph(p, poly.map(([x, y]) => [x + 6, y + 4] as [number, number]), { width: PEN.bold, color: SIGNAL }, false));
+    }
+    for (const d of open) {
+      const p = this.devAt.get(d) ?? (d === 'CB-1105' ? this.origin : null);
+      if (p) crossSymbol(11).polys.forEach((poly) => sk.marks.glyph(p, poly.map(([x, y]) => [x - 10, y + 10] as [number, number]), { width: PEN.medium, color: INK }, false));
     }
     // homes outside ANSI C84.1 Range A get the warning mark
-    sk.marks.clear();
-    if (f && !dark && !none)
+    if (f && !dark && !none && !flt)
       for (const h of this.homeMarks) {
         const v1 = Math.hypot(f.V[h.i * 6]!, f.V[h.i * 6 + 1]!);
         const v2 = Math.hypot(f.V[h.i * 6 + 2]!, f.V[h.i * 6 + 3]!);
         const v = (v1 + v2) / 2;
-        if (v < ANSI_A.low || v > ANSI_A.high) warningSymbol(10).polys.forEach((p, i) => sk.marks.glyph(h.at, p.map(([x, y]) => [x, y + 12] as [number, number]), { width: PEN.medium, color: SIGNAL }, i === 0));
+        if (v > 1 && (v < ANSI_A.low || v > ANSI_A.high)) warningSymbol(10).polys.forEach((p, i) => sk.marks.glyph(h.at, p.map(([x, y]) => [x, y + 12] as [number, number]), { width: PEN.medium, color: SIGNAL }, i === 0));
       }
     sk.marks.commit();
   }
@@ -247,6 +313,11 @@ export class FeederLevel implements Level {
 
   fitPoints(): Vec3[] {
     return this.extent;
+  }
+
+  /** A primary node's pole top, or a device's position, in this frame. */
+  pointOf(id: string): Vec3 | null {
+    return this.devAt.get(id) ?? this.nodeAt.get(id) ?? null;
   }
 
   /** Where a pole-top transformer is drawn (for the Service level to unfold from). */

@@ -1,6 +1,6 @@
 import { DASH_PATTERNS, DASH, INK, INK_35, INK_60, SIGNAL, type VoltageClass } from '../render/style';
 import { chevronSizeFor, type FlowScale, type LevelKind } from '../levels/level';
-import { converterSymbol, generatorSymbol, substationSymbol, transformerSymbol, warningSymbol, crossSymbol, type Symbol } from '../render/symbols';
+import { converterSymbol, generatorSymbol, substationSymbol, transformerSymbol, warningSymbol, crossSymbol, faultSymbol, type Symbol } from '../render/symbols';
 import { el, qty, data, dataText } from './quantity';
 import { rich } from './glossary';
 
@@ -181,6 +181,8 @@ export interface LegendState {
   showSignal: boolean;
   showOutOfService: boolean;
   noSolution: boolean;
+  /** A fault is on the sheet (its mark, open devices, the section without supply). */
+  fault?: boolean;
 }
 
 export class Legend {
@@ -214,7 +216,7 @@ export class Legend {
   }
 
   update(s: LegendState): void {
-    const key = JSON.stringify([s.level, s.classes.map((c) => c.id), s.flowScale, s.showSignal, s.showOutOfService, s.noSolution]);
+    const key = JSON.stringify([s.level, s.classes.map((c) => c.id), s.flowScale, s.showSignal, s.showOutOfService, s.noSolution, s.fault]);
     if (key === this.last) return;
     this.last = key;
     const b = this.body;
@@ -303,6 +305,11 @@ export class Legend {
         g4.appendChild(row(svgX, 'Out of service (tripped)'));
       }
       if (s.noSolution) g4.appendChild(row(strokeSample(2.1, 'solid', INK_35), 'Grey and still: no operating point, so nothing drawn is a solved flow'));
+      if (s.fault) {
+        g4.appendChild(row(symbolSample(faultSymbol(16), 1.6, SIGNAL, 22), 'A [[fault|fault]]; chevrons: its current'));
+        g4.appendChild(row(symbolSample(crossSymbol(9), 1.4), 'Protective device open'));
+        g4.appendChild(row(strokeSample(1.8, 'hidden', SIGNAL), 'Without supply'));
+      }
       b.appendChild(g4);
     }
   }

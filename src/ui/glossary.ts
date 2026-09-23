@@ -126,6 +126,12 @@ export const TERMS: Term[] = [
   T('syncon', 'Synchronous condenser', 'A generator with no engine, spinning in step with the grid to supply or absorb reactive power and add inertia.'),
   T('load-damping', 'Load damping', 'Motors and other load draw a little less power when frequency falls, which helps hold it up.', 'D (% load per % frequency)'),
   T('rocof', 'Rate of change of frequency', 'How fast frequency falls in the first instant after a loss; set by inertia alone.', 'df/dt (Hz/s)'),
+  // ---- faults and protection
+  T('c37112', 'IEEE C37.112', 'The standard equations for inverse-time overcurrent relays: how long a relay waits at each multiple of its pickup current.'),
+  T('c372', 'IEEE C37.2 device number', 'The standard numbers for protective functions: 50 instantaneous overcurrent, 51 time overcurrent, N for ground, 52 a breaker, 79 reclosing.'),
+  T('fault', 'Fault', 'A short circuit: a phase touching ground or another phase, so current rushes to it instead of to the load.'),
+  T('tcc', 'Time–current curve', 'How long a protective device takes to operate at each current; plotted log–log, one curve per device.', 'TCC'),
+  T('cti', 'Coordination time interval', 'The margin one protective device leaves the one downstream of it, so the nearest to a fault always acts first.', 'CTI'),
   // ---- plants and machines
   T('combined-cycle', 'Combined cycle', 'A gas turbine whose hot exhaust makes steam for a second, steam turbine: two cycles from one fuel, about half of it turned to electricity.', 'CCGT'),
   T('hrsg', 'Heat-recovery steam generator', 'A boiler heated by a gas turbine’s exhaust instead of a flame.', 'HRSG'),
