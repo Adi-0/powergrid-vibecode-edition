@@ -802,5 +802,91 @@ export default [
     },
     probe: both(provenance, mathShown, mathArithmetic),
   },
+  {
+    name: 'honesty-feeder',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['region', 'substation', 'feeder']));
+      await page.evaluate(() => window.__app.openHonesty());
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const n = await page.evaluate(() => document.querySelectorAll('.honesty .item').length);
+      return { ok: r.ok && n >= 5, value: [r.value, `${n} items shown`] };
+    },
+  },
+  {
+    name: 'glossary',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.openGlossary('inertia'));
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const n = await page.evaluate(() => [...document.querySelectorAll('.glossary dt')].filter((e) => !e.hidden).length);
+      return { ok: r.ok && n > 100, value: [r.value, `${n} terms`] };
+    },
+  },
+  {
+    name: 'tour-stop',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.tour.goTo(2));
+    },
+    probe: provenance,
+  },
+  {
+    name: 'tour-run',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 480000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      const report = [];
+      const n = await page.evaluate(() => window.__app.tour.constructor && 13);
+      for (let i = 0; i < n; i++) {
+        const t0 = Date.now();
+        await page.evaluate((i) => window.__app.tour.goTo(i), i);
+        await page.waitForTimeout(300);
+        const bad = await page.evaluate(() => {
+          const out = [];
+          const walk = document.createTreeWalker(document.getElementById('app') ?? document.body, NodeFilter.SHOW_TEXT);
+          for (let x = walk.nextNode(); x; x = walk.nextNode()) {
+            if (!/[0-9]/.test(x.textContent ?? '')) continue;
+            const e = x.parentElement;
+            if (!e || e.closest('[data-prov]')) continue;
+            const st = getComputedStyle(e);
+            if (st.visibility === 'hidden' || st.display === 'none' || !e.getClientRects().length) continue;
+            out.push(x.textContent.trim().slice(0, 40));
+          }
+          return { level: window.__app.level, bad: out, busy: window.__app.tour.busy };
+        });
+        report.push({ i, ms: Date.now() - t0, ...bad });
+      }
+      await page.evaluate((r) => (window.__tourReport = r), report);
+    },
+    probe: async (page) => {
+      const r = await page.evaluate(() => window.__tourReport);
+      const ok = r.length === 13 && r.every((x) => x.bad.length === 0 && !x.busy);
+      return { ok, value: r.map((x) => `${x.i}:${x.level}:${(x.ms / 1000).toFixed(1)}s${x.bad.length ? ' BAD ' + x.bad.join('|') : ''}`) };
+    },
+  },
   { name: 'system-mobile', url: '', width: 390, height: 844, dpr: 2, timeout: 90000, settle: 800, before: waitSnap, probe: provenance },
 ];

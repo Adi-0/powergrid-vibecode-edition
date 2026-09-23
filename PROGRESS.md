@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **9 — Breadth + guided path**
+Current phase: **all nine phases done** — see the known weaknesses in each phase's critique
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -13,7 +13,7 @@ Current phase: **9 — Breadth + guided path**
 | 6 Math panel | done | Arithmetic-consistency test passes on every panel |
 | 7 Plant + machine + SFR | done | Plant energy closes; SMIB equal-area fixture |
 | 8 Faults + protection | done | Textbook fault fixture; coordinated sequence |
-| 9 Breadth + guided path | — | — |
+| 9 Breadth + guided path | done | Honesty panel fed from the doc; glossary; skippable, re-enterable route |
 
 ## Log
 - **Phase 0 done.** Vite + TS 7 + three 0.186 + Vitest + Playwright. `CLAUDE.md` holds the
@@ -150,3 +150,16 @@ Current phase: **9 — Breadth + guided path**
   - **After the sequence:** a real coupled re-solve with the devices open. For example, after FU-L10 clears, 43 homes are out and meters plus losses still equal the head.
   - **Coordination test:** every permanent fault is cleared by the nearest device, and the CTI of at least 0.3 s holds. Fuse saving holds where the current allows.
   - Critique: `docs/critique/phase-8.md`. 129 tests pass; 38 screenshot views, all 34 probes OK (the other four are transition stills).
+- **Phase 9 done.** Decision 0022.
+  - **"What's simplified".**
+    - On every level, fed from `docs/simplifications.md` at build time.
+    - Sections follow the level and what the reader has done.
+    - A test keeps the document and the app in step.
+  - **A searchable glossary.** Clicking any term opens it.
+  - **A guided route of thirteen stops:** from the whole state through noon's duck, a tripped line, a region, the substation, the feeder, the outlet, the plant, the generator, a plant trip and a feeder fault, to the honesty panel.
+    - Each stop sets its own scene from wherever the sheet is; Back, Next and Resume all work.
+    - A harness view walks every stop with provenance checked at each.
+  - **IEEE 1366 reliability indices**, checked on hand-worked records.
+    - A seeded twenty-year fault record on feeder 1105 runs through the protection sequence.
+    - The feeder's inspector shows SAIFI, SAIDI, CAIDI and MAIFI_E, and what fuse saving trades.
+  - Critique: `docs/critique/phase-9.md`. 135 tests pass; 42 screenshot views, all 38 probes OK (the other four are transition stills).

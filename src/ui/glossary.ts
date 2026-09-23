@@ -129,6 +129,7 @@ export const TERMS: Term[] = [
   // ---- faults and protection
   T('c37112', 'IEEE C37.112', 'The standard equations for inverse-time overcurrent relays: how long a relay waits at each multiple of its pickup current.'),
   T('c372', 'IEEE C37.2 device number', 'The standard numbers for protective functions: 50 instantaneous overcurrent, 51 time overcurrent, N for ground, 52 a breaker, 79 reclosing.'),
+  T('saifi', 'Reliability indices (IEEE 1366)', 'How often and how long customers lose supply: SAIFI counts interruptions per customer per year, SAIDI minutes, CAIDI minutes per interruption, MAIFI brief blinks.', 'SAIFI, SAIDI, CAIDI, MAIFI_E'),
   T('fault', 'Fault', 'A short circuit: a phase touching ground or another phase, so current rushes to it instead of to the load.'),
   T('tcc', 'Time–current curve', 'How long a protective device takes to operate at each current; plotted log–log, one curve per device.', 'TCC'),
   T('cti', 'Coordination time interval', 'The margin one protective device leaves the one downstream of it, so the nearest to a fault always acts first.', 'CTI'),

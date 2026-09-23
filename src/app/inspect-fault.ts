@@ -246,3 +246,24 @@ export function busFaultSection(grid: Grid, s: Snapshot, fs: FaultStudy, siteId:
 }
 
 export { C37_112 };
+
+/** The feeder's reliability over a simulated record: IEEE 1366 indices, and what fuse saving buys. */
+export function reliabilitySection(r: import('../model/reliability').ReliabilityRun, t: number): Section {
+  const Q = (k: string) => solver(`t${t}.reliability.${k}`);
+  return {
+    title: span('Reliability, over a simulated record ([[saifi|IEEE 1366]])'),
+    text: span(
+      'Faults placed at random along the feeder, ',
+      el(qty(r.faults, 'faults', Q('faults'), { digits: 0 })),
+      ' in ',
+      el(qty(r.years, 'years', data('reliability.years'), { digits: 0 })),
+      ', each run through the protection sequence above, then the customers counted who lost supply, and for how long.',
+    ),
+    rows: [
+      { label: span('SAIFI: interruptions per customer per year'), value: el(qty(r.saifi, '', Q('saifi'), { digits: 3 })), note: span('with every lateral fault blowing its fuse instead: ', el(qty(r.fuseBlowing.saifi, '', Q('saifiFB'), { digits: 3 }))) },
+      { label: span('SAIDI: minutes without supply per customer per year'), value: el(qty(r.saidi, 'min', Q('saidi'), { digits: 1 })) },
+      { label: span('CAIDI: minutes per interruption'), value: el(qty(r.caidi, 'min', Q('caidi'), { digits: 1 })) },
+      { label: span('MAIFI_E: blinks per customer per year'), value: el(qty(r.maifiE, '', Q('maifi'), { digits: 3 })), note: span('the price of fuse saving: brief interruptions for everyone beyond the recloser') },
+    ],
+  };
+}

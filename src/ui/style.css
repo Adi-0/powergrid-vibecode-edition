@@ -229,6 +229,104 @@ button:focus-visible,
   gap: 6px;
 }
 
+/* Side panels (what is simplified here; the glossary): the inspector's column */
+.sidepanel {
+  right: 20px;
+  top: 64px;
+  width: 372px;
+  max-height: calc(100% - 230px);
+  display: flex;
+  flex-direction: column;
+}
+.sidepanel[hidden] {
+  display: none;
+}
+.sidepanel .body {
+  overflow-y: auto;
+}
+.sidepanel h3 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: var(--hair);
+  padding-bottom: 2px;
+}
+.honesty .item {
+  padding: 4px 0 6px;
+}
+.honesty .item + .item {
+  border-top: var(--hair);
+}
+.honesty .item p {
+  margin: 2px 0;
+}
+.honesty .full {
+  color: var(--ink-60);
+}
+.honesty .full .lead {
+  font-weight: 600;
+}
+.glossary input[type='search'] {
+  width: 100%;
+  font: inherit;
+  padding: 4px 6px;
+  border: var(--rule);
+  background: var(--ground);
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.glossary dl {
+  margin: 0;
+}
+.glossary dt {
+  font-weight: 600;
+  margin-top: 8px;
+  scroll-margin-top: 4px;
+}
+.glossary dt .notation {
+  font-weight: 400;
+  color: var(--ink-60);
+  margin-left: 4px;
+}
+.glossary dt.focus {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+.glossary dd {
+  margin: 1px 0 0;
+}
+.glossary [hidden] {
+  display: none;
+}
+
+/* The guided tour's card: top centre, between the key and the inspector; a notice drops below it */
+.tour {
+  left: 50%;
+  top: 56px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 40px));
+  z-index: 7;
+}
+.touring .notice {
+  top: 214px;
+}
+.tour[hidden] {
+  display: none;
+}
+.tour h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tour p {
+  margin: 0 0 8px;
+}
+.tour .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 /* KEY (legend): left column, above the title block */
 .legend {
   left: 20px;
@@ -660,6 +758,33 @@ button:focus-visible,
 .furniture .cap {
   margin-top: -8px;
   white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .tour {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
+    top: auto;
+    bottom: 150px;
+  }
+  /* under the (folded) key, in the band above the map */
+  .tools {
+    top: 104px;
+    right: 12px;
+    left: 12px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .tools button {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+  .sidepanel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
 }
 @media (max-width: 760px) {
   .furniture {

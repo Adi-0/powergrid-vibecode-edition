@@ -29,13 +29,17 @@ import { faultStudy, type FaultStudy } from '../model/faultStudy';
 import { faultOnFeeder, feederSource } from '../model/feederFault';
 import { simulateProtection } from '../model/protection';
 import { pathBetween, type FeederFaultKind } from '../physics/dist/fault';
-import { busFaultSection, feederFaultView, type FeederEvent } from './inspect-fault';
+import { busFaultSection, feederFaultView, reliabilitySection, type FeederEvent } from './inspect-fault';
+import { simulateYears, type ReliabilityRun } from '../model/reliability';
 import type { Level, LevelKind } from '../levels/level';
 import type { Vec3 } from '../render/lines';
 import { PaperTooth } from '../render/paper';
 import { REGIONS, type RegionId } from '../data/ca/network';
 import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
+import { HonestyPanel, type HonestyContext } from '../ui/honesty';
+import { GlossaryPanel } from '../ui/glossaryPanel';
+import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
 import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
@@ -64,6 +68,50 @@ export class App {
   /** Sites the current selection connects to (null: nothing selected). */
   private focusSites: Set<string> | null = null;
   readonly inspector: Inspector;
+  honesty!: HonestyPanel;
+  glossary!: GlossaryPanel;
+  tour!: Tour;
+  /** The inspector was open when a side panel took its place. */
+  private inspectorUnder = false;
+
+  /** The context the honesty panel adds to the level's own sections. */
+  private honestyContext(): HonestyContext[] {
+    const c: HonestyContext[] = [];
+    if (this.outages.size || this.plantOutages.size) c.push('trip');
+    if (this.tripEvent) c.push('frequency');
+    if (this.feederEvent || this.feederOpen.size || this.selection?.kind === 'site') c.push('fault');
+    if (this.inspector.working) c.push('math');
+    return c;
+  }
+
+  openHonesty(): void {
+    this.glossary.hide();
+    this.takeInspectorColumn();
+    this.honesty.show(this.top.kind, this.honestyContext());
+  }
+
+  openGlossary(term?: string): void {
+    this.honesty.hide();
+    this.takeInspectorColumn();
+    this.glossary.show(term);
+  }
+
+  /** A side panel opens in the inspector's column; the inspector returns when it closes. */
+  private takeInspectorColumn(): void {
+    if (!this.inspector.root.hidden) {
+      this.inspectorUnder = true;
+      this.inspector.hide();
+    }
+  }
+
+  closeSidePanels(): void {
+    this.honesty.hide();
+    this.glossary.hide();
+    if (this.inspectorUnder) {
+      this.inspectorUnder = false;
+      this.inspect();
+    }
+  }
   readonly furniture: Furniture;
   private titleblock!: HTMLElement;
   private progressEl!: HTMLElement;
@@ -89,6 +137,7 @@ export class App {
   private faultPlaying = false;
   private faultState = '';
   private faultCache: { seq: number; t: number; fs: FaultStudy } | null = null;
+  private reliabilityCache: { t: number; run: ReliabilityRun } | null = null;
   /** For the screenshot harness: hold the protection playback at this time, s. */
   freezeFault: number | null = null;
   private seq = 0;
@@ -126,6 +175,7 @@ export class App {
   /** For tests: hold a transition at this fold (0 flat … 1 exploded). */
   freezeMorph: number | null = null;
   private crumbs!: HTMLElement;
+  toolsEl!: HTMLElement;
   private readonly paper = new PaperTooth()
   selection: Selection | null = null;
   private pixelRatio = 1;
@@ -180,6 +230,34 @@ export class App {
     this.updateCrumbs();
     bar.append(mark, crumbs);
     this.root.appendChild(bar);
+
+    // quiet, always there: what this view simplifies, and the glossary
+    const tools = document.createElement('div');
+    tools.className = 'tools';
+    const tool = (label: string, title: string, run: () => void) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', run);
+      tools.appendChild(b);
+      return b;
+    };
+    tool('What’s simplified', 'What this view leaves out, and what the full treatment would be', () => this.openHonesty());
+    tool('Glossary', 'Every term, searchable', () => this.openGlossary());
+    const tourBtn = tool('Guided tour', 'About ten minutes, from the whole state to a wall outlet; leave and come back any time', () => this.tour.open());
+    this.toolsEl = tools;
+    this.root.appendChild(tools);
+    this.honesty = new HonestyPanel(this.root);
+    this.honesty.onClose = () => this.closeSidePanels();
+    this.glossary = new GlossaryPanel(this.root);
+    this.glossary.onClose = () => this.closeSidePanels();
+    this.tour = new Tour(this.root, this);
+    if (this.tour.saved > 0) tourBtn.textContent = 'Resume the tour';
+    // a term anywhere opens its glossary entry
+    this.root.addEventListener('click', (e) => {
+      const t = (e.target as HTMLElement).closest<HTMLElement>('.term[data-term]');
+      if (t && !t.closest('.glossary')) this.openGlossary(t.dataset.term);
+    });
 
     this.progressEl = document.createElement('div');
     this.progressEl.className = 'panel progress';
@@ -858,7 +936,8 @@ export class App {
           this.zoomAt(this.cam.width / 2, this.cam.height / 2, 0.8);
           break;
         case 'Escape':
-          if (this.selection) this.select(null);
+          if (!this.honesty.root.hidden || !this.glossary.root.hidden) this.closeSidePanels();
+          else if (this.selection) this.select(null);
           else if (this.stack.length > 1) this.closeTop();
           break;
         case 'Enter':
@@ -1271,6 +1350,56 @@ export class App {
     return !!this.anim || !!this.flight;
   }
 
+  /** Resolve once `cond` holds (checked each frame), or reject after `ms`. */
+  waitFor(cond: () => boolean, ms = 30000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const t0 = performance.now();
+      const check = () => {
+        if (cond()) resolve();
+        else if (performance.now() - t0 > ms) reject(new Error('timed out'));
+        else requestAnimationFrame(check);
+      };
+      check();
+    });
+  }
+
+  /** The sheet shows the answer to the latest request. */
+  solved(): Promise<void> {
+    return this.waitFor(() => !!this.current && this.current.seq === this.seq && !this.inFlight && !this.stale, 60000);
+  }
+
+  /**
+   * Go to a place in the zoom tree from wherever the sheet is: close levels down to the
+   * part of the path already open, then open the rest, each with its transition.
+   * Paths: region → substation → feeder → service (the outlet's), or plant → machine.
+   */
+  async navigate(path: Array<'region' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine'>): Promise<void> {
+    const outletT = () => this.feederModel().layout.homes.find((h) => h.id === this.feederModel().layout.outlet.home)!.transformer;
+    const matches = (l: Level, kind: string): boolean =>
+      l.kind === kind &&
+      (!(l instanceof RegionLevel) || l.id === 'bay') &&
+      (!(l instanceof ServiceLevel) || l.transformerId === outletT()) &&
+      (!(l instanceof MachineLevel) || l.genId === 'ML1-GT1');
+    let k = 1;
+    while (k < this.stack.length && k - 1 < path.length && matches(this.stack[k]!, path[k - 1]!)) k++;
+    await this.waitFor(() => !this.transitioning);
+    while (this.stack.length > k) {
+      const before = this.stack.length;
+      this.closeTop();
+      await this.waitFor(() => !this.transitioning && this.stack.length < before);
+    }
+    for (let i = k - 1; i < path.length; i++) {
+      const want = path[i]!;
+      if (want === 'region') this.enterRegion('bay');
+      else if (want === 'substation') this.enterSubstation();
+      else if (want === 'feeder') this.enterFeeder();
+      else if (want === 'service') this.enterService(outletT());
+      else if (want === 'plant') this.enterPlant();
+      else this.enterMachine('GT1');
+      await this.waitFor(() => this.level === want && !this.transitioning);
+    }
+  }
+
 
   /** Keyboard: step through places in order of importance. */
   private cycle(dir: number): void {
@@ -1293,6 +1422,12 @@ export class App {
     const s = this.current;
     const sel = this.selection;
     if (!s) return;
+    // a side panel has the column: the inspector waits under it; the honesty panel follows the view
+    if (!this.honesty.root.hidden || !this.glossary.root.hidden) {
+      this.inspectorUnder = true;
+      if (!this.honesty.root.hidden) this.honesty.show(this.top.kind, this.honestyContext());
+      return;
+    }
     const top = this.top;
     const panels = () => this.panelsFor(sel, s);
     const show = (header: string, v: { name: string | Node; kind: Node; intro?: Node; sections: Section[] }, actions: Action[] = []) =>
@@ -1313,7 +1448,14 @@ export class App {
         const tp = this.freezeFault ?? (this.faultPlaying ? (performance.now() - this.faultStart) / 1000 : ev.prot.clearedAt + 1.2);
         return show('Fault', feederFaultView(f, s, ev, tp), [{ label: 'Repair and restore', title: 'A crew repairs the fault; every device closes again', run: () => this.clearFeederFault() }]);
       }
-      if (!sel) return show('Feeder', feederView(s, f));
+      if (!sel) {
+        const v = feederView(s, f);
+        // reliability: from the interval's fault currents (it changes little with the hour); computed once per interval
+        const fs = s.feeder && !this.feederOpen.size ? this.faultStudyNow() : null;
+        if (fs && s.feeder && (!this.reliabilityCache || this.reliabilityCache.t !== s.t)) this.reliabilityCache = { t: s.t, run: simulateYears(f, s, feederSource(this.grid, fs)) };
+        const rel = this.reliabilityCache && this.reliabilityCache.t === s.t ? reliabilitySection(this.reliabilityCache.run, s.t) : null;
+        return show('Feeder', rel ? { ...v, sections: [...v.sections, rel] } : v);
+      }
       // a fault can be put on any primary line or pole
       const faultActs = (node: string): Action[] => {
         const n = f.base.nodes.get(node);

@@ -108,6 +108,7 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 
 ## fault — Faults and protection
 
+- **Simplified:** The feeder's reliability indices come from a simulated record: faults at a class-typical rate per kilometre, most of them temporary, fixed repair and re-fusing times, and one interval's fault currents; no weather and no major events. **Full treatment:** The utility's outage records, with weather-driven failure rates, crew dispatch and switching restoration, and major event days removed by the 2.5β method.
 - **Simplified:** Transmission faults use symmetrical components with pre-fault voltages from the power flow. Loads are neglected. Machines sit behind their subtransient reactance (the first cycles only). **Full treatment:** Time-varying fault current (subtransient, transient and synchronous stages, with DC offset); IEC 60909 or IEEE C37.010 rating calculations for breakers.
 - **Simplified:** Inverter-based plants (solar, wind, batteries) contribute no fault current. **Full treatment:** Each inverter's current-limited, control-dependent response (typically 1.1–1.5 times rated), which grid codes now specify.
 - **Simplified:** Parallel lines' zero-sequence mutual coupling is ignored. Banks with a delta tertiary use an estimated split of their impedance into the T equivalent. **Full treatment:** Mutual coupling between circuits on shared towers; nameplate H–L, H–T and L–T impedances.
