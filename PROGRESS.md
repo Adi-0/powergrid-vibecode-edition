@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **6 — Math panel everywhere**
+Current phase: **7 — Plant + machine + system frequency response**
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -10,7 +10,7 @@ Current phase: **6 — Math panel everywhere**
 | 3 System view | done | 60 fps full network; legend complete; critique recorded |
 | 4 Scrubber, trips, region, transition | done | Live re-solve per interval; honest no-solution |
 | 5 Substation → feeder → service | done | Outlet traceable to transmission; meters + losses = head |
-| 6 Math panel | — | Arithmetic-consistency test passes on every panel |
+| 6 Math panel | done | Arithmetic-consistency test passes on every panel |
 | 7 Plant + machine + SFR | — | Plant energy closes; SMIB equal-area fixture |
 | 8 Faults + protection | — | Textbook fault fixture; coordinated sequence |
 | 9 Breadth + guided path | — | — |
@@ -84,3 +84,29 @@ Current phase: **6 — Math panel everywhere**
   Tests: meters + losses = head and the substation closes, to 1 mW, at three times of
   day; the feeder's source is the transmission solution's 60 kV bus to 12 digits; the
   outlet sits in Range A. Critique: `docs/critique/phase-5.md`. 69 tests pass.
+- **Phase 6 done.** Math panels as data (decision 0019). Each step shows:
+  - the general form in standard notation;
+  - the displayed values substituted, with units;
+  - the result, computed from the displayed values and rounded as shown;
+  - the solver's unrounded value beside it.
+
+  Panels:
+  - circuit or transformer: π-model flow (Glover);
+  - place: a KCL check per bus, since Newton–Raphson is not closed form;
+  - region: losses by difference, checked against the sum of branch losses;
+  - substation: bank losses;
+  - feeder: balance;
+  - home: meter;
+  - outlet: Ohm's law.
+
+  A "Working" toggle (key W) in the inspector swaps the readout for its working.
+
+  Tests:
+  - the arithmetic-consistency test builds every branch, bus and region panel at
+    19:00 and 12:30, plus the distribution panels on a coupled solve, and holds each
+    displayed result to the solver within two units of its last place;
+  - the harness re-evaluates every substituted line from the rendered page text and
+    matches the printed result, on four views.
+
+  Critique: `docs/critique/phase-6.md`. 73 tests pass; 26 screenshot views, all probes
+  OK.

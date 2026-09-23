@@ -75,3 +75,9 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Home loads are smooth average profiles with a fixed split between the two 120 V legs and the 240 V air conditioner; appliances are constant power. **Full treatment:** Measured smart-meter data, appliance-level models, motor behaviour at low voltage.
 - **Simplified:** The feeder's unbalance reaches the transmission model only as its total three-phase power. **Full treatment:** A three-phase transmission model near the substation, which would show the negative-sequence current the unbalance causes.
 - **Simplified:** Distribution transformers split their impedance between primary and the two half windings by a fixed rule (0.5R + j0.8X, R + j0.4X). **Full treatment:** Measured impedances for each winding pair.
+
+## math — The working behind a number
+
+- **Simplified:** Inputs are rounded to the digits shown, so the working reaches the solver's value only to within two units of the result's last place; the solver's own value is quoted beside each result. **Full treatment:** Exact arithmetic throughout, rounded once at the end.
+- **Simplified:** The bus check shows real power (ΔP) only, and plugs in the converged state rather than showing the iterations. **Full treatment:** The Newton–Raphson iterations themselves (Jacobian, mismatch vector, update), with the reactive mismatch ΔQ at every bus.
+- **Simplified:** The outlet's voltage drop leaves out the branch circuit's small reactance, and the step says so. **Full treatment:** The cable's full series impedance Z = R + jX, and the drop as a phasor.

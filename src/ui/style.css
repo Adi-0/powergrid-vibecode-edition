@@ -330,6 +330,47 @@ button:focus-visible,
   font-size: 13px;
 }
 
+.inspector > header .working {
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.inspector > header .working[hidden] {
+  display: none;
+}
+
+/* Math panel: general form → substituted values → result, one step per block */
+.mathpanel .step {
+  border-top: var(--hair);
+  padding: 5px 0 6px;
+}
+.mathpanel h3 + .step {
+  border-top: none;
+}
+.mathpanel .what {
+  font-size: 11.5px;
+  color: var(--ink-60);
+}
+.mathpanel .general {
+  margin: 2px 0 1px;
+}
+.mathpanel .subst,
+.mathpanel .result {
+  font-variant-numeric: tabular-nums;
+  padding-left: 1em;
+  overflow-wrap: anywhere;
+}
+.mathpanel .result {
+  font-weight: 600;
+}
+.mathpanel .solver {
+  font-weight: 400;
+  color: var(--ink-60);
+  font-size: 11px;
+}
+
 /* Title block: bottom of the left column, over the ocean */
 .titleblock {
   left: 20px;

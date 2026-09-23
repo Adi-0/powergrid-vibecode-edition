@@ -28,6 +28,8 @@ import { REGIONS, type RegionId } from '../data/ca/network';
 import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
 import type { Action, Section } from '../ui/inspector';
+import type { Panel } from '../math/expr';
+import { branchPanel, busPanel, feederPanel, meterPanel, outletPanel, regionPanel, substationPanel } from '../math/panels';
 
 /**
  * The application: one sheet (the System level for now), its camera and input, the
@@ -631,6 +633,11 @@ export class App {
         case 'Enter':
           if (this.selection && document.activeElement === this.canvas) this.openFrom(this.selection);
           break;
+        case 'w':
+        case 'W':
+          if (this.inspector.root.hidden) return;
+          this.inspector.toggleWorking();
+          break;
         case '[':
         case ']':
           this.scrubber.setPlaying(false);
@@ -1031,8 +1038,9 @@ export class App {
     const sel = this.selection;
     if (!s) return;
     const top = this.top;
+    const panels = () => this.panelsFor(sel, s);
     const show = (header: string, v: { name: string | Node; kind: Node; intro?: Node; sections: Section[] }, actions: Action[] = []) =>
-      this.inspector.show({ header, name: v.name, kind: v.kind, actions, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+      this.inspector.show({ header, name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
     if (top instanceof SubstationLevel) {
       const f = this.feederModel();
       if (!sel) return show('Substation', substationView(this.grid, s));
@@ -1079,7 +1087,7 @@ export class App {
         actions.push({ label: `Open ${REGIONS[site.region].name}`, title: 'Unfold the region into its voltage layers (Enter)', run: () => this.enterRegion(site.region) });
       if (this.top instanceof RegionLevel && site.id === 'EVERGREEN')
         actions.push({ label: 'Open the substation', title: 'Unfold the busbar into the substation yard (Enter)', run: () => this.enterSubstation() });
-      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
     } else if (sel.kind === 'branch') {
       const k = sel.index;
       const isX = this.grid.branches[k]!.kind === 'transformer';
@@ -1097,10 +1105,31 @@ export class App {
         name: dataText(v.name, data(`network.${isX ? 'xfmr' : 'line'}.${this.grid.branches[k]!.id}.name`)),
         kind: v.kind,
         actions,
+        panels,
         ...(v.intro ? { intro: v.intro } : {}),
         sections: v.sections,
       });
     }
+  }
+
+  /** The working behind the current readout: each panel's arithmetic reproduces its result. */
+  private panelsFor(sel: Selection | null, s: Snapshot): Panel[] {
+    const top = this.top;
+    const out: Array<Panel | null> = [];
+    if (top instanceof SubstationLevel) out.push(substationPanel(s));
+    else if (top instanceof FeederLevel) {
+      const f = this.feederModel();
+      if (sel?.kind === 'dist' && sel.what === 'home') out.push(meterPanel(s, f, sel.id));
+      out.push(feederPanel(s, f));
+    } else if (top instanceof ServiceLevel) {
+      const f = this.feederModel();
+      if (sel?.kind === 'dist' && sel.what === 'home') out.push(meterPanel(s, f, sel.id));
+      else out.push(outletPanel(s, f));
+    } else if (sel?.kind === 'site') {
+      for (const b of this.grid.buses) if (b.site.id === sel.id && !b.terminalOf) out.push(busPanel(this.grid, s, b.index));
+    } else if (sel?.kind === 'branch') out.push(branchPanel(this.grid, s, sel.index));
+    else if (!sel && top instanceof RegionLevel) out.push(regionPanel(this.grid, s, top.siteIds, top.id));
+    return out.filter((p): p is Panel => p !== null);
   }
 
   // ------------------------------------------------------------------ labels & legend

@@ -72,6 +72,68 @@ const tripByName = (names) => async (page) => {
   await waitSolved(page);
 };
 
+/** A math panel is on screen, with at least a few steps. */
+const mathShown = async (page) => {
+  const n = await page.evaluate(() => document.querySelectorAll('.inspector .mathpanel .step').length);
+  return { ok: n >= 3, value: `${n} steps shown` };
+};
+
+/**
+ * The displayed arithmetic, re-done from the page's own text: each step's substituted
+ * line is read back as printed (thin spaces, minus signs, ×, ÷, √, °, superscript 2),
+ * evaluated, rounded to the printed result's decimals and compared with that result.
+ * Earlier results are used as printed, as a reader would.
+ */
+const mathArithmetic = async (page) => {
+  const bad = await page.evaluate(() => {
+    const out = [];
+    let checked = 0;
+    for (const step of document.querySelectorAll('.inspector .mathpanel .step')) {
+      const sub = step.querySelector('.subst');
+      const res = step.querySelector('.result');
+      if (!sub || !res) continue;
+      const text = (el) => {
+        let t = '';
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) t += n.textContent;
+          else if (n.tagName === 'SUP') t += `**${n.textContent}`;
+          else if (n.classList?.contains('solver') || n.classList?.contains('u')) continue;
+          else t += text(n);
+        }
+        return t;
+      };
+      const js = text(sub)
+        .replace(/^\s*=\s*/, '')
+        .replace(/(\d)[\u2009\u202f\u00a0 ](?=\d)/g, '$1')
+        .replace(/−/g, '-')
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/√\(/g, 'Math.sqrt(')
+        .replace(/(cos|sin) \(([^()]*?)°\)/g, (_, f, a) => `Math.${f}((${a})*Math.PI/180)`);
+      const shownText = text(res.cloneNode(true)).replace(/^\s*=\s*/, '');
+      const m = shownText.replace(/[\u2009\u202f\u00a0 ]/g, '').replace('−', '-').match(/^-?[0-9.]+/);
+      if (!m) {
+        out.push(`unreadable result: ${shownText}`);
+        continue;
+      }
+      const decimals = (m[0].split('.')[1] ?? '').length;
+      let v;
+      try {
+        v = Function(`return (${js});`)();
+      } catch (e) {
+        out.push(`unparseable: ${js}`);
+        continue;
+      }
+      const want = Number(m[0]);
+      checked++;
+      if (Math.abs(v - want) > 0.5 * 10 ** -decimals * 1.0001 + 1e-12) out.push(`${js} = ${v}, shown ${m[0]}`);
+    }
+    return { out, checked };
+  });
+  const ok = bad.out.length === 0 && bad.checked > 0;
+  return { ok, value: bad.out.length ? bad.out.slice(0, 5) : `${bad.checked} displayed steps re-evaluate to their displayed results` };
+};
+
 const both = (...probes) => async (page) => {
   const rs = [];
   for (const p of probes) rs.push(await p(page));
@@ -385,6 +447,83 @@ export default [
       await page.evaluate(() => window.__app.focusSite('METCALF', 30));
     },
     probe: provenance,
+  },
+  {
+    name: 'math-line',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => {
+        const app = window.__app;
+        app.select({ kind: 'branch', index: app.grid.branches.findIndex((b) => b.id === 'MIDWAY–VINCENT 500 #1') });
+        app.inspector.toggleWorking(true);
+      });
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'math-site',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 90000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => {
+        window.__app.select({ kind: 'site', id: 'MOSS_LANDING' });
+        window.__app.inspector.toggleWorking(true);
+      });
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'math-region',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 120000,
+    settle: 800,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'math-outlet',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 180000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => {
+        const app = window.__app;
+        const h = app.feederModel().layout.homes.find((x) => x.id === app.feederModel().layout.outlet.home);
+        app.enterService(h.transformer);
+      }, 'service');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        window.__app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' });
+        window.__app.inspector.toggleWorking(true);
+      });
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
   },
   { name: 'system-mobile', url: '', width: 390, height: 844, dpr: 2, timeout: 90000, settle: 800, before: waitSnap, probe: provenance },
 ];

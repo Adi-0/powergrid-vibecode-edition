@@ -1,4 +1,6 @@
 import { rich } from './glossary';
+import { mathPanel } from './mathview';
+import type { Panel } from '../math/expr';
 
 /**
  * The inspector: what the selected thing is (plain language first), then its numbers
@@ -20,12 +22,27 @@ export interface Action {
   run: () => void;
 }
 
+export interface ShowOpts {
+  header: string;
+  name: Content;
+  kind: Content;
+  intro?: Content;
+  actions?: Action[];
+  sections: Section[];
+  /** The working behind this readout, built only when shown. */
+  panels?: () => Panel[];
+}
+
 const node = (c: Content): Node => (typeof c === 'string' ? rich(c) : c);
 
 export class Inspector {
   readonly root: HTMLElement;
   private body: HTMLElement;
   private titleEl: HTMLElement;
+  private workBtn: HTMLButtonElement;
+  private last: ShowOpts | null = null;
+  /** Show the working (math panels) instead of the readout; persists across selections. */
+  working = false;
   onClose: () => void = () => {};
 
   constructor(parent: HTMLElement) {
@@ -41,15 +58,31 @@ export class Inspector {
     close.textContent = '✕';
     close.title = 'Close (Esc)';
     close.addEventListener('click', () => this.onClose());
-    h.append(this.titleEl, close);
+    this.workBtn = document.createElement('button');
+    this.workBtn.className = 'working';
+    this.workBtn.textContent = 'Working';
+    this.workBtn.title = 'Show the arithmetic behind these numbers, step by step (W)';
+    this.workBtn.setAttribute('aria-pressed', 'false');
+    this.workBtn.addEventListener('click', () => this.toggleWorking());
+    h.append(this.titleEl, this.workBtn, close);
     this.body = document.createElement('div');
     this.body.className = 'body';
     this.root.append(h, this.body);
     parent.appendChild(this.root);
   }
 
-  show(opts: { header: string; name: Content; kind: Content; intro?: Content; actions?: Action[]; sections: Section[] }): void {
+  toggleWorking(on = !this.working): void {
+    this.working = on;
+    this.workBtn.setAttribute('aria-pressed', String(on));
+    if (this.last && !this.root.hidden) this.show(this.last);
+  }
+
+  show(opts: ShowOpts): void {
+    this.last = opts;
     this.root.hidden = false;
+    const panels = opts.panels?.() ?? [];
+    this.workBtn.hidden = panels.length === 0;
+    this.workBtn.setAttribute('aria-pressed', String(this.working));
     this.titleEl.textContent = opts.header;
     const b = this.body;
     const scroll = b.scrollTop;
@@ -71,6 +104,11 @@ export class Inspector {
         bar.appendChild(btn);
       }
       b.appendChild(bar);
+    }
+    if (this.working && panels.length) {
+      panels.forEach((p, i) => b.appendChild(mathPanel(p, { intro: i === 0 || p.intro !== panels[i - 1]!.intro })));
+      b.scrollTop = scroll;
+      return;
     }
     if (opts.intro) {
       const p = document.createElement('p');
