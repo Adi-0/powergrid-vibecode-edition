@@ -4,7 +4,7 @@ import { FaceBatch, BOX_EDGES, BOX_FACES, boxCorners } from '../render/faces';
 import { FlowBatch } from '../render/flow';
 import { INK, PEN } from '../render/style';
 import type { Symbol } from '../render/symbols';
-import type { IsoCamera } from '../render/iso';
+import { projectToView, type IsoCamera } from '../render/iso';
 import type { FrameInfo, Selection } from './level';
 
 /**
@@ -79,6 +79,85 @@ export class Sketch {
     for (const q of BOX_FACES) this.faces.quad(c[q[0]]!, c[q[1]]!, c[q[2]]!, c[q[3]]!, f);
     for (const [i, j] of BOX_EDGES) this.seg(c[i]!, c[j]!, s);
     return c;
+  }
+
+  /**
+   * A cylinder lying along east (a shaft, a stator frame), drawn as a technical drawing
+   * draws one: its two end circles and the two silhouette lines the camera sees, over
+   * ground-coloured faces for hidden-line removal. `cut` removes an angular window
+   * (radians, about the axis, 0 = up, positive toward north) to show what is inside;
+   * `inner` is the bore radius the cut exposes. Returns the silhouette points for picking.
+   */
+  cylinder(e0: number, e1: number, h: number, n: number, r: number, s: LineStyle = { width: PEN.outline, color: INK }, opts: { cut?: [number, number]; inner?: number; sides?: number } = {}): Vec3[] {
+    const N = opts.sides ?? 36;
+    const pt = (e: number, t: number, rr = r): Vec3 => this.plan(e, h + rr * Math.cos(t), n + rr * Math.sin(t));
+    const inCut = (t: number) => {
+      if (!opts.cut) return false;
+      const [a, b] = opts.cut;
+      const x = ((t - a) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+      return x < (((b - a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    };
+    const f = { collapse: this.anchor, stagger: this.stagger };
+    const ts = Array.from({ length: N + 1 }, (_, i) => (2 * Math.PI * i) / N);
+    // faces: the barrel outside the cut, and the end caps (annuli when cut open)
+    for (let i = 0; i < N; i++) {
+      const tm = (ts[i]! + ts[i + 1]!) / 2;
+      if (inCut(tm)) continue;
+      this.faces.quad(pt(e0, ts[i]!), pt(e1, ts[i]!), pt(e1, ts[i + 1]!), pt(e0, ts[i + 1]!), f);
+      const ri = opts.cut ? (opts.inner ?? 0) : 0;
+      for (const e of [e0, e1]) this.faces.quad(pt(e, ts[i]!, ri), pt(e, ts[i]!), pt(e, ts[i + 1]!), pt(e, ts[i + 1]!, ri), f);
+    }
+    if (opts.cut && opts.inner)
+      for (let i = 0; i < N; i++) if (!inCut((ts[i]! + ts[i + 1]!) / 2)) this.faces.quad(pt(e0, ts[i]!, opts.inner), pt(e1, ts[i]!, opts.inner), pt(e1, ts[i + 1]!, opts.inner), pt(e0, ts[i + 1]!, opts.inner), f);
+    // end circles (outer arcs outside the cut; the bore where it shows)
+    for (let i = 0; i < N; i++) {
+      const tm = (ts[i]! + ts[i + 1]!) / 2;
+      if (inCut(tm)) continue;
+      for (const e of [e0, e1]) this.seg(pt(e, ts[i]!), pt(e, ts[i + 1]!), s);
+    }
+    if (opts.cut && opts.inner) {
+      for (let i = 0; i < N; i++) if (!inCut((ts[i]! + ts[i + 1]!) / 2)) for (const e of [e0, e1]) this.seg(pt(e, ts[i]!, opts.inner), pt(e, ts[i + 1]!, opts.inner), { ...s, width: s.width * 0.8 });
+      for (const t of opts.cut) {
+        // the cut's faces: the shell's thickness along both edges, hatched as cut
+        // material is in a section drawing (thin lines at 45°)
+        this.faces.quad(pt(e0, t, opts.inner), pt(e1, t, opts.inner), pt(e1, t), pt(e0, t), f);
+        this.seg(pt(e0, t), pt(e1, t), s);
+        this.seg(pt(e0, t, opts.inner), pt(e1, t, opts.inner), s);
+        const w = r - opts.inner;
+        const hatch = { width: PEN.hairline, color: s.color };
+        for (let e = e0 - w; e < e1; e += w * 0.45) {
+          const a0 = Math.max(e, e0);
+          const a1 = Math.min(e + w, e1);
+          if (a1 <= a0) continue;
+          const r0 = opts.inner + (a0 - e);
+          const r1 = opts.inner + (a1 - e);
+          this.seg(pt(a0, t, r0), pt(a1, t, r1), hatch);
+        }
+      }
+    }
+    // silhouettes: where the barrel turns away from the camera (extremes across the axis on screen)
+    const [ax, ay] = projectToView(...this.plan(e0, h, n));
+    const [bx, by] = projectToView(...this.plan(e1, h, n));
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    const nx = -(by - ay) / len;
+    const ny = (bx - ax) / len;
+    let tMin = 0;
+    let tMax = 0;
+    let dMin = Infinity;
+    let dMax = -Infinity;
+    for (let i = 0; i < 720; i++) {
+      const t = (2 * Math.PI * i) / 720;
+      const [px, py] = projectToView(...pt(e0, t));
+      const d = (px - ax) * nx + (py - ay) * ny;
+      if (d < dMin) (dMin = d), (tMin = t);
+      if (d > dMax) (dMax = d), (tMax = t);
+    }
+    const sil: Vec3[] = [];
+    for (const t of [tMin, tMax]) {
+      sil.push(pt(e0, t), pt(e1, t));
+      if (!inCut(t)) this.seg(pt(e0, t), pt(e1, t), s);
+    }
+    return sil;
   }
 
   symbol(at: Vec3, sym: Symbol, width: number, dx = 0, dy = 0, color = INK): [number, number] {

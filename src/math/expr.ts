@@ -15,7 +15,7 @@ export type Expr =
   | { k: 'num'; value: number; digits: number; unit: string; prov: string; sym?: string }
   | { k: 'ref'; step: number }
   | { k: 'op'; op: '+' | '−' | '×' | '÷'; a: Expr; b: Expr }
-  | { k: 'fn'; fn: 'cos' | 'sin' | 'sqrt'; a: Expr }
+  | { k: 'fn'; fn: 'cos' | 'sin' | 'sqrt' | 'atan'; a: Expr }
   | { k: 'sq'; a: Expr }
   | { k: 'neg'; a: Expr }
   | { k: 'paren'; a: Expr };
@@ -74,7 +74,8 @@ export function evaluate(e: Expr, results: number[]): number {
     }
     case 'fn': {
       const v = evaluate(e.a, results);
-      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : Math.sqrt(v);
+      // cos and sin take degrees; atan returns degrees
+      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : Math.sqrt(v);
     }
     case 'op': {
       const a = evaluate(e.a, results);
@@ -101,6 +102,7 @@ export const div = (a: Expr, b: Expr): Expr => ({ k: 'op', op: '÷', a, b });
 export const cos = (a: Expr): Expr => ({ k: 'fn', fn: 'cos', a });
 export const sin = (a: Expr): Expr => ({ k: 'fn', fn: 'sin', a });
 export const sqrt = (a: Expr): Expr => ({ k: 'fn', fn: 'sqrt', a });
+export const atan = (a: Expr): Expr => ({ k: 'fn', fn: 'atan', a });
 export const sq = (a: Expr): Expr => ({ k: 'sq', a });
 export const neg = (a: Expr): Expr => ({ k: 'neg', a });
 export const par = (a: Expr): Expr => ({ k: 'paren', a });

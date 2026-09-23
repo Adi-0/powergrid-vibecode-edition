@@ -301,6 +301,10 @@ export class Grid {
     return b;
   }
 
+  plant(id: string): PlantRecord {
+    return this.gens.find((g) => g.plant.id === id)!.plant;
+  }
+
   bus(id: string): GridBus {
     const b = this.busById.get(id);
     if (!b) throw new Error(`unknown bus ${id}`);

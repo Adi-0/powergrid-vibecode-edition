@@ -9,7 +9,7 @@ import type { Snapshot } from '../model/snapshot';
  * (kilometres for System and Region, metres below), and the app hands the camera from
  * one frame to the next during a transition.
  */
-export type LevelKind = 'system' | 'region' | 'substation' | 'feeder' | 'service';
+export type LevelKind = 'system' | 'region' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine';
 
 export type Selection =
   | { kind: 'site'; id: string }
@@ -20,7 +20,11 @@ export type Selection =
    * substation's equipment, a feeder's branch or node, a pole-top transformer, a home,
    * the outlet.
    */
-  | { kind: 'dist'; id: string; what: DistWhat };
+  | { kind: 'dist'; id: string; what: DistWhat }
+  /** Plant and machine equipment: by generator id (plant-unit) or plant id. */
+  | { kind: 'equip'; id: string; what: EquipWhat };
+
+export type EquipWhat = 'bus' | 'gsu' | 'generator' | 'turbine' | 'hrsg' | 'stack' | 'condenser' | 'fuel' | 'stator' | 'rotor' | 'exciter' | 'neutral' | 'terminals';
 
 export type DistWhat = 'bank' | 'bus60' | 'bus12' | 'breaker' | 'feeder' | 'line' | 'device' | 'transformer' | 'home' | 'outlet' | 'node';
 
@@ -86,6 +90,8 @@ export const FLOW_SCALES: Record<LevelKind, FlowScale> = {
   substation: { unit: 'MW', perPx: 1.5, perSpeed: 0.5, samples: [5, 20] },
   feeder: { unit: 'kW', perPx: 150, perSpeed: 50, samples: [200, 2000] },
   service: { unit: 'kW', perPx: 2.5, perSpeed: 0.8, samples: [5, 25] },
+  plant: { unit: 'MW', perPx: 25, perSpeed: 8, samples: [100, 400] },
+  machine: { unit: 'MW', perPx: 10, perSpeed: 3, samples: [50, 150] },
 };
 
 export const FLOW_MIN_PX = 5;

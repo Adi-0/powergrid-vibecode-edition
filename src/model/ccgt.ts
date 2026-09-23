@@ -160,3 +160,54 @@ export function ccgtBalance(d: CcgtDesign, gtMW: number[], stMW: number, netMW: 
     residual,
   };
 }
+
+/** A plant modelled unit by unit, at a solved interval: its units, its GSUs and its energy. */
+export interface PlantState {
+  design: CcgtDesign;
+  /** Generator index per unit id; GSU branch index per unit id. */
+  gens: Record<string, number>;
+  gsus: Record<string, number>;
+  gtMW: number[];
+  stMW: number;
+  netMW: number;
+  running: boolean;
+  tripped: boolean;
+  balance: CcgtBalance | null;
+}
+
+export function plantState(
+  grid: { gens: Array<{ index: number; plant: PlantRecord; unitId?: string }>; branches: Array<{ id: string; index: number }> },
+  s: { outcome: string; genOnline: Uint8Array; pg: Float64Array; pf: Float64Array; inService: Uint8Array; plantOutages: string[] },
+  plantId: string,
+): PlantState {
+  const gens: Record<string, number> = {};
+  const gsus: Record<string, number> = {};
+  let rec: PlantRecord | null = null;
+  for (const g of grid.gens)
+    if (g.plant.id === plantId && g.unitId) {
+      gens[g.unitId] = g.index;
+      rec = g.plant;
+    }
+  for (const b of grid.branches) if (b.id.startsWith(`${plantId}-`)) gsus[b.id.slice(plantId.length + 1, b.id.indexOf(' '))] = b.index;
+  const design = ccgtDesign(rec!);
+  const none = s.outcome === 'none';
+  const pg = (u: string) => (!none && s.genOnline[gens[u]!] ? s.pg[gens[u]!]! : 0);
+  const gtMW = Object.keys(gens)
+    .filter((u) => u !== 'ST')
+    .map(pg);
+  const stMW = pg('ST');
+  let netMW = 0;
+  for (const k of Object.values(gsus)) netMW -= !none && s.inService[k] ? s.pf[k]! : 0;
+  const running = gtMW.some((v) => v > 1e-6);
+  return {
+    design,
+    gens,
+    gsus,
+    gtMW,
+    stMW,
+    netMW,
+    running,
+    tripped: s.plantOutages.includes(plantId),
+    balance: running ? ccgtBalance(design, gtMW, stMW, netMW) : null,
+  };
+}

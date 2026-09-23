@@ -87,6 +87,15 @@ export function voltageClassFor(kvLL: number): VoltageClass {
   return VOLTAGE_CLASSES[VOLTAGE_CLASSES.length - 1]!;
 }
 
+/**
+ * A generator's terminal voltage: drawn with its class's weight and dash, but named for
+ * what it is (a machine's own voltage, inside the plant) rather than the class's
+ * nominal distribution voltage.
+ */
+export function generatorClass(kvLL: number): VoltageClass {
+  return { ...voltageClassFor(kvLL), id: `gen${kvLL}`, label: `${kvLL} kV`, kvNominal: kvLL, role: 'Generator voltage' };
+}
+
 /** Stroke weights for things that are not conductors. */
 export const PEN = {
   hairline: 0.6,

@@ -109,7 +109,8 @@ const mathArithmetic = async (page) => {
         .replace(/×/g, '*')
         .replace(/÷/g, '/')
         .replace(/√\(/g, 'Math.sqrt(')
-        .replace(/(cos|sin) \(([^()]*?)°\)/g, (_, f, a) => `Math.${f}((${a})*Math.PI/180)`);
+        .replace(/(cos|sin) \(([^()]*?)°\)/g, (_, f, a) => `Math.${f}((${a})*Math.PI/180)`)
+        .replace(/atan \(/g, '(180/Math.PI)*Math.atan(');
       const shownText = text(res.cloneNode(true)).replace(/^\s*=\s*/, '');
       const m = shownText.replace(/[\u2009\u202f\u00a0 ]/g, '').replace('−', '-').match(/^-?[0-9.]+/);
       if (!m) {
@@ -419,6 +420,42 @@ export default [
     },
   },
   {
+    name: 'plant-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 300,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => {
+        window.__app.freezeMorph = 0.55;
+        window.__app.enterPlant();
+      });
+      await page.waitForFunction(() => window.__app.level === 'plant', null, { timeout: 30000 });
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
+    name: 'machine-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 300,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        window.__app.freezeMorph = 0.55;
+        window.__app.enterMachine('GT1');
+      });
+      await page.waitForFunction(() => window.__app.level === 'machine', null, { timeout: 30000 });
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,
@@ -522,6 +559,149 @@ export default [
         window.__app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' });
         window.__app.inspector.toggleWorking(true);
       });
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'plant',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 120000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'plant-trip',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 120000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.tripPlant('ML1'));
+      await waitSolved(page);
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const f = await page.evaluate(() => {
+        const e = window.__app.tripEvent;
+        const s = window.__app.current;
+        return { nadir: e && e.nadirHz, settled: e && e.settledHz, outcome: s.outcome, tripped: s.plantOutages };
+      });
+      return { ok: r.ok && f.nadir < 60 && f.outcome !== 'none' && f.tripped.includes('ML1'), value: [r.value, f] };
+    },
+  },
+  {
+    name: 'plant-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 120000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'machine',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'machine-hi',
+    url: '',
+    width: 1440,
+    dpr: 2,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'machine-excite',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+      const q0 = await page.evaluate(() => window.__app.current.qg[window.__app.grid.gens.find((g) => g.id === 'ML1-GT1').index]);
+      await page.evaluate(() => {
+        const app = window.__app;
+        const g = app.grid.gens.find((x) => x.id === 'ML1-GT1');
+        app.setExcitation(g.index, g.vset + 0.02);
+      });
+      await waitSolved(page);
+      await page.evaluate((q0) => (window.__q0 = q0), q0);
+      // bring the capability chart into view
+      await page.evaluate(() => {
+        const c = document.querySelectorAll('.inspector .chart')[1];
+        c?.scrollIntoView({ block: 'center' });
+      });
+    },
+    probe: async (page) => {
+      const r = await provenance(page);
+      const q = await page.evaluate(() => ({ before: window.__q0, after: window.__app.current.qg[window.__app.grid.gens.find((g) => g.id === 'ML1-GT1').index] }));
+      return { ok: r.ok && q.after > q.before, value: [r.value, q] };
+    },
+  },
+  {
+    name: 'machine-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterPlant());
+      await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
     },
     probe: both(provenance, mathShown, mathArithmetic),
   },

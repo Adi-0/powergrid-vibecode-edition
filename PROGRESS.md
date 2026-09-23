@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **7 — Plant + machine + system frequency response**
+Current phase: **8 — Faults + protection**
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -11,7 +11,7 @@ Current phase: **7 — Plant + machine + system frequency response**
 | 4 Scrubber, trips, region, transition | done | Live re-solve per interval; honest no-solution |
 | 5 Substation → feeder → service | done | Outlet traceable to transmission; meters + losses = head |
 | 6 Math panel | done | Arithmetic-consistency test passes on every panel |
-| 7 Plant + machine + SFR | — | Plant energy closes; SMIB equal-area fixture |
+| 7 Plant + machine + SFR | done | Plant energy closes; SMIB equal-area fixture |
 | 8 Faults + protection | — | Textbook fault fixture; coordinated sequence |
 | 9 Breadth + guided path | — | — |
 
@@ -110,3 +110,27 @@ Current phase: **7 — Plant + machine + system frequency response**
 
   Critique: `docs/critique/phase-6.md`. 73 tests pass; 26 screenshot views, all probes
   OK.
+- **Phase 7 done.** Decision 0020.
+  - **Moss Landing Unit 1 as a 2-on-1 combined cycle.**
+    - It opens from Moss Landing's node on the System or the Central Coast region.
+    - The drawing shows the switchyard, GSUs, isolated-phase bus, generators, gas turbines, HRSGs, stacks, steam turbine, and a seawater condenser.
+    - Chevrons carry MW of fuel, heat, steam, shaft work and electricity at one scale.
+    - Energy closes from fuel (HHV) to the 230 kV bus to under 1 mW at every interval it runs, with GSU losses equal to the power flow's own.
+    - Calibrated to the data file's heat rate: 6 950 Btu/kWh at full load, gas turbines 38.1 % (LHV), steam cycle 33.8 %.
+    - Dispatch splits the plant by what the exhaust heat allows. The steam turbine takes no slack.
+  - **Machine level (gas turbine generator 1).**
+    - A sectioned stator with rotor, exciter, shaft and neutral grounding.
+    - The inspector shows phasors (round rotor, E_f = V_t + (R_a + jX_d)·I_a), a capability chart with the operating point and the power flow's Q limits, and sequence reactances.
+    - "Raise / lower excitation" re-solves: +0.02 pu on the set-point took the unit from −14.0 to +23.6 MVAr.
+  - **Trip the plant.**
+    - The system frequency response runs from the interval as it stands: centre-of-inertia swing, per-unit reheat-steam, gas, hydro and battery governors, load damping, fixed-step RK4 at 10 ms.
+    - At 19:00: nadir 59.927 Hz, settling at 59.965 Hz.
+    - The power flow re-solves with the governors' pick-up. Its sharing matches the frequency model to 2 %.
+  - **Validation.**
+    - SMIB equal-area critical clearing angle and time match the scipy DOP853 fixture: 10⁻¹² on the angle, under 1 µs on the time.
+    - The frequency model matches the exact linear solution to 10⁻⁸ Hz.
+  - **Math panels.**
+    - Plant: fuel to bus, with the check.
+    - Machine: E_f and δ from terminal quantities.
+    - Frequency: df/dt and the settled frequency in closed form; the nadir is marked as integrated.
+  - Critique: `docs/critique/phase-7.md`. 99 tests pass; 35 screenshot views, all 31 probes OK (the other four are transition stills).

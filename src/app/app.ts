@@ -21,6 +21,10 @@ import { RegionLevel } from '../levels/region';
 import { SubstationLevel } from '../levels/substation';
 import { FeederLevel } from '../levels/feeder';
 import { ServiceLevel } from '../levels/service';
+import { PlantLevel } from '../levels/plant';
+import { MachineLevel } from '../levels/machine';
+import { equipView, machineView, plantView } from './inspect-plant';
+import { tripResponse, type TripResponse } from '../model/frequency';
 import type { Level, LevelKind } from '../levels/level';
 import type { Vec3 } from '../render/lines';
 import { PaperTooth } from '../render/paper';
@@ -29,7 +33,7 @@ import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busPanel, feederPanel, meterPanel, outletPanel, regionPanel, substationPanel } from '../math/panels';
+import { branchPanel, busPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
 
 /**
  * The application: one sheet (the System level for now), its camera and input, the
@@ -60,6 +64,11 @@ export class App {
   t = 76; // 19:00, the evening peak
   /** Branches the reader has tripped. */
   readonly outages = new Set<number>();
+  /** Plants the reader has tripped, and the frequency response to the last trip. */
+  readonly plantOutages = new Set<string>();
+  tripEvent: TripResponse | null = null;
+  /** Excitation changed by the reader: generator index → voltage set-point, pu. */
+  readonly vset = new Map<number, number>();
   private seq = 0;
   private inFlight = false;
   private stale = false;
@@ -88,6 +97,8 @@ export class App {
   private substation: SubstationLevel | null = null;
   private feederLevel: FeederLevel | null = null;
   private services = new Map<string, ServiceLevel>();
+  private plantLevel: PlantLevel | null = null;
+  private machines = new Map<string, MachineLevel>();
   /** A level transition in progress. */
   private anim: { t0: number; ms: number; frame: (e: number) => void; done: () => void } | null = null;
   /** For tests: hold a transition at this fold (0 flat … 1 exploded). */
@@ -195,8 +206,43 @@ export class App {
   }
 
   restore(k: number | 'all'): void {
-    if (k === 'all') this.outages.clear();
-    else this.outages.delete(k);
+    if (k === 'all') {
+      this.outages.clear();
+      this.plantOutages.clear();
+      this.vset.clear();
+      this.tripEvent = null;
+    } else this.outages.delete(k);
+    this.requestSolve();
+  }
+
+  /** Anything changed from the day as scheduled. */
+  get scenarioActive(): boolean {
+    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0;
+  }
+
+  /**
+   * Trip a plant: its breakers open at once. The frequency response runs from the
+   * interval as it stands (a time-domain model), and the power flow re-solves with the
+   * governors having picked up its output.
+   */
+  tripPlant(id: string): void {
+    const s = this.current;
+    if (!s || s.outcome === 'none' || this.plantOutages.has(id)) return;
+    this.tripEvent = tripResponse(this.grid, s, id);
+    this.plantOutages.add(id);
+    this.requestSolve();
+  }
+
+  restorePlant(id: string): void {
+    this.plantOutages.delete(id);
+    if (this.tripEvent?.plantId === id) this.tripEvent = null;
+    this.requestSolve();
+  }
+
+  /** Move a generator's voltage set-point (its excitation); null returns it to schedule. */
+  setExcitation(genIndex: number, v: number | null): void {
+    if (v === null) this.vset.delete(genIndex);
+    else this.vset.set(genIndex, Math.round(v * 1000) / 1000);
     this.requestSolve();
   }
 
@@ -208,7 +254,15 @@ export class App {
     }
     this.inFlight = true;
     this.stale = false;
-    const msg: ToWorker = { type: 'solve', t: this.t, outages: [...this.outages], seq: ++this.seq, detail: this.stack.some((l) => l.needsDetail) };
+    const msg: ToWorker = {
+      type: 'solve',
+      t: this.t,
+      outages: [...this.outages],
+      plantOutages: [...this.plantOutages],
+      vset: [...this.vset],
+      seq: ++this.seq,
+      detail: this.stack.some((l) => l.needsDetail),
+    };
     this.worker.postMessage(msg);
   }
 
@@ -239,6 +293,34 @@ export class App {
     const s = this.current;
     const n = this.notice;
     const over = this.overloads();
+    if (s && s.outcome === 'solved' && over.length === 0 && this.tripEvent) {
+      // not something wrong: an event, and what the interconnection did about it
+      const r = this.tripEvent;
+      n.hidden = false;
+      n.className = 'panel notice';
+      const h = document.createElement('header');
+      h.append(dataText(this.grid.plant(r.plantId).name, data(`plants.${r.plantId}.name`)), document.createTextNode(' tripped'));
+      const body = document.createElement('div');
+      body.className = 'body';
+      const p = document.createElement('p');
+      p.append(
+        el(qty(r.lossMW, 'MW', solver(`t${s.t}.trip.${r.plantId}.loss`), { digits: 0 })),
+        rich(' lost at once. Frequency fell to '),
+        el(qty(r.nadirHz, 'Hz', solver(`t${s.t}.trip.${r.plantId}.nadir`), { digits: 3 })),
+        rich(' and settles near '),
+        el(qty(r.settledHz, 'Hz', solver(`t${s.t}.trip.${r.plantId}.settled`), { digits: 3 })),
+        rich('; [[governor|governors]] across the West made up the rest. The flows drawn are after they have.'),
+      );
+      const bar = document.createElement('div');
+      bar.className = 'actions';
+      const b = document.createElement('button');
+      b.textContent = 'Restore everything';
+      b.addEventListener('click', () => this.restore('all'));
+      bar.appendChild(b);
+      body.append(p, bar);
+      n.replaceChildren(h, body);
+      return;
+    }
     if (!s || (s.outcome === 'solved' && over.length === 0)) {
       n.hidden = true;
       return;
@@ -282,7 +364,7 @@ export class App {
         more.append(rich('and '), el(qty(over.length - 3, 'more', solver(`t${s.t}.overloadCount`), { digits: 0 })));
         body.appendChild(more);
       }
-      if (this.outages.size) {
+      if (this.scenarioActive) {
         const bar = document.createElement('div');
         bar.className = 'actions';
         const b = document.createElement('button');
@@ -318,7 +400,7 @@ export class App {
       );
     }
     body.appendChild(p);
-    if (this.outages.size) {
+    if (this.scenarioActive) {
       const bar = document.createElement('div');
       bar.className = 'actions';
       const b = document.createElement('button');
@@ -385,11 +467,12 @@ export class App {
       );
       st.classList.add('status');
       if (s.outcome === 'none') st.classList.add('bad');
-      if (this.outages.size) {
+      if (this.outages.size || this.plantOutages.size) {
         const names = [...this.outages].map((k) => this.grid.branches[k]!);
         row(
           'Tripped',
           ...names.flatMap((b, i) => [i ? '; ' : '', dataText(b.name, data(`network.line.${b.id}.name`))]),
+          ...[...this.plantOutages].flatMap((id, i) => [i || names.length ? '; ' : '', dataText(this.grid.plant(id).name, data(`plants.${id}.name`))]),
         );
       }
     } else {
@@ -411,7 +494,7 @@ export class App {
       if (m.type === 'interval') {
         // the day's own sequence (base case): shown only while nothing newer answers the reader
         this.snaps.set(m.snap.t, m.snap);
-        if (m.snap.t === this.t && this.outages.size === 0 && (this.current?.seq ?? 0) === 0) this.setCurrent(m.snap);
+        if (m.snap.t === this.t && !this.scenarioActive && (this.current?.seq ?? 0) === 0) this.setCurrent(m.snap);
       } else if (m.type === 'solved') {
         this.inFlight = false;
         if (m.snap.seq >= (this.current?.seq ?? 0)) this.setCurrent(m.snap);
@@ -949,6 +1032,7 @@ export class App {
     } else if (top instanceof RegionLevel && sel.kind === 'site' && sel.id === 'EVERGREEN') this.enterSubstation();
     else if (top instanceof SubstationLevel && sel.kind === 'dist' && sel.what === 'feeder') this.enterFeeder();
     else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'transformer') this.enterService(sel.id);
+    else if (top instanceof PlantLevel && sel.kind === 'equip' && sel.what === 'generator') this.enterMachine(sel.id.slice(top.plantId.length + 1));
     else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'home') {
       const h = this.feederModel().layout.homes.find((x) => x.id === sel.id);
       if (h) this.enterService(h.transformer);
@@ -974,6 +1058,30 @@ export class App {
       this.services.set(transformerId, sv);
     }
     this.open(sv, f.transformerAt(transformerId), sv.origin, 1, { dive: 3 });
+  }
+
+  /** System (or the Central Coast region) → Plant: Moss Landing's node unfolds into Unit 1. */
+  enterPlant(): void {
+    const top = this.top;
+    if (top !== this.system && !(top instanceof RegionLevel && top.siteIds.includes('MOSS_LANDING'))) return;
+    this.plantLevel ??= new PlantLevel(this.grid);
+    const pl = this.plantLevel;
+    const bus = this.grid.bus('MOSS_LANDING-230');
+    const anchor: Vec3 = top instanceof RegionLevel ? top.busbarOf('MOSS_LANDING', 230) : [bus.x, 0, bus.z];
+    this.open(pl, anchor, pl.origin, 1000, { dive: 2.5 });
+  }
+
+  /** Plant → Machine: a unit's generator unfolds into its cutaway. */
+  enterMachine(unit: string): void {
+    const pl = this.plantLevel;
+    if (!pl || this.top !== pl) return;
+    const id = `${pl.plantId}-${unit}`;
+    let m = this.machines.get(id);
+    if (!m) {
+      m = new MachineLevel(this.grid, id);
+      this.machines.set(id, m);
+    }
+    this.open(m, pl.generatorAt(unit), m.origin, 1, { dive: 3 });
   }
 
   /** Back-compat for tests and the guided route. */
@@ -1073,6 +1181,40 @@ export class App {
         if (sel.what === 'transformer') return show('Selected transformer', distTransformerView(s, f, sel.id));
       }
     }
+    if (top instanceof PlantLevel) {
+      const id = top.plantId;
+      const tripped = this.plantOutages.has(id);
+      const act: Action[] = [
+        tripped
+          ? { label: 'Restore the plant', title: 'Close its breakers again', run: () => this.restorePlant(id) }
+          : { label: 'Trip the plant', title: 'Open all three units’ breakers at once and watch the frequency', run: () => this.tripPlant(id) },
+      ];
+      const trip = this.tripEvent?.plantId === id ? this.tripEvent : null;
+      if (!sel) return show('Plant', plantView(this.grid, s, id, trip), act);
+      if (sel.kind === 'equip') {
+        const unit = sel.id.slice(id.length + 1);
+        const more: Action[] = sel.what === 'generator' ? [{ label: 'Open the generator', title: 'Into the machine (Enter)', run: () => this.enterMachine(unit) }] : [];
+        return show('Selected', equipView(this.grid, s, id, sel.what, sel.id), more);
+      }
+    }
+    if (top instanceof MachineLevel) {
+      const g = this.grid.gens.find((x) => x.id === top.genId)!;
+      const sched = g.vset;
+      const now = this.vset.get(g.index) ?? sched;
+      const act: Action[] = [
+        { label: 'Raise excitation', title: 'Voltage set-point up by 0.01 pu; the power flow re-solves', run: () => this.setExcitation(g.index, now + 0.01) },
+        { label: 'Lower excitation', title: 'Voltage set-point down by 0.01 pu; the power flow re-solves', run: () => this.setExcitation(g.index, now - 0.01) },
+      ];
+      if (this.vset.has(g.index)) act.push({ label: 'As scheduled', run: () => this.setExcitation(g.index, null) });
+      if (!sel || sel.kind === 'equip') {
+        const v = machineView(this.grid, s, top.genId, now, sched);
+        if (sel?.kind === 'equip') {
+          const e = equipView(this.grid, s, top.genId.split('-')[0]!, sel.what, sel.id);
+          return show('Selected', { ...e, sections: [...e.sections, ...v.sections] }, act);
+        }
+        return show('Generator', v, act);
+      }
+    }
     if (!sel) {
       // in a region with nothing selected: the region's own balance
       if (top instanceof RegionLevel) show('Region', regionView(this.grid, s, top.id, top.siteIds));
@@ -1085,6 +1227,8 @@ export class App {
       const actions: Action[] = [];
       if (this.top === this.system && site.region !== 'tie')
         actions.push({ label: `Open ${REGIONS[site.region].name}`, title: 'Unfold the region into its voltage layers (Enter)', run: () => this.enterRegion(site.region) });
+      if (site.id === 'MOSS_LANDING' && (this.top === this.system || this.top instanceof RegionLevel))
+        actions.push({ label: 'Open the combined-cycle plant', title: 'Unfold the node into Moss Landing’s first unit', run: () => this.enterPlant() });
       if (this.top instanceof RegionLevel && site.id === 'EVERGREEN')
         actions.push({ label: 'Open the substation', title: 'Unfold the busbar into the substation yard (Enter)', run: () => this.enterSubstation() });
       this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
@@ -1116,7 +1260,10 @@ export class App {
   private panelsFor(sel: Selection | null, s: Snapshot): Panel[] {
     const top = this.top;
     const out: Array<Panel | null> = [];
-    if (top instanceof SubstationLevel) out.push(substationPanel(s));
+    if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
+    if (top instanceof PlantLevel) out.push(plantPanel(this.grid, s, top.plantId));
+    else if (top instanceof MachineLevel) out.push(machinePanel(this.grid, s, top.genId));
+    else if (top instanceof SubstationLevel) out.push(substationPanel(s));
     else if (top instanceof FeederLevel) {
       const f = this.feederModel();
       if (sel?.kind === 'dist' && sel.what === 'home') out.push(meterPanel(s, f, sel.id));
@@ -1165,7 +1312,7 @@ export class App {
       classes: this.top === this.system ? this.system.visibleClasses(this.cam.pxPerUnit) : this.top.classes,
       flowScale: this.top.flowScale,
       showSignal: true,
-      showOutOfService: !!s && s.inService.some((x) => x === 0),
+      showOutOfService: (!!s && s.inService.some((x) => x === 0)) || this.plantOutages.size > 0,
       noSolution: s?.outcome === 'none',
     });
   }

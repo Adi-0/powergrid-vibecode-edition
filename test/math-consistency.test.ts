@@ -7,7 +7,8 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busPanel, feederPanel, meterPanel, outletPanel, regionPanel, substationPanel } from '../src/math/panels';
+import { branchPanel, busPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../src/math/panels';
+import { tripResponse } from '../src/model/frequency';
 
 /**
  * Phase 6's done-condition: every math panel's displayed arithmetic reproduces its
@@ -33,7 +34,7 @@ function redo(e: Expr, printed: string[]): number {
       return redo(e.a, printed) ** 2;
     case 'fn': {
       const v = redo(e.a, printed);
-      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : Math.sqrt(v);
+      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : Math.sqrt(v);
     }
     case 'op': {
       const a = redo(e.a, printed);
@@ -96,6 +97,20 @@ describe('math panels', () => {
       }
       expect(panels).toBeGreaterThan(250);
       expect(steps).toBeGreaterThan(1500);
+    });
+
+    it(`plant, machines and the frequency response at interval ${t}`, () => {
+      const s = snapshot(g, day.points[t]!);
+      const p = plantPanel(g, s, 'ML1');
+      expect(p).not.toBeNull();
+      check(p!, p!.title);
+      for (const id of ['ML1-GT1', 'ML1-GT2', 'ML1-ST']) {
+        const m = machinePanel(g, s, id);
+        expect(m).not.toBeNull();
+        check(m!, id);
+      }
+      check(frequencyPanel(tripResponse(g, s, 'ML1')), 'trip ML1');
+      check(frequencyPanel(tripResponse(g, s, 'DIABLO')), 'trip DIABLO');
     });
 
     it(`substation, feeder, meters and the outlet at interval ${t}`, () => {

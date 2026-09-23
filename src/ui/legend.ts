@@ -111,6 +111,27 @@ function substationRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
 }
 
+/** The Plant level: machinery to scale, pipes, the shaft, the enclosed bus. */
+function plantRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), 'Machinery drawn to scale: turbines, [[hrsg|HRSGs]], stacks, generators, transformers'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.8 }]), 'Pipe: natural gas, steam, seawater'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 2 }]), 'Shaft: turbine to generator'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 4], [50, 4], [50, 10], [4, 10], [4, 4]], w: 1 }]), 'Isolated-phase bus: the generator’s three conductors, each in its own enclosure'));
+}
+
+/** The Machine level: a generator cut open. */
+function machineRows(g: HTMLElement): void {
+  const cyl = drawSample(22, [
+    { pts: [[8, 5], [44, 5]], w: 1.2 },
+    { pts: [[8, 17], [44, 17]], w: 1.2 },
+    { pts: [[8, 5], [5, 8], [5, 14], [8, 17]], w: 1.2 },
+    { pts: [[44, 5], [47, 8], [47, 14], [44, 17]], w: 1.2 },
+  ]);
+  g.appendChild(row(cyl, 'Round parts drawn as a draughtsman would: end circles and the two outline edges'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60 }]), 'Slots of the rotor’s field winding'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 12], [16, 2], [28, 12], [40, 2], [50, 9]], w: 0.8, color: INK_60 }]), 'Break line: the turbine continues off the sheet'));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -216,6 +237,7 @@ export class Legend {
         Subtransmission: '[[subtransmission]]',
         'Primary distribution': 'primary [[distribution]]',
         'Secondary / service': 'secondary and service',
+        'Generator voltage': 'generator voltage, inside the plant',
       };
       content.appendChild(rich(roles[c.role] ?? c.role.toLowerCase()));
       g1.appendChild(row(strokeSample(c.weight, c.dash), content));
@@ -233,6 +255,10 @@ export class Legend {
       substationRows(g2);
     } else if (s.level === 'feeder' || s.level === 'service') {
       feederRows(g2);
+    } else if (s.level === 'plant') {
+      plantRows(g2);
+    } else if (s.level === 'machine') {
+      machineRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -255,7 +281,13 @@ export class Legend {
     });
     const fn = document.createElement('div');
     fn.className = 'note';
-    fn.append(rich(`Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`));
+    fn.append(
+      rich(
+        s.level === 'plant' || s.level === 'machine'
+          ? `Chevrons show where power goes, whatever its form — fuel, heat, steam, shaft work, electricity; size and speed ∝ ${fs.unit} (`
+          : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
+      ),
+    );
     fn.append(el(qty(fs.perPx, fs.unit, data(`style.flowScale.${s.level}.perPx`), { digits: fs.perPx < 10 ? 1 : 0 })), document.createTextNode(' per px on this sheet).'));
     g3.appendChild(fn);
     b.append(g1, g2, g3);

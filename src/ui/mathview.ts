@@ -77,9 +77,10 @@ function render(e: Expr, shown: number[], units: Array<{ unit: string; prov: str
       break;
     }
     case 'fn':
+      // cos and sin of an angle in degrees; atan of a ratio (its result in degrees)
       t(e.fn === 'sqrt' ? '√(' : `${e.fn} (`);
-      f.appendChild(render(e.a, shown, units, e.fn !== 'sqrt'));
-      t(e.fn === 'sqrt' ? ')' : '°)');
+      f.appendChild(render(e.a, shown, units, e.fn === 'cos' || e.fn === 'sin'));
+      t(e.fn === 'cos' || e.fn === 'sin' ? '°)' : ')');
       break;
     case 'op':
       f.appendChild(render(e.a, shown, units, bare));

@@ -124,6 +124,18 @@ export const TERMS: Term[] = [
   T('capacitor-bank', 'Capacitor bank', 'Capacitors connected to a bus to supply reactive power and raise voltage.'),
   T('reactor', 'Shunt reactor', 'A coil connected to a bus to absorb reactive power and lower voltage.'),
   T('syncon', 'Synchronous condenser', 'A generator with no engine, spinning in step with the grid to supply or absorb reactive power and add inertia.'),
+  T('load-damping', 'Load damping', 'Motors and other load draw a little less power when frequency falls, which helps hold it up.', 'D (% load per % frequency)'),
+  T('rocof', 'Rate of change of frequency', 'How fast frequency falls in the first instant after a loss; set by inertia alone.', 'df/dt (Hz/s)'),
+  // ---- plants and machines
+  T('combined-cycle', 'Combined cycle', 'A gas turbine whose hot exhaust makes steam for a second, steam turbine: two cycles from one fuel, about half of it turned to electricity.', 'CCGT'),
+  T('hrsg', 'Heat-recovery steam generator', 'A boiler heated by a gas turbine’s exhaust instead of a flame.', 'HRSG'),
+  T('hhv', 'Higher heating value', 'All the heat a fuel gives when burned, including the heat recovered by condensing the water vapour it makes.', 'HHV'),
+  T('lhv', 'Lower heating value', 'The heat a fuel gives when burned, leaving its water vapour as vapour: what an engine can actually use.', 'LHV'),
+  T('synchronous-generator', 'Synchronous generator', 'A generator whose rotor turns in exact step with the grid’s frequency; nearly all large power-plant generators are this kind.'),
+  T('excitation', 'Excitation', 'The direct current in a generator’s rotor that makes its magnetic field; more excitation, more internal voltage and more reactive power out.', 'I_fd, E_f'),
+  T('load-angle', 'Load angle', 'How far a generator’s internal voltage leads its terminal voltage; it grows with the real power the machine delivers.', 'δ'),
+  T('capability-curve', 'Capability curve', 'The region of real and reactive power a generator may make without overheating its stator or rotor or losing stability.', 'P–Q chart'),
+  T('sequence-networks', 'Sequence networks', 'Any unbalanced set of three-phase quantities splits into balanced positive-, negative- and zero-sequence sets; each has its own impedances.', 'Z₁, Z₂, Z₀'),
   // ---- distribution
   T('feeder', 'Feeder', 'A distribution circuit leaving a substation to serve a neighbourhood.'),
   T('lateral', 'Lateral', 'A branch off a feeder, often a single phase, serving a street or two.'),

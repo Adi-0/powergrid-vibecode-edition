@@ -114,3 +114,25 @@ split between 120 V legs and a 240 V air conditioner.
 substation's demand changes by < 1 VA (3–4 passes); energy closes to ~1e-5 W.
 
 (Protection, machines and dynamics sections follow in later phases.)
+
+## Plants, machines and dynamics (`src/model/ccgt.ts`, `src/model/machine.ts`, `src/physics/dyn/`)
+
+- **Combined cycle** (Moss Landing Unit 1, `src/data/ca/plants.ts`).
+  - The net heat rate in the data file fixes the overall efficiency at full load. The unit shares (0.35 / 0.35 / 0.30, estimate) fix the gas / steam split.
+  - The HRSG heat-recovery share (0.80), generator efficiency (98.5 %), no-load fuel fraction (0.30) and HHV/LHV (1.108) are typical of the class. All are estimates.
+  - Calibrated this way, the Brayton-cycle efficiency (38.1 % LHV) and Rankine-cycle efficiency (33.8 %) land inside the textbook ranges. The plant test checks this.
+  - Dispatch splits the plant's output by what the exhaust heat allows. The split is closed form, because steam-turbine output is affine in gas-turbine load.
+- **Generators** (`src/data/machines.ts`): a two-pole, 210 MVA, 18 kV air-cooled turbine generator. Its reactances and time constants lie inside Kundur's ranges for round-rotor machines; the specific values are estimates.
+- **Swing equation, equal-area criterion** (Kundur; Glover, Overbye & Sarma).
+  - Classical SMIB model, integrated with fixed-step fourth-order Runge–Kutta at 0.5 ms.
+  - Fixture `test/fixtures/smib.json`, written by `tools/ref/smib.py` (scipy 1.17.1, DOP853 at 10⁻¹² tolerance):
+    - the closed-form critical clearing angle;
+    - the event-located critical clearing time;
+    - a bisection that does not use the equal-area criterion.
+  - The system is illustrative, of the class the textbooks use. It is not taken from any one book.
+- **System frequency response** (Kundur's aggregate model; the Anderson & Mirheydar low-order SFR model family).
+  - Centre-of-inertia swing, with load damping D = 1 (estimate).
+  - Per-unit turbine–governor models, with Kundur's typical constants (estimates): reheat steam, gas, hydro (transient droop by Kundur's rule of thumb, water column), battery.
+  - Integrated with fixed-step fourth-order Runge–Kutta at 10 ms.
+  - Checked against the exact solution of the linear two-state case.
+  - Its governor sharing matches the power flow's governor participation to 2 %.

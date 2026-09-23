@@ -81,3 +81,27 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Inputs are rounded to the digits shown, so the working reaches the solver's value only to within two units of the result's last place; the solver's own value is quoted beside each result. **Full treatment:** Exact arithmetic throughout, rounded once at the end.
 - **Simplified:** The bus check shows real power (ΔP) only, and plugs in the converged state rather than showing the iterations. **Full treatment:** The Newton–Raphson iterations themselves (Jacobian, mismatch vector, update), with the reactive mismatch ΔQ at every bus.
 - **Simplified:** The outlet's voltage drop leaves out the branch circuit's small reactance, and the step says so. **Full treatment:** The cable's full series impedance Z = R + jX, and the drop as a phasor.
+
+## plant — Moss Landing Unit 1
+
+- **Simplified:** The plant's energy is a heat balance: a straight-line fuel curve for each gas turbine, a fixed share of exhaust heat recovered by the HRSGs, and a fixed generator efficiency, calibrated so full load reproduces the data file's heat rate. **Full treatment:** Gas-turbine performance maps (ambient temperature, inlet guide vanes, firing temperature); HRSG pinch-point and approach design across three pressure levels; steam-turbine expansion lines; condenser back-pressure set by seawater temperature.
+- **Simplified:** Station service (pumps, fans, auxiliary load, about 2 % of output) is not modelled, so gross equals net at the generator terminals. **Full treatment:** Auxiliary load on a unit auxiliary transformer, taken from the generator bus.
+- **Simplified:** In the power flow the steam turbine holds its scheduled output while the gas turbines cover any imbalance, so for a moment the steam turbine may make slightly more or less than the exhaust heat allows; the inspector reports the steam cycle's implied efficiency. **Full treatment:** Steam-turbine output following the HRSGs' steam through their thermal time constants (minutes).
+- **Simplified:** Unit 1 is the only plant modelled unit by unit and drawn; every other plant is one generator at its bus. **Full treatment:** Every plant with its units, step-up transformers and auxiliary systems.
+
+## machine — The generator
+
+- **Simplified:** Round-rotor model with X_q = X_d and no saturation: E_f is proportional to field current. **Full treatment:** Two-axis (d–q) model with X_q ≠ X_d and the open-circuit saturation curve; the field current from the Potier construction.
+- **Simplified:** The capability curve's under-excited limit is the theoretical steady-state stability limit against a stiff 230 kV bus through the step-up transformer. **Full treatment:** The manufacturer's under-excitation limiter setting and the stator core-end heating limit, which usually bind first.
+- **Simplified:** Changing excitation moves the unit's voltage set-point and re-solves the power flow; the power flow holds the unit within a rectangle of reactive limits (drawn dotted on the chart), not the curved capability. **Full treatment:** An automatic voltage regulator model, with over- and under-excitation limiters acting on the true capability curve.
+
+## frequency — After a plant trips
+
+- **Simplified:** One frequency for the whole interconnection (the centre of inertia). Every machine swings together. **Full treatment:** Multi-machine time-domain simulation: machines swing against each other, frequency differs from place to place for the first seconds, and the network's flows change with the angles.
+- **Simplified:** The rest of the West is three equivalents behind the AC ties, carrying its governor capacity and inertia. Their headroom is the tie's rating. **Full treatment:** The full western interconnection (thousands of machines), with each unit's own governor, deadband and withheld response.
+- **Simplified:** Governors have no deadband, and limits clamp their output without windup. Load damping D is a single constant. **Full treatment:** ±36 mHz deadbands (WECC practice), governor limit logic, and frequency-dependent load models by load class.
+- **Simplified:** After the trip, the power flow gives the governors the whole loss (frequency held at nominal in the network solution); the frequency model also lets load draw a little less. **Full treatment:** A power flow with frequency as a variable (load and governors both frequency-dependent).
+
+## smib — Transient stability (tested, not yet drawn)
+
+- **Simplified:** A single machine against an infinite bus, classical model (constant voltage behind transient reactance, no damping). **Full treatment:** Multi-machine transient stability with detailed machine, exciter and governor models.

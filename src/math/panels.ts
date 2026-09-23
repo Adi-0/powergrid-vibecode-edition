@@ -5,7 +5,10 @@ import type { Feeder } from '../model/feeder';
 import { nodeIndex } from '../model/feeder';
 import { WIRING_12AWG } from '../data/dist/evergreen';
 import { COUPLING_BUS } from '../model/coupling';
-import { add, cos, div, mul, neg, num, par, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
+import { add, atan, cos, div, mul, neg, num, par, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
+import { CCGT, plantState } from '../model/ccgt';
+import { machineOf, phasors } from '../model/machine';
+import type { TripResponse } from '../model/frequency';
 
 /**
  * Math panels for what can be selected: the working behind the numbers the inspector
@@ -345,3 +348,235 @@ export function meterPanel(s: Snapshot, fd: Feeder, homeId: string): Panel | nul
 }
 
 export { COUPLING_BUS };
+
+// ---------------------------------------------------------------- plant, machine, frequency
+
+/** The combined cycle: fuel to the 230 kV bus, every megawatt accounted for. */
+export function plantPanel(grid: Grid, s: Snapshot, plantId: string): Panel | null {
+  if (s.outcome === 'none') return null;
+  const ps = plantState(grid, s, plantId);
+  const b = ps.balance;
+  if (!b) return null;
+  const t = s.t;
+  const d = ps.design;
+  const P = (u: string, v: number) => num(v, 3, 'MW', `solver:t${t}.gen.${plantId}-${u}.pg`, `P_{${u}}`);
+  const Fr = () => num(d.gtFuelLhv, 3, 'MWth', `derived:plants.${plantId}.design.gtFuelLhv`, 'F_r');
+  const a = () => num(CCGT.noLoadFuel, 2, '', 'data:ccgt.noLoadFuel', 'a');
+  const Pr = () => num(d.gtMW, 1, 'MW', `data:plants.${plantId}.units.GT.mw`, 'P_r');
+  const eta = () => num(CCGT.etaGen, 3, '', 'data:ccgt.etaGen', 'η_{gen}');
+  const key = (k: string) => `derived:t${t}.plant.${plantId}.${k}`;
+  const steps: Step[] = [];
+  ['GT1', 'GT2'].forEach((u, i) => {
+    steps.push({
+      label: `Fuel burned by the ${i ? 'second' : 'first'} gas turbine (lower heating value): a straight line from its no-load fuel`,
+      general: 'F = F_r [a + (1 − a) P / P_r]',
+      sym: `F_{${u}}`,
+      expr: mul(Fr(), par(add(a(), mul(par(sub(num(1, 0, '', 'notation:one'), a())), div(P(u, b.gt[i]!.mw), Pr()))))),
+      unit: 'MWth',
+      digits: 3,
+      prov: key(`${u}.fuel`),
+      solver: b.gt[i]!.fuelLhv,
+    });
+  });
+  steps.push(
+    {
+      label: 'Fuel on the higher heating value (what the gas meter bills)',
+      general: 'F_{HHV} = (F_{GT1} + F_{GT2}) × HHV/LHV',
+      sym: 'F_{HHV}',
+      expr: mul(par(add(ref(0), ref(1))), num(CCGT.hhvOverLhv, 3, '', 'data:ccgt.hhvOverLhv', 'HHV/LHV')),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('fuelHhv'),
+      solver: b.fuelHhv,
+    },
+    {
+      label: 'Hot exhaust leaving the gas turbines: fuel less their shaft work',
+      general: 'Q_{ex} = F_{GT1} + F_{GT2} − (P_{GT1} + P_{GT2}) / η_{gen}',
+      sym: 'Q_{ex}',
+      expr: sub(add(ref(0), ref(1)), div(par(add(P('GT1', b.gt[0]!.mw), P('GT2', b.gt[1]!.mw))), eta())),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('exhaust'),
+      solver: b.gt.reduce((acc, g) => acc + g.exhaust, 0),
+    },
+    {
+      label: 'Heat the HRSGs pass to the steam',
+      general: 'Q_{st} = η_{HRSG} Q_{ex}',
+      sym: 'Q_{st}',
+      expr: mul(num(CCGT.etaHrsg, 2, '', 'data:ccgt.etaHrsg', 'η_{HRSG}'), ref(3)),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('steamHeat'),
+      solver: b.steamHeat,
+    },
+    {
+      label: 'Heat up the stacks, not recovered',
+      general: 'Q_{stack} = Q_{ex} − Q_{st}',
+      sym: 'Q_{stack}',
+      expr: sub(ref(3), ref(4)),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('stack'),
+      solver: b.stack,
+    },
+    {
+      label: 'Latent heat of the water vapour, also up the stacks',
+      general: 'F_{HHV} − (F_{GT1} + F_{GT2})',
+      sym: 'Q_{latent}',
+      expr: sub(ref(2), par(add(ref(0), ref(1)))),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('latent'),
+      solver: b.latent,
+    },
+    {
+      label: 'Heat to the condenser: steam heat the steam turbine did not turn into work',
+      general: 'Q_{cond} = Q_{st} − P_{ST} / η_{gen}',
+      sym: 'Q_{cond}',
+      expr: sub(ref(4), div(P('ST', b.stMW), eta())),
+      unit: 'MWth',
+      digits: 3,
+      prov: key('condenser'),
+      solver: b.condenser,
+    },
+    {
+      label: 'Lost in the generators',
+      general: 'P_{gen,loss} = (P_{GT1} + P_{GT2} + P_{ST}) (1/η_{gen} − 1)',
+      sym: 'P_{gen,loss}',
+      expr: mul(par(add(add(P('GT1', b.gt[0]!.mw), P('GT2', b.gt[1]!.mw)), P('ST', b.stMW))), par(sub(div(num(1, 0, '', 'notation:one'), eta()), num(1, 0, '', 'notation:one')))),
+      unit: 'MW',
+      digits: 3,
+      prov: key('genLoss'),
+      solver: b.generatorLoss,
+    },
+    {
+      label: 'Lost in the step-up transformers (the power flow’s: out of the generators less into the bus)',
+      general: 'P_{GSU,loss} = P_{GT1} + P_{GT2} + P_{ST} − P_{net}',
+      sym: 'P_{GSU,loss}',
+      expr: sub(add(add(P('GT1', b.gt[0]!.mw), P('GT2', b.gt[1]!.mw)), P('ST', b.stMW)), num(b.netMW, 3, 'MW', `solver:t${t}.plant.${plantId}.net`, 'P_{net}')),
+      unit: 'MW',
+      digits: 3,
+      prov: key('gsuLoss'),
+      solver: b.gsuLoss,
+    },
+    {
+      label: 'The check: fuel less everything it became',
+      general: 'F_{HHV} − (P_{net} + P_{GSU,loss} + P_{gen,loss} + Q_{stack} + Q_{latent} + Q_{cond})',
+      sym: 'ΔE',
+      expr: sub(ref(2), par(add(add(add(add(add(num(b.netMW, 3, 'MW', `solver:t${t}.plant.${plantId}.net`, 'P_{net}'), ref(9)), ref(8)), ref(5)), ref(6)), ref(7)))),
+      unit: 'MW',
+      digits: 2,
+      prov: key('residual'),
+      solver: b.residual,
+    },
+    {
+      label: 'Net heat rate: fuel per kilowatt-hour delivered (k: the Btu in a kilowatt-hour)',
+      general: 'HR = F_{HHV} / P_{net} × k',
+      sym: 'HR',
+      expr: mul(div(ref(2), num(b.netMW, 3, 'MW', `solver:t${t}.plant.${plantId}.net`, 'P_{net}')), num(CCGT.btuPerKWh, 2, 'Btu/kWh', 'data:units.btuPerKWh', '')),
+      unit: 'Btu/kWh',
+      digits: 1,
+      prov: key('heatRate'),
+      solver: b.heatRate,
+    },
+  );
+  return {
+    title: 'Where the fuel goes',
+    intro: 'Each unit’s output comes from the power flow; fuel and heat from the plant model (its gas turbines’ fuel line, generator efficiency and the HRSGs’ share are data). Heat in MWth, electricity in MW.',
+    steps,
+  };
+}
+
+/** The generator's internal voltage from its terminal quantities: E_f = V_t + (R_a + jX_d) I_a. */
+export function machinePanel(grid: Grid, s: Snapshot, genId: string): Panel | null {
+  if (s.outcome === 'none') return null;
+  const g = grid.gens.find((x) => x.id === genId);
+  const rec = machineOf(genId);
+  if (!g || !rec || !s.genOnline[g.index]) return null;
+  const t = s.t;
+  const V = s.vm[g.bus.index]!;
+  const p = phasors(rec, V, s.va[g.bus.index]!, s.pg[g.index]!, s.qg[g.index]!);
+  const key = (k: string) => `derived:t${t}.machine.${genId}.${k}`;
+  const S = () => num(rec.mva, 0, 'MVA', `data:machines.${genId}.mva`, 'S_{rated}');
+  const Vt = () => num(V, 6, 'pu', `solver:t${t}.bus.${g.bus.id}.vm`, '|V_t|');
+  const Ra = () => num(rec.ra, 3, 'pu', `data:machines.${genId}.ra`, 'R_a');
+  const Xd = () => num(rec.xd, 2, 'pu', `data:machines.${genId}.xd`, 'X_d');
+  const steps: Step[] = [
+    { label: 'Real power, per unit on the machine’s rating', general: 'P = P_{MW} / S_{rated}', sym: 'P', expr: div(num(s.pg[g.index]!, 4, 'MW', `solver:t${t}.gen.${genId}.pg`, 'P'), S()), unit: 'pu', digits: 6, prov: key('P'), solver: p.P },
+    { label: 'Reactive power, per unit', general: 'Q = Q_{MVAr} / S_{rated}', sym: 'Q', expr: div(num(s.qg[g.index]!, 4, 'MVAr', `solver:t${t}.gen.${genId}.qg`, 'Q'), S()), unit: 'pu', digits: 6, prov: key('Q'), solver: p.Q },
+    { label: 'Armature current: S = V I*, so |I| = |S| / |V|', general: '|I_a| = √(P² + Q²) / |V_t|', sym: '|I_a|', expr: div(sqrt(add(sq(ref(0)), sq(ref(1)))), Vt()), unit: 'pu', digits: 6, prov: key('I'), solver: p.I },
+    { label: 'Power-factor angle: how far the current lags the voltage', general: 'φ = atan(Q / P)', sym: 'φ', expr: atan(div(ref(1), ref(0))), unit: '°', digits: 4, prov: key('phi'), solver: (p.phi * 180) / Math.PI },
+    {
+      label: 'E_f along V_t (taking V_t as the reference)',
+      general: 'E_{re} = |V_t| + R_a|I_a| cos φ + X_d|I_a| sin φ',
+      sym: 'E_{re}',
+      expr: add(add(Vt(), mul(mul(Ra(), ref(2)), cos(ref(3)))), mul(mul(Xd(), ref(2)), sin(ref(3)))),
+      unit: 'pu',
+      digits: 6,
+      prov: key('Ere'),
+      solver: p.Ef * Math.cos(p.delta),
+    },
+    {
+      label: 'E_f across V_t',
+      general: 'E_{im} = X_d|I_a| cos φ − R_a|I_a| sin φ',
+      sym: 'E_{im}',
+      expr: sub(mul(mul(Xd(), ref(2)), cos(ref(3))), mul(mul(Ra(), ref(2)), sin(ref(3)))),
+      unit: 'pu',
+      digits: 6,
+      prov: key('Eim'),
+      solver: p.Ef * Math.sin(p.delta),
+    },
+    { label: 'Internal voltage', general: '|E_f| = √(E_{re}² + E_{im}²)', sym: '|E_f|', expr: sqrt(add(sq(ref(4)), sq(ref(5)))), unit: 'pu', digits: 5, prov: key('Ef'), solver: p.Ef },
+    { label: 'Load angle', general: 'δ = atan(E_{im} / E_{re})', sym: 'δ', expr: atan(div(ref(5), ref(4))), unit: '°', digits: 3, prov: key('delta'), solver: (p.delta * 180) / Math.PI },
+  ];
+  return {
+    title: 'Inside the generator',
+    intro: 'Round-rotor model, per phase, per unit on the machine’s rating. Generator reference: current out of the machine positive; S = V I* (current conjugated).',
+    steps,
+  };
+}
+
+/** The frequency response in closed form where it has one: the first instant and the settled value. */
+export function frequencyPanel(r: TripResponse): Panel {
+  const f0 = r.params.f0;
+  const key = (k: string) => `derived:trip.${r.plantId}.${k}`;
+  const dw = r.settledHz / f0 - 1;
+  let pLim = 0;
+  let beta = r.params.D * r.params.PL;
+  r.units.forEach((u) => {
+    if (u.R === null) return;
+    const cmd = (-dw * u.S) / u.R;
+    const hi = u.Pmax - u.P0;
+    if (cmd >= hi - 1e-9) pLim += Math.max(0, hi);
+    else beta += u.S / u.R;
+  });
+  const dP = () => num(r.lossMW, 2, 'MW', `solver:trip.${r.plantId}.loss`, 'ΔP');
+  const F0 = () => num(f0, 0, 'Hz', 'data:sfr.f0', 'f_0');
+  return {
+    title: 'The frequency, where it has a closed form',
+    intro: 'The first instant and the settled value follow from the swing equation directly; the nadir between them depends on every governor’s timing and is integrated, not closed form.',
+    steps: [
+      {
+        label: 'Rate of fall at the first instant: only inertia acts',
+        general: 'df/dt = −ΔP f_0 / (2 Σ H_i S_i)',
+        sym: 'df/dt',
+        expr: div(mul(neg(dP()), F0()), par(mul(num(2, 0, '', 'notation:two'), num(r.kineticMWs, 0, 'MW·s', `solver:trip.${r.plantId}.kinetic`, 'Σ H_i S_i')))),
+        unit: 'Hz/s',
+        digits: 5,
+        prov: key('rocof'),
+        solver: r.rocof,
+      },
+      {
+        label: 'Settled: governors not at a limit share what those at a limit could not give, with load damping',
+        general: 'Δf = −(ΔP − P_{lim}) / (Σ_{free} S_i/R_i + D P_L) × f_0',
+        sym: 'Δf',
+        expr: mul(div(neg(par(sub(dP(), num(pLim, 2, 'MW', `solver:trip.${r.plantId}.pLim`, 'P_{lim}')))), num(beta, 1, 'MW/pu', `solver:trip.${r.plantId}.betaFree`, 'β')), F0()),
+        unit: 'Hz',
+        digits: 5,
+        prov: key('df'),
+        solver: r.settledHz - f0,
+      },
+      { label: 'Settled frequency', general: 'f = f_0 + Δf', sym: 'f', expr: add(F0(), ref(1)), unit: 'Hz', digits: 4, prov: key('settled'), solver: r.settledHz },
+    ],
+  };
+}
