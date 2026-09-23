@@ -27,6 +27,8 @@ export interface OperateOptions {
   branchOutages?: ReadonlySet<number>;
   /** Plant ids forced offline (their output lost). */
   plantOutages?: ReadonlySet<string>;
+  /** Voltage set-points changed from the schedule (excitation), per generator index, pu. */
+  vset?: ReadonlyMap<number, number>;
   /** Start from this solution (speeds up a sequence of intervals). */
   warm?: PFResult;
   /** Shunt steps in service at start (per grid shunt). */
@@ -91,6 +93,7 @@ function operateOnce(grid: Grid, step: IntervalDispatch, base: PFCase, opts: Ope
     pg.participation = online ? participationOf(g, opts.participation) : 0;
   });
   if (opts.branchOutages) for (const k of opts.branchOutages) pf.branches[k]!.inService = false;
+  if (opts.vset) for (const [i, v] of opts.vset) pf.gens[i]!.vg = v;
 
   // Switched shunts: a voltage-band controller steps banks in and out between solves.
   // Without a previous position, start the banks where an operator would have them
@@ -190,9 +193,11 @@ function participationOf(g: Grid['gens'][number], mode: Participation): number {
     // with neighbours takes a small share (inadvertent flow until the next schedule).
     if (t.id === 'import_ac' || t.id === 'import_dc') return 0.1 * t.rampPerMin * g.pmaxMW;
     if (!GOVERNED.has(t.id) && t.id !== 'battery') return 0;
+    // a combined cycle's steam turbine follows its gas turbines; they take its share
+    if (!g.governor) return 0;
     return t.rampPerMin * g.pmaxMW;
   }
-  if (t.droop === null) return 0;
+  if (t.droop === null || !g.governor) return 0;
   if (g.plant.externalMW) return g.plant.externalMW / t.droop;
   return g.pmaxMW / t.droop;
 }

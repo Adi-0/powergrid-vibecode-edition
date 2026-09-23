@@ -91,6 +91,10 @@ export interface GridGen {
   /** Share of the plant this generator is (1 unless the plant is modelled unit by unit). */
   share: number;
   unitName?: string;
+  /** The unit's id within its plant (GT1, ST…), when the plant is modelled unit by unit. */
+  unitId?: string;
+  /** False for a unit with no governor of its own. */
+  governor: boolean;
   pmaxMW: number;
   pminMW: number;
   qmaxMVAr: number;
@@ -268,6 +272,8 @@ export class Grid {
           vset,
           regulates,
           ...(u.name ? { unitName: u.name } : {}),
+          ...(u.id ? { unitId: u.id } : {}),
+          governor: tech.droop !== null && !(u as { noGovernor?: boolean }).noGovernor,
         };
         this.gens.push(g);
         this.genById.set(g.id, g);

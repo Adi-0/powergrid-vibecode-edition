@@ -4,6 +4,7 @@ import type { PlantRecord } from '../data/ca/plants';
 import type { Grid, GridGen } from './grid';
 import { availability, intervals, type Availability, type Interval } from './resources';
 import { computePtdf, sced, type ScedVariable } from './sced';
+import { ccgtDesign, ccgtSplit, type CcgtDesign } from './ccgt';
 
 /**
  * Deciding who runs, interval by interval: a quasi-static day.
@@ -105,6 +106,14 @@ export function variableCost(p: PlantRecord, tech: TechId, heatRate: number | nu
   }
 }
 
+const designs = new Map<string, CcgtDesign | null>();
+/** The combined-cycle design of a plant modelled unit by unit, if it is one. */
+function ccgtOf(u: Unit): CcgtDesign | null {
+  if (u.tech !== 'gas_ccgt' || !u.plant.units) return null;
+  if (!designs.has(u.plant.id)) designs.set(u.plant.id, ccgtDesign(u.plant));
+  return designs.get(u.plant.id)!;
+}
+
 export function buildUnits(grid: Grid): Unit[] {
   const byPlant = new Map<string, GridGen[]>();
   for (const g of grid.gens) {
@@ -185,13 +194,17 @@ export function dispatchDay(grid: Grid, opts: DispatchOptions = {}): DaySchedule
   const demand = netLoad.map((d, t) => d + loss[t]! + tbcLoss);
   const genMW = ivs.map(() => new Float64Array(grid.gens.length));
   const setUnit = (u: Unit, t: number, mw: number) => {
+    const d = ccgtOf(u);
+    if (d) {
+      // a combined cycle's steam turbine makes what its gas turbines' exhaust allows
+      const sp = ccgtSplit(d, mw);
+      for (const g of u.gens) genMW[t]![g.index] = g.unitId === 'ST' ? sp.st : sp.gt;
+      return;
+    }
     const share = u.gens.reduce((s, g) => s + g.pmaxMW, 0);
     for (const g of u.gens) genMW[t]![g.index] = (mw * g.pmaxMW) / share;
   };
-  const addUnit = (u: Unit, t: number, mw: number) => {
-    const share = u.gens.reduce((s, g) => s + g.pmaxMW, 0);
-    for (const g of u.gens) genMW[t]![g.index] = genMW[t]![g.index]! + (mw * g.pmaxMW) / share;
-  };
+  const addUnit = (u: Unit, t: number, mw: number) => setUnit(u, t, u.gens.reduce((s, g) => s + genMW[t]![g.index]!, 0) + mw);
   const residual = demand.slice();
   const renewAvail = new Float64Array(nT);
   for (const u of units) {

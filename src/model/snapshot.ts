@@ -24,6 +24,10 @@ export interface Snapshot {
   seq: number;
   /** Branches out of service in this scenario, sorted ("" key when none). */
   outages: number[];
+  /** Plants tripped in this scenario (ids, sorted). */
+  plantOutages: string[];
+  /** Excitation changed from schedule: [generator index, voltage set-point pu]. */
+  vset: Array<[number, number]>;
   /** Solver status: the worst island's. */
   status: string;
   /**
@@ -79,7 +83,7 @@ export interface Snapshot {
   feeder?: FeederSnap;
 }
 
-export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = []): Snapshot {
+export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]> } = {}): Snapshot {
   const nb = grid.branches.length;
   const pf = new Float64Array(nb);
   const qf = new Float64Array(nb);
@@ -132,6 +136,8 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
     startHour: s.iv.startHour,
     seq,
     outages,
+    plantOutages: scenario.plantOutages ?? [],
+    vset: scenario.vset ?? [],
     status: op.status,
     outcome,
     darkIslands,

@@ -40,7 +40,16 @@ export interface PlantRecord {
   /** Synchronous condensers: reactive rating, MVAr (they make no real power). */
   mvar?: number;
   /** Units modelled individually down to their own terminal buses (the plant view). */
-  units?: Array<{ id: string; name: string; share: number; terminalKV: number; gsuMVA: number; gsuXPct: number }>;
+  units?: Array<{
+    id: string;
+    name: string;
+    share: number;
+    terminalKV: number;
+    gsuMVA: number;
+    gsuXPct: number;
+    /** A unit with no governor of its own (a combined cycle's steam turbine follows its gas turbines' exhaust). */
+    noGovernor?: boolean;
+  }>;
   plain?: string;
   src: SourceId;
 }
@@ -139,9 +148,11 @@ export const PLANTS: PlantRecord[] = [
     mw: 510,
     heatRate: 6950,
     units: [
-      { id: 'GT1', name: 'Gas turbine 1', share: 1 / 3, terminalKV: 18, gsuMVA: 220, gsuXPct: 12 },
-      { id: 'GT2', name: 'Gas turbine 2', share: 1 / 3, terminalKV: 18, gsuMVA: 220, gsuXPct: 12 },
-      { id: 'ST', name: 'Steam turbine', share: 1 / 3, terminalKV: 18, gsuMVA: 220, gsuXPct: 12 },
+      // design split: the steam turbine makes what the two gas turbines' exhaust allows,
+      // about 30 % of a 2-on-1 plant's output at full load (estimate)
+      { id: 'GT1', name: 'Gas turbine 1', share: 0.35, terminalKV: 18, gsuMVA: 220, gsuXPct: 12 },
+      { id: 'GT2', name: 'Gas turbine 2', share: 0.35, terminalKV: 18, gsuMVA: 220, gsuXPct: 12 },
+      { id: 'ST', name: 'Steam turbine', share: 0.3, terminalKV: 18, gsuMVA: 220, gsuXPct: 12, noGovernor: true },
     ],
     plain: 'A 2-on-1 combined cycle: two gas turbines, each with a heat-recovery steam generator, feeding one steam turbine.',
     src: 'estimate',

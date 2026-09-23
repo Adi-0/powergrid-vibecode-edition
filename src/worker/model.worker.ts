@@ -21,7 +21,7 @@ import { feederSnap } from '../model/feederSnapshot';
 export type ToWorker =
   | { type: 'init'; focus: number }
   /** `detail`: also solve the Evergreen substation and feeder, coupled at its 60 kV bus. */
-  | { type: 'solve'; t: number; outages: number[]; seq: number; detail?: boolean };
+  | { type: 'solve'; t: number; outages: number[]; seq: number; detail?: boolean; plantOutages?: string[]; vset?: Array<[number, number]> };
 
 /** The day as dispatched: what the time strip draws. MW per interval. */
 export interface DaySummary {
@@ -78,11 +78,16 @@ function answer(): void {
   const step = schedule.steps[req.t]!;
   const warm = baseOps[req.t];
   const outages = [...new Set(req.outages)].sort((a, b) => a - b);
+  const plantOutages = [...new Set(req.plantOutages ?? [])].sort();
+  const vset = req.vset ?? [];
+  const scenario = { plantOutages, vset };
   // With something tripped this is the moment after: the dispatch stays as planned
   // and governors (droop) cover the change. See docs/simplifications.md.
   const opts = {
-    participation: outages.length ? ('governor' as const) : ('agc' as const),
+    participation: outages.length || plantOutages.length ? ('governor' as const) : ('agc' as const),
     branchOutages: new Set(outages),
+    plantOutages: new Set(plantOutages),
+    vset: new Map(vset),
     ...(warm && warm.status === 'converged' ? { warm: warm.result, shuntSteps: warm.shuntSteps } : {}),
   };
   let s: Snapshot;
@@ -91,10 +96,10 @@ function answer(): void {
     // transmission solution until both agree at the 60 kV bus
     feeder ??= makeFeeder();
     const cp = coupledSolve(grid, step, base, feeder, opts);
-    s = snapshot(grid, cp.op, req.seq, outages);
+    s = snapshot(grid, cp.op, req.seq, outages, scenario);
     s.feeder = feederSnap(cp);
   } else {
-    s = snapshot(grid, operate(grid, step, base, opts), req.seq, outages);
+    s = snapshot(grid, operate(grid, step, base, opts), req.seq, outages, scenario);
   }
   post({ type: 'solved', snap: s, ms: performance.now() - t0 }, transferables(s));
 }
