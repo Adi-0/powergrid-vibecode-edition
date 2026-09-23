@@ -32,6 +32,23 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Each substation's buses of one voltage are one bus; its transformers of one kind are drawn as banks side by side. **Full treatment:** Breaker-and-a-half or double-bus arrangements with bus sections, drawn at the Substation level.
 - **Simplified:** A region's losses are computed by difference (generated + arriving − taken). **Full treatment:** The same number summed branch by branch; they agree because the power flow conserves power, which the tests check.
 
+## substation — The Evergreen substation
+
+- **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.
+- **Simplified:** Three of the four feeders are one balanced load on the 12 kV bus. **Full treatment:** All four feeders modelled pole by pole.
+- **Simplified:** Breakers, disconnects and the bus arrangement are drawn but carry no impedance; the yard's layout is plausible, not surveyed. **Full treatment:** Substation arrangement from the utility's one-line and plan drawings.
+
+## feeder — Feeder 1105
+
+- **Simplified:** One synthetic feeder, laid out on a grid of streets. **Full treatment:** The utility's GIS model of a real feeder.
+- **Simplified:** Homes are constant-power loads that follow an average profile, scaled per home; air conditioners are a 240 V load. **Full treatment:** Measured load shapes per customer class, voltage-dependent loads, motor stalling.
+- **Simplified:** Rooftop solar follows clear-sky irradiance at unity power factor. **Full treatment:** Inverters with volt-var and volt-watt settings (IEEE 1547), weather.
+
+## service — A service, down to the outlet
+
+- **Simplified:** The branch circuit is one 12 AWG run of fixed length, hot and neutral in series; the appliance at the outlet is a constant-impedance 1500 W hair dryer. **Full treatment:** The house's wiring as built, every outlet and load on it.
+- **Simplified:** The house is drawn as a block to scale; walls, panel and meter positions are schematic. **Full treatment:** Not applicable — drawing convention.
+
 ## transmission — The transmission network
 
 - **Simplified:** Balanced, positive-sequence model: the three phases are assumed identical, so one phase stands for all three. **Full treatment:** A three-phase model where unbalance matters (it rarely does at transmission voltages, which is why the field uses positive sequence).

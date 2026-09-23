@@ -98,3 +98,14 @@ export function solveFeeder(f: Feeder, hour: number, vPu: number, angleRad: numb
   for (const l of loads) nominal = nominal.add(new Complex(l.kw * 1000, l.kvar * 1000));
   return { hour, net, result, ltcStep: step, substationS: result.headS, feederHeadS: head.Sf, nominalS: nominal };
 }
+
+const indexCache = new WeakMap<Feeder, Map<string, number>>();
+/** Node id → index in the feeder model's node order (the order snapshots use). */
+export function nodeIndex(f: Feeder): Map<string, number> {
+  let m = indexCache.get(f);
+  if (!m) {
+    m = new Map([...f.base.nodes.keys()].map((id, i) => [id, i]));
+    indexCache.set(f, m);
+  }
+  return m;
+}

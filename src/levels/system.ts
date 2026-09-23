@@ -9,6 +9,7 @@ import type { Grid, GridBranch } from '../model/grid';
 import { SegmentIndex, type Outlines, type Ring } from '../model/outline';
 import type { Snapshot } from '../model/snapshot';
 import { projectToView, type IsoCamera } from '../render/iso';
+import { FLOW_SCALES, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 import { project } from '../model/geo';
 
 /**
@@ -25,10 +26,7 @@ export const SLAB_KM = 30; // drawn thickness of the state slab (vertical exagge
 /** Zoom (px per km) above which generator symbols and 115/60 kV circuits are drawn. */
 export const GEN_ZOOM = 1.5;
 
-export type Selection =
-  | { kind: 'site'; id: string }
-  | { kind: 'branch'; index: number }
-  | { kind: 'plant'; id: string };
+export type { Selection, LabelSpec } from './level';
 
 export interface SiteAnchor {
   id: string;
@@ -38,18 +36,6 @@ export interface SiteAnchor {
   outOfState: boolean;
 }
 
-export interface LabelSpec {
-  id: string;
-  text: string;
-  anchor: Vec3;
-  priority: number;
-  /** Minimum zoom (px per km) at which the label may show. */
-  minZoom: number;
-  kind: 'site' | 'plant' | 'region' | 'sea' | 'layer' | 'exit';
-  /** Provenance of any figures in the text (e.g. "500 kV" on a layer). */
-  prov?: string;
-}
-
 interface CircuitDraw {
   branch: number;
   seg: number;
@@ -57,7 +43,14 @@ interface CircuitDraw {
   cls: VoltageClass;
 }
 
-export class SystemLevel {
+export class SystemLevel implements Level {
+  readonly kind = 'system' as const;
+  readonly name = 'California · System';
+  readonly unitKm = 1;
+  readonly north: [number, number] = [Math.SQRT1_2, -Math.SQRT1_2];
+  readonly needsDetail = false;
+  readonly flowScale = FLOW_SCALES.system;
+  private zoom = 1;
   readonly group = new THREE.Group();
   readonly faces = new FaceBatch('sys-faces');
   readonly lines = new LineBatch('sys-lines');
@@ -74,7 +67,7 @@ export class SystemLevel {
   private genGlyphs: number[] = [];
   private genVisible = true;
   /** Voltage classes present in the drawing. */
-  readonly classes: VoltageClass[] = [];
+  readonly allClasses: VoltageClass[] = [];
   snapshot: Snapshot | null = null;
   private selection: Selection | null = null;
   /**
@@ -246,7 +239,7 @@ export class SystemLevel {
       this.circuits.push(c);
       this.byBranch.set(k, c);
     });
-    for (const c of ['ehv500', 'hv230', 'hv115', 'sub69']) if (classSet.has(c)) this.classes.push(voltageClassFor(c === 'ehv500' ? 500 : c === 'hv230' ? 230 : c === 'hv115' ? 115 : 60));
+    for (const c of ['ehv500', 'hv230', 'hv115', 'sub69']) if (classSet.has(c)) this.allClasses.push(voltageClassFor(c === 'ehv500' ? 500 : c === 'hv230' ? 230 : c === 'hv115' ? 115 : 60));
   }
 
   // ------------------------------------------------------------------ symbols
@@ -308,6 +301,7 @@ export class SystemLevel {
   // ------------------------------------------------------------------ state
   /** Show 115 and 60 kV circuits only once zoomed in far enough to read them. */
   setZoom(pxPerKm: number): void {
+    this.zoom = pxPerKm;
     const show = pxPerKm > GEN_ZOOM;
     if (show === this.genVisible) return;
     this.genVisible = show;
@@ -326,8 +320,31 @@ export class SystemLevel {
     return pxPerKm > GEN_ZOOM;
   }
 
+  get classes(): VoltageClass[] {
+    return this.visibleClasses(this.zoom);
+  }
+
+  /** The System sheet does not fold; it is the top of the tree. */
+  get morph(): number {
+    return 1;
+  }
+  set morph(_m: number) {}
+
+  fitPoints(): Vec3[] {
+    return [
+      ...this.geo.california[0]!.map(([x, z]) => [x, 0, z] as Vec3),
+      ...this.sites.filter((x) => x.outOfState).map((x) => x.pos),
+    ];
+  }
+
+  frame(o: FrameInfo): void {
+    for (const b of [this.lines, this.glyphs, this.marks]) b.frame(o);
+    this.flow.frame(o.width, o.height, o.pixelRatio, o.time);
+    this.faces.frame(o.pixelRatio);
+  }
+
   visibleClasses(pxPerKm: number): VoltageClass[] {
-    return this.classes.filter((c) => pxPerKm > GEN_ZOOM || c.kvMin >= 200);
+    return this.allClasses.filter((c) => pxPerKm > GEN_ZOOM || c.kvMin >= 200);
   }
 
   /** Apply a solved interval: flows, overloads, dead buses. */

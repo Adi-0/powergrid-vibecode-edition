@@ -7,7 +7,7 @@ import { projectToView, type IsoCamera } from '../render/iso';
 import type { Grid, GridBranch, GridBus } from '../model/grid';
 import type { Snapshot } from '../model/snapshot';
 import { REGIONS, type RegionId } from '../data/ca/network';
-import type { LabelSpec, Selection } from './system';
+import { FLOW_SCALES, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 
 /**
  * The Region level: one part of the state drawn as an exploded axonometric.
@@ -54,7 +54,12 @@ const BUS_HALF = 11; // px, half-length of a busbar
 const GEN_DX = 20; // px between generator risers, to the left of the axis
 const LOAD_DX = 18; // px, the load's drop to the right of the axis
 
-export class RegionLevel {
+export class RegionLevel implements Level {
+  readonly kind = 'region' as const;
+  readonly unitKm = 1;
+  readonly north: [number, number] = [Math.SQRT1_2, -Math.SQRT1_2];
+  readonly needsDetail = false;
+  readonly flowScale = FLOW_SCALES.region;
   readonly group = new THREE.Group();
   readonly lines = new LineBatch('reg-lines');
   readonly glyphs = new LineBatch('reg-glyphs');
@@ -525,6 +530,13 @@ export class RegionLevel {
     return best;
   }
 
+  /** Where a substation's busbar of this voltage is drawn (this level's frame). */
+  busbarOf(siteId: string, kv: number): Vec3 {
+    const p = this.sitePos.get(siteId)!;
+    const b = this.grid.buses.find((x) => x.site.id === siteId && x.kv === kv && this.busY.has(x.index));
+    return [p[0], b ? this.busY.get(b.index)! : 0, p[2]];
+  }
+
   /** Voltage classes drawn (for the key). */
   get classes(): VoltageClass[] {
     return this.layers.map((l) => l.cls);
@@ -535,7 +547,11 @@ export class RegionLevel {
     return this.layers.length ? this.layers[this.layers.length - 1]!.y : 0;
   }
 
-  frame(o: { width: number; height: number; pixelRatio: number; pxPerUnit: number; time: number }): void {
+  fitPoints(): Vec3[] {
+    return this.corners.flatMap((c) => [c, [c[0], this.height, c[2]] as Vec3]);
+  }
+
+  frame(o: FrameInfo): void {
     for (const b of [this.lines, this.glyphs, this.plates, this.marks]) b.frame(o);
     this.flow.frame(o.width, o.height, o.pixelRatio, o.time);
   }

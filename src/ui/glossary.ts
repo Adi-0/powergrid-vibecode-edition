@@ -171,6 +171,8 @@ export function termSpan(id: string, shown?: string): HTMLSpanElement {
   s.className = 'term';
   s.tabIndex = 0;
   s.dataset.term = id;
+  // a term's name can carry figures ("ANSI C84.1"): its source is the glossary
+  s.dataset.prov = `data:glossary.${id}`;
   s.textContent = shown ?? inline(t.term);
   s.setAttribute('aria-description', t.plain);
   if (!introduced.has(id)) {

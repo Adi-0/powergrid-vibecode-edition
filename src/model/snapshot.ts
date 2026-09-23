@@ -1,6 +1,7 @@
 import type { Grid } from './grid';
 import { S_BASE } from './grid';
 import type { OperatingPoint } from './operate';
+import { feederTransferables, type FeederSnap } from './feederSnapshot';
 
 /**
  * A compact, transferable picture of one solved interval: everything the views and
@@ -74,6 +75,8 @@ export interface Snapshot {
   lmp: Float64Array;
   congestion: Array<{ branch: number; shadow: number; flowMW: number; limitMW: number }>;
   participation: string;
+  /** The Evergreen substation and feeder, when the solve was coupled to them. */
+  feeder?: FeederSnap;
 }
 
 export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = []): Snapshot {
@@ -174,7 +177,8 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
 
 /** Transferable buffers for postMessage. */
 export function transferables(s: Snapshot): ArrayBuffer[] {
-  return [s.vm, s.va, s.energized, s.pf, s.qf, s.pt, s.qt, s.loading, s.inService, s.pg, s.qg, s.genOnline, s.pd, s.qd, s.shuntMVAr, s.lmp].map(
+  const own = [s.vm, s.va, s.energized, s.pf, s.qf, s.pt, s.qt, s.loading, s.inService, s.pg, s.qg, s.genOnline, s.pd, s.qd, s.shuntMVAr, s.lmp].map(
     (a) => a.buffer as ArrayBuffer,
   );
+  return s.feeder ? [...own, ...feederTransferables(s.feeder)] : own;
 }

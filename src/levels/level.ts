@@ -1,0 +1,100 @@
+import type * as THREE from 'three';
+import type { IsoCamera } from '../render/iso';
+import type { Vec3 } from '../render/lines';
+import type { VoltageClass } from '../render/style';
+import type { Snapshot } from '../model/snapshot';
+
+/**
+ * What every level of the zoom tree provides. Each level draws in its own frame
+ * (kilometres for System and Region, metres below), and the app hands the camera from
+ * one frame to the next during a transition.
+ */
+export type LevelKind = 'system' | 'region' | 'substation' | 'feeder' | 'service';
+
+export type Selection =
+  | { kind: 'site'; id: string }
+  | { kind: 'branch'; index: number }
+  | { kind: 'plant'; id: string }
+  /**
+   * Something below the transmission system, by its id in the distribution model: a
+   * substation's equipment, a feeder's branch or node, a pole-top transformer, a home,
+   * the outlet.
+   */
+  | { kind: 'dist'; id: string; what: DistWhat };
+
+export type DistWhat = 'bank' | 'bus60' | 'bus12' | 'breaker' | 'feeder' | 'line' | 'device' | 'transformer' | 'home' | 'outlet' | 'node';
+
+export interface LabelSpec {
+  id: string;
+  text: string;
+  anchor: Vec3;
+  priority: number;
+  /** Minimum zoom (px per frame unit) at which the label may show. */
+  minZoom: number;
+  kind: 'site' | 'plant' | 'region' | 'sea' | 'layer' | 'exit' | 'equip' | 'street';
+  /** Provenance of any figures in the text (e.g. "500 kV" on a layer). */
+  prov?: string;
+}
+
+export interface FrameInfo {
+  width: number;
+  height: number;
+  pixelRatio: number;
+  pxPerUnit: number;
+  time: number;
+}
+
+/** How chevrons are scaled on a level: `perPx` of `unit` per pixel of chevron. */
+export interface FlowScale {
+  unit: 'MW' | 'kW' | 'W';
+  perPx: number;
+  /** Speed: `unit` per (px/s). */
+  perSpeed: number;
+  /** Flows the key draws samples for. */
+  samples: number[];
+}
+
+export interface Level {
+  readonly kind: LevelKind;
+  readonly name: string;
+  readonly group: THREE.Group;
+  readonly labels: LabelSpec[];
+  /** Kilometres per unit of this level's frame (1 for km, 0.001 for metres). */
+  readonly unitKm: number;
+  /** Whether this level draws the Evergreen substation and feeder (a coupled solve). */
+  readonly needsDetail: boolean;
+  readonly flowScale: FlowScale;
+  /** North as a unit vector in the frame's ground plane (x, z) — for the north arrow. */
+  readonly north: [number, number];
+  applySnapshot(s: Snapshot): void;
+  /** Focus and context; returns the site or element ids that stay (for labels). */
+  highlight(sel: Selection | null): Set<string> | null;
+  pick(sx: number, sy: number, cam: IsoCamera): Selection | null;
+  frame(o: FrameInfo): void;
+  /** 0: folded into the node it occupies above; 1: unfolded. */
+  morph: number;
+  /** Points in this level's frame the camera fits on arrival. */
+  fitPoints(): Vec3[];
+  /** Voltage classes drawn (for the key). */
+  readonly classes: VoltageClass[];
+}
+
+/** Flow scales, one per kind of level, so a chevron's size always means the same per level. */
+export const FLOW_SCALES: Record<LevelKind, FlowScale> = {
+  system: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
+  region: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
+  substation: { unit: 'MW', perPx: 1.5, perSpeed: 0.5, samples: [5, 20] },
+  feeder: { unit: 'kW', perPx: 150, perSpeed: 50, samples: [200, 2000] },
+  service: { unit: 'kW', perPx: 2.5, perSpeed: 0.8, samples: [5, 25] },
+};
+
+export const FLOW_MIN_PX = 5;
+export const FLOW_MAX_PX = 22;
+
+export function chevronSizeFor(v: number, s: FlowScale): number {
+  return Math.min(FLOW_MAX_PX, Math.max(FLOW_MIN_PX, Math.abs(v) / s.perPx));
+}
+
+export function chevronSpeedFor(v: number, s: FlowScale): number {
+  return Math.abs(v) / s.perSpeed;
+}

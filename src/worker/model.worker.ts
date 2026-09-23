@@ -4,6 +4,9 @@ import { dispatchDay, type DaySchedule } from '../model/dispatch';
 import { operate, type OperatingPoint } from '../model/operate';
 import { snapshot, transferables, type Snapshot } from '../model/snapshot';
 import type { PFCase } from '../physics/pf/case';
+import { coupledSolve } from '../model/coupling';
+import { makeFeeder, type Feeder } from '../model/feeder';
+import { feederSnap } from '../model/feederSnapshot';
 
 /**
  * The solver thread. It owns the model and the solvers so the drawing thread never
@@ -15,7 +18,10 @@ import type { PFCase } from '../physics/pf/case';
  * requests — a time of day and a set of tripped branches — with a fresh power flow,
  * so whatever the reader scrubs to or trips is solved when asked, never looked up.
  */
-export type ToWorker = { type: 'init'; focus: number } | { type: 'solve'; t: number; outages: number[]; seq: number };
+export type ToWorker =
+  | { type: 'init'; focus: number }
+  /** `detail`: also solve the Evergreen substation and feeder, coupled at its 60 kV bus. */
+  | { type: 'solve'; t: number; outages: number[]; seq: number; detail?: boolean };
 
 /** The day as dispatched: what the time strip draws. MW per interval. */
 export interface DaySummary {
@@ -46,6 +52,7 @@ let schedule: DaySchedule | null = null;
 /** Base-case solutions of the current schedule (warm starts for requests). */
 let baseOps: Array<OperatingPoint | undefined> = [];
 let pending: Extract<ToWorker, { type: 'solve' }> | null = null;
+let feeder: Feeder | null = null;
 
 ctx.onmessage = (ev: MessageEvent<ToWorker>) => {
   const msg = ev.data;
@@ -73,12 +80,22 @@ function answer(): void {
   const outages = [...new Set(req.outages)].sort((a, b) => a - b);
   // With something tripped this is the moment after: the dispatch stays as planned
   // and governors (droop) cover the change. See docs/simplifications.md.
-  const op = operate(grid, step, base, {
-    participation: outages.length ? 'governor' : 'agc',
+  const opts = {
+    participation: outages.length ? ('governor' as const) : ('agc' as const),
     branchOutages: new Set(outages),
     ...(warm && warm.status === 'converged' ? { warm: warm.result, shuntSteps: warm.shuntSteps } : {}),
-  });
-  const s = snapshot(grid, op, req.seq, outages);
+  };
+  let s: Snapshot;
+  if (req.detail) {
+    // the substation and feeder, solved phase by phase and iterated with the
+    // transmission solution until both agree at the 60 kV bus
+    feeder ??= makeFeeder();
+    const cp = coupledSolve(grid, step, base, feeder, opts);
+    s = snapshot(grid, cp.op, req.seq, outages);
+    s.feeder = feederSnap(cp);
+  } else {
+    s = snapshot(grid, operate(grid, step, base, opts), req.seq, outages);
+  }
   post({ type: 'solved', snap: s, ms: performance.now() - t0 }, transferables(s));
 }
 

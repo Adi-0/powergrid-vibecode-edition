@@ -1,7 +1,7 @@
-import { DASH_PATTERNS, DASH, FLOW_LEGEND_MW, INK, INK_35, SIGNAL, type VoltageClass } from '../render/style';
-import { chevronSize, FLOW_PX_PER_MW } from '../render/flow';
+import { DASH_PATTERNS, DASH, INK, INK_35, INK_60, SIGNAL, type VoltageClass } from '../render/style';
+import { chevronSizeFor, type FlowScale, type LevelKind } from '../levels/level';
 import { converterSymbol, generatorSymbol, substationSymbol, transformerSymbol, warningSymbol, crossSymbol, type Symbol } from '../render/symbols';
-import { el, qty, data } from './quantity';
+import { el, qty, data, dataText } from './quantity';
 import { rich } from './glossary';
 
 /**
@@ -51,8 +51,7 @@ function symbolSample(sym: Symbol, width: number, color = INK, h = 18): SVGSVGEl
   return s;
 }
 
-function chevronSample(mw: number): SVGSVGElement {
-  const W = chevronSize(mw);
+function chevronSample(W: number): SVGSVGElement {
   const s = svg(54, Math.max(14, W + 4));
   const cy = Math.max(14, W + 4) / 2;
   const L = 0.55 * W;
@@ -104,6 +103,33 @@ function drawSample(h: number, parts: Array<{ pts: Array<[number, number]>; w: n
   return s;
 }
 
+/** The Substation level: equipment drawn to scale. */
+function substationRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), 'Equipment drawn to scale: breakers, the [[transformer|bank]], switchgear, buildings'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 4 }]), '[[bus|Bus]]: rigid conductor on post insulators'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.3, dash: '5 3' }]), 'Underground cable'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
+}
+
+/** The Feeder level: poles, devices, pole-top transformers, homes. */
+function feederRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
+  g.appendChild(row(symbolSample({ polys: [[[-2, -4], [2, -4], [2, 4], [-2, 4]]], closed: [true] }, 1), '[[fuse|Fuse]] where a lateral leaves the trunk'));
+  g.appendChild(row(symbolSample({ polys: [[[-4.5, -4.5], [4.5, -4.5], [4.5, 4.5], [-4.5, 4.5]]], closed: [true] }, 1), '[[recloser|Recloser]]'));
+  const reg = symbolSample(transformerSymbol(0.01), 1);
+  reg.replaceChildren(...Array.from(symbolSample({ polys: [circleSample(5.5), [[-7, -6], [7, 6]], [[3.5, 6], [7, 6], [7, 2.5]]], closed: [true, false, false] }, 1).childNodes));
+  g.appendChild(row(reg, '[[regulator|Voltage regulator]]'));
+  g.appendChild(row(symbolSample({ polys: [[[-5, 2], [5, 2]], [[-5, -2], [5, -2]], [[0, 2], [0, 7]], [[0, -2], [0, -7]]], closed: [false, false, false, false] }, 1), '[[capacitor-bank|Capacitor bank]]'));
+  g.appendChild(row(symbolSample(transformerSymbol(2.6), 1), 'Pole-top [[transformer|transformer]]; from it, the service drops'));
+  g.appendChild(row(drawSample(18, [{ pts: [[20, 14], [34, 14], [40, 10], [40, 4], [26, 4], [20, 8], [20, 14]], w: 1 }, { pts: [[20, 8], [34, 8], [40, 4]], w: 1 }, { pts: [[34, 8], [34, 14]], w: 1 }, { pts: [[24, 6.5], [34, 6.5]], w: 0.6 }]), 'A home, to scale; a line on the roof: [[btm-solar|rooftop solar]]'));
+}
+
+function circleSample(r: number): Array<[number, number]> {
+  const p: Array<[number, number]> = [];
+  for (let i = 0; i < 24; i++) p.push([r * Math.cos((i / 24) * Math.PI * 2), r * Math.sin((i / 24) * Math.PI * 2)]);
+  return p;
+}
+
 /** The Region level's own symbols: layers, busbars, transformers, risers and drops. */
 function regionRows(g: HTMLElement): void {
   const plate = DASH_PATTERNS[DASH.dashDot]!;
@@ -128,8 +154,9 @@ function regionRows(g: HTMLElement): void {
 }
 
 export interface LegendState {
-  level: 'system' | 'region';
+  level: LevelKind;
   classes: VoltageClass[];
+  flowScale: FlowScale;
   showSignal: boolean;
   showOutOfService: boolean;
   noSolution: boolean;
@@ -166,7 +193,7 @@ export class Legend {
   }
 
   update(s: LegendState): void {
-    const key = JSON.stringify([s.level, s.classes.map((c) => c.id), s.showSignal, s.showOutOfService, s.noSolution]);
+    const key = JSON.stringify([s.level, s.classes.map((c) => c.id), s.flowScale, s.showSignal, s.showOutOfService, s.noSolution]);
     if (key === this.last) return;
     this.last = key;
     const b = this.body;
@@ -176,8 +203,21 @@ export class Legend {
     g1.className = 'group';
     for (const c of s.classes) {
       const content = document.createElement('span');
-      content.append(el(qty(c.kvNominal, 'kV', data(`style.voltageClass.${c.id}.kvNominal`), { digits: 0, basis: 'LL' })), document.createTextNode(' '));
-      content.appendChild(rich(c.role === 'Subtransmission' ? '[[subtransmission]]' : c.role === 'Bulk transmission' ? 'bulk [[transmission]]' : '[[transmission]]'));
+      // below 1 kV a class is named by its service voltages (120/240 V), not a kV figure
+      content.append(
+        c.kvNominal >= 1
+          ? el(qty(c.kvNominal, 'kV', data(`style.voltageClass.${c.id}.kvNominal`), { digits: c.kvNominal >= 20 ? 0 : 0, basis: 'LL' }))
+          : dataText(c.label, data(`style.voltageClass.${c.id}.label`)),
+        document.createTextNode(' '),
+      );
+      const roles: Record<string, string> = {
+        'Bulk transmission': 'bulk [[transmission]]',
+        Transmission: '[[transmission]]',
+        Subtransmission: '[[subtransmission]]',
+        'Primary distribution': 'primary [[distribution]]',
+        'Secondary / service': 'secondary and service',
+      };
+      content.appendChild(rich(roles[c.role] ?? c.role.toLowerCase()));
       g1.appendChild(row(strokeSample(c.weight, c.dash), content));
     }
     const note = document.createElement('div');
@@ -189,6 +229,10 @@ export class Legend {
     g2.className = 'group';
     if (s.level === 'region') {
       regionRows(g2);
+    } else if (s.level === 'substation') {
+      substationRows(g2);
+    } else if (s.level === 'feeder' || s.level === 'service') {
+      feederRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -203,15 +247,16 @@ export class Legend {
     // flow
     const g3 = document.createElement('div');
     g3.className = 'group';
-    FLOW_LEGEND_MW.forEach((mw, i) => {
+    const fs = s.flowScale;
+    fs.samples.forEach((v, i) => {
       const c = document.createElement('span');
-      c.append(document.createTextNode('flow of '), el(qty(mw, 'MW', data(`style.FLOW_LEGEND_MW.${i}`), { digits: 0 })));
-      g3.appendChild(row(chevronSample(mw), c));
+      c.append(document.createTextNode('flow of '), el(qty(v, fs.unit, data(`style.flowScale.${s.level}.samples.${i}`), { digits: 0 })));
+      g3.appendChild(row(chevronSample(chevronSizeFor(v, fs)), c));
     });
     const fn = document.createElement('div');
     fn.className = 'note';
-    fn.append(rich('Chevrons point the way [[real-power|real power]] flows; size and speed ∝ MW ('));
-    fn.append(el(qty(1 / FLOW_PX_PER_MW, 'MW', data('render.flow.FLOW_PX_PER_MW'), { digits: 0 })), document.createTextNode(' per px).'));
+    fn.append(rich(`Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`));
+    fn.append(el(qty(fs.perPx, fs.unit, data(`style.flowScale.${s.level}.perPx`), { digits: fs.perPx < 10 ? 1 : 0 })), document.createTextNode(' per px on this sheet).'));
     g3.appendChild(fn);
     b.append(g1, g2, g3);
     // signal and out of service

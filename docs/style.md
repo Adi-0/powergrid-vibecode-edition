@@ -125,3 +125,19 @@ Busbar: 22 px, 3.2 px. Transformer: 1.4 px stroke between busbars, banks 8 px ap
 two 4.2 px circles. Generation riser: 1.0 px, symbol at its foot. Demand drop: 1.0 px to
 a 1.4 px load arrow. Exit: a 1.4 px tick in ink 60 % and the far substation's name.
 DC link: 2.1 px dotted, a converter symbol near each end.
+
+## Substation, feeder and service
+
+- Plans: the feeder is a map (north up); the substation and service are equipment
+  drawings (plan square to the frame, seen at 45°). See decision 0018.
+- Equipment: boxes to scale, ground-coloured faces, 1.2 px ink edges. Bus: 4 px.
+  Fence: long dashes, hairline, ink 60 %, with posts. Underground cable: the
+  hidden-line dash.
+- Feeder: trunk 1.8 px, laterals 1.1 px, poles as hairlines; fuse, recloser, regulator
+  and capacitor as one-line symbols; pole-top transformers as the two-circle symbol;
+  homes as blocks to scale, a line pattern on the roof for rooftop solar.
+- Service: the outlet home is a cutaway — its two near walls cut at 1.2 m, the cut
+  hatched in ink 35 % as a section; inside, the meter, panel, branch circuit and outlet.
+- A home outside ANSI C84.1 Range A carries the warning mark.
+- Chevron scales: 1.5 MW per px at the substation, 150 kW per px on the feeder,
+  2.5 kW per px at the service; the key states the one in use.

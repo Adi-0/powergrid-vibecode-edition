@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ISO_ELEVATION_RAD, type IsoCamera } from '../render/iso';
-import { SCALE_STEPS_KM } from '../render/style';
-import { EAST, NORTH } from '../model/geo';
+import { SCALE_STEPS_M } from '../render/style';
+import { NORTH } from '../model/geo';
 import { data, derived, el, qty } from './quantity';
 
 /**
@@ -31,22 +31,24 @@ export class Furniture {
     parent.appendChild(this.root);
   }
 
-  update(cam: IsoCamera): void {
+  /** `unitKm`: kilometres per unit of the frame the camera is in. */
+  update(cam: IsoCamera, unitKm = 1, north: readonly [number, number] = NORTH): void {
     const v = new THREE.Vector3();
     const s0 = new THREE.Vector2();
     const s1 = new THREE.Vector2();
     cam.worldToScreen(v.copy(cam.target), s0);
-    cam.worldToScreen(v.set(cam.target.x + NORTH[0] * 100, 0, cam.target.z + NORTH[1] * 100), s1);
+    cam.worldToScreen(v.set(cam.target.x + north[0] * 100, 0, cam.target.z + north[1] * 100), s1);
     const nAng = Math.atan2(s1.y - s0.y, s1.x - s0.x);
-    cam.worldToScreen(v.set(cam.target.x + EAST[0] * 100, 0, cam.target.z + EAST[1] * 100), s1);
-    const pxPerKmEast = Math.hypot(s1.x - s0.x, s1.y - s0.y) / 100;
+    // east is north turned 90° clockwise in plan: (x, z) → (−z, x)
+    cam.worldToScreen(v.set(cam.target.x - north[1] * 100, 0, cam.target.z + north[0] * 100), s1);
+    const pxPerMEast = Math.hypot(s1.x - s0.x, s1.y - s0.y) / 100 / (unitKm * 1000);
     let stepIndex = 0;
-    SCALE_STEPS_KM.forEach((k, i) => {
-      if (k * pxPerKmEast <= 150) stepIndex = i;
+    SCALE_STEPS_M.forEach((m, i) => {
+      if (m * pxPerMEast <= 150) stepIndex = i;
     });
-    const km = SCALE_STEPS_KM[stepIndex]!;
-    const L = km * pxPerKmEast;
-    const key = `${nAng.toFixed(3)}|${km}|${L.toFixed(1)}`;
+    const m = SCALE_STEPS_M[stepIndex]!;
+    const L = m * pxPerMEast;
+    const key = `${nAng.toFixed(3)}|${m}|${L.toFixed(1)}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
     const g = this.svg;
@@ -99,10 +101,23 @@ export class Furniture {
     }
     line(x0, y0 - 3, x0, y0 + 7, 0.8);
     line(x0 + L, y0 - 3, x0 + L, y0 + 7, 0.8);
+    const len = el(qty(m >= 1000 ? m / 1000 : m, m >= 1000 ? 'km' : 'm', data(`style.SCALE_STEPS_M.${stepIndex}`), { digits: 0 }));
+    // A plan turned north-up (maps) keeps east–west true on screen and foreshortens
+    // north–south by sin(elevation); a plan square to the frame (equipment) is true
+    // isometric: both ground axes are drawn at √(2/3).
     this.caption.replaceChildren(
-      el(qty(km, 'km', data(`style.SCALE_STEPS_KM.${stepIndex}`), { digits: 0 })),
-      document.createTextNode(' east–west; north–south is drawn at '),
-      el(qty(100 * Math.sin(ISO_ELEVATION_RAD), '%', derived('iso.foreshortening', data('render.iso.ISO_ELEVATION_RAD')), { digits: 1 })),
+      ...(Math.abs(north[0]) > 0.1
+        ? [
+            len,
+            document.createTextNode(' east–west; north–south is drawn at '),
+            el(qty(100 * Math.sin(ISO_ELEVATION_RAD), '%', derived('iso.foreshortening', data('render.iso.ISO_ELEVATION_RAD')), { digits: 1 })),
+          ]
+        : [
+            len,
+            document.createTextNode(' along either ground axis (each drawn at '),
+            el(qty(100 * Math.sqrt(2 / 3), '%', derived('iso.axisForeshortening', data('render.iso.ISO_ELEVATION_RAD')), { digits: 1 })),
+            document.createTextNode(' of its true length)'),
+          ]),
     );
     this.caption.style.marginLeft = '48px';
   }

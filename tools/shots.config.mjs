@@ -252,6 +252,111 @@ export default [
     probe: provenance,
   },
   {
+    name: 'substation',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 120000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => window.__app.enterSubstation());
+      await page.waitForFunction(() => window.__app.level === 'substation' && !window.__app.transitioning && window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'feeder',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'feeder-home',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        const app = window.__app;
+        app.select({ kind: 'dist', what: 'home', id: app.feederModel().layout.outlet.home });
+      });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'service-outlet',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 180000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      const go = async (fn, level) => {
+        await page.evaluate(fn);
+        await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
+      };
+      await go(() => window.__app.enterRegion('bay'), 'region');
+      await go(() => window.__app.enterSubstation(), 'substation');
+      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => {
+        const app = window.__app;
+        const h = app.feederModel().layout.homes.find((x) => x.id === app.feederModel().layout.outlet.home);
+        app.enterService(h.transformer);
+      }, 'service');
+      await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' }));
+    },
+    probe: provenance,
+  },
+  {
+    name: 'substation-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 300,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.enterRegion('bay'));
+      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => {
+        window.__app.freezeMorph = 0.6;
+        window.__app.enterSubstation();
+      });
+      await page.waitForFunction(() => window.__app.level === 'substation', null, { timeout: 30000 });
+      await page.waitForTimeout(3000);
+    },
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

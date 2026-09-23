@@ -55,7 +55,8 @@ export function coupledSolve(
   let it = 0;
   let change = Infinity;
   for (; it < 12; it++) {
-    if (op.status !== 'converged') break;
+    // the bus must be energised by a solved island; otherwise the feeder has no source
+    if (!op.result.energized[busIdx]) break;
     const v = op.result.vm[busIdx]!;
     const a = op.result.va[busIdx]!;
     fs = solveFeeder(feeder, hour, v, a, ltc);
@@ -72,9 +73,15 @@ export function coupledSolve(
     const qd = anchorQ - dispatchedSub.im / 1e6 / S_BASE + sD.im / 1e6 / S_BASE;
     op = operateWithBusLoad(grid, step, pf, opts, busIdx, pd, qd, op);
   }
+  if (!fs) {
+    // no source at the boundary: the substation and feeder are dark
+    fs = solveFeeder(feeder, hour, 0, 0, ltc);
+    history.push({ vPu: 0, angleDeg: 0, sMW: 0, qMVAr: 0 });
+    change = 0;
+  }
   return {
     op,
-    feeder: fs!,
+    feeder: fs,
     iterations: it + 1,
     lastChangeVA: change,
     boundaryS: fs ? fs.substationS : Complex.ZERO,

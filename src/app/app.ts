@@ -15,12 +15,19 @@ import { Furniture } from '../ui/furniture';
 import { clockEl, data, dataText, derived, el, input, qty, siQty, solver } from '../ui/quantity';
 import { rich } from '../ui/glossary';
 import { branchView, regionView, siteView, transformerView } from './inspect-system';
+import { bankView, busView, distTransformerView, feederBreakerView, feederElementView, feederView, homeView, outletTraceView, serviceView, substationView } from './inspect-dist';
+import { makeFeeder, type Feeder } from '../model/feeder';
 import { RegionLevel } from '../levels/region';
+import { SubstationLevel } from '../levels/substation';
+import { FeederLevel } from '../levels/feeder';
+import { ServiceLevel } from '../levels/service';
+import type { Level, LevelKind } from '../levels/level';
+import type { Vec3 } from '../render/lines';
 import { PaperTooth } from '../render/paper';
 import { REGIONS, type RegionId } from '../data/ca/network';
 import type { FromWorker, ToWorker } from '../worker/model.worker';
 import { Scrubber } from '../ui/scrubber';
-import type { Action } from '../ui/inspector';
+import type { Action, Section } from '../ui/inspector';
 
 /**
  * The application: one sheet (the System level for now), its camera and input, the
@@ -59,16 +66,31 @@ export class App {
   private playTimer = 0;
   /** A camera move in progress (navigation, eased). */
   private flight: { t0: number; ms: number; from: [number, number, number]; to: [number, number, number]; done?: () => void } | null = null;
-  /** Which level the sheet shows. */
-  level: 'system' | 'region' = 'system';
-  region: RegionLevel | null = null;
+  /** The levels open, System first; the last is the one on the sheet. */
+  readonly stack: Level[] = [];
+  /** How each open level (after the System) relates to the one below it. */
+  private links: Array<{
+    mode: 'fold' | 'unfold';
+    anchor: Vec3;
+    origin: Vec3;
+    ratio: number;
+    /** The parent's camera before the move, and at the moment of hand-off. */
+    saved: { target: THREE.Vector3; zoom: number };
+    parentHand?: { target: THREE.Vector3; zoom: number };
+    /** The child's camera at hand-off, and the zoom it settles at. */
+    hand: { target: THREE.Vector3; zoom: number };
+    fitZoom: number;
+    autoClose: boolean;
+  }> = [];
   private regions = new Map<RegionId, RegionLevel>();
-  /** A level transition in progress (the fold between levels). */
-  private anim: { t0: number; ms: number; from: number; to: number; frame: (m: number) => void; done: () => void } | null = null;
+  private substation: SubstationLevel | null = null;
+  private feederLevel: FeederLevel | null = null;
+  private services = new Map<string, ServiceLevel>();
+  /** A level transition in progress. */
+  private anim: { t0: number; ms: number; frame: (e: number) => void; done: () => void } | null = null;
   /** For tests: hold a transition at this fold (0 flat … 1 exploded). */
   freezeMorph: number | null = null;
   private crumbs!: HTMLElement;
-  private regionFitZoom = 0;
   private readonly paper = new PaperTooth()
   selection: Selection | null = null;
   private pixelRatio = 1;
@@ -89,6 +111,7 @@ export class App {
     this.renderer.setClearColor(new THREE.Color(GROUND), 1);
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     this.system = new SystemLevel(this.grid, outlines());
+    this.stack.push(this.system);
     this.scene.add(this.system.group);
     this.scene.add(this.paper.mesh);
     this.labels = new LabelLayer(root);
@@ -183,19 +206,18 @@ export class App {
     }
     this.inFlight = true;
     this.stale = false;
-    const msg: ToWorker = { type: 'solve', t: this.t, outages: [...this.outages], seq: ++this.seq };
+    const msg: ToWorker = { type: 'solve', t: this.t, outages: [...this.outages], seq: ++this.seq, detail: this.stack.some((l) => l.needsDetail) };
     this.worker.postMessage(msg);
   }
 
   private setCurrent(s: Snapshot): void {
     this.current = s;
-    this.system.applySnapshot(s);
-    this.region?.applySnapshot(s);
+    for (const l of this.stack) l.applySnapshot(s);
     this.scrubber.setSolved(s.t, DAY.intervalMin);
     this.updateTitleblock();
     this.updateNotice();
     this.updateLegend();
-    if (this.selection || this.region) this.inspect();
+    if (this.selection || this.stack.length > 1) this.inspect();
     this.onReady();
   }
 
@@ -483,7 +505,10 @@ export class App {
 
   private zoomAt(sx: number, sy: number, factor: number): void {
     const before = this.cam.screenToGround(sx, sy);
-    const z = Math.max(0.35, Math.min(60, this.cam.pxPerUnit * factor));
+    // the System spans 0.35–60 px/km; each level below, a range around its own fit
+    const link = this.links[this.links.length - 1];
+    const [lo, hi] = link ? [link.fitZoom * 0.3, link.fitZoom * 30] : [0.35, 60];
+    const z = Math.max(lo, Math.min(hi, this.cam.pxPerUnit * factor));
     this.cam.pxPerUnit = z;
     this.cam.update();
     const after = this.cam.screenToGround(sx, sy);
@@ -494,11 +519,26 @@ export class App {
 
   private clampTarget(): void {
     const t = this.cam.target;
-    // the System frame spans the state; a region's frame is centred on the region
-    const [ox, oz] = this.region ? this.region.center : [0, 0];
-    t.x = Math.max(-750 - ox, Math.min(750 - ox, t.x));
-    t.z = Math.max(-650 - oz, Math.min(650 - oz, t.z));
     t.y = 0;
+    if (this.anim || this.flight) return;
+    // keep the level's drawing within reach: its extent, and as much again around it
+    // (the System's frame spans the state; a region under it keeps that ground)
+    const l = this.top === this.region ? this.system : this.top;
+    const off = this.top === this.region ? this.region.center : [0, 0];
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const p of l.fitPoints()) {
+      x0 = Math.min(x0, p[0] - off[0]!);
+      x1 = Math.max(x1, p[0] - off[0]!);
+      z0 = Math.min(z0, p[2] - off[1]!);
+      z1 = Math.max(z1, p[2] - off[1]!);
+    }
+    const mx = (x1 - x0) * 0.6;
+    const mz = (z1 - z0) * 0.6;
+    t.x = Math.max(x0 - mx, Math.min(x1 + mx, t.x));
+    t.z = Math.max(z0 - mz, Math.min(z1 + mz, t.z));
   }
 
   // ------------------------------------------------------------------ input
@@ -548,10 +588,7 @@ export class App {
     c.addEventListener('pointerup', up);
     c.addEventListener('dblclick', (e) => {
       const hit = this.pick(e.offsetX, e.offsetY);
-      if (this.level === 'system' && hit?.kind === 'site') {
-        const site = this.grid.sites.find((x) => x.id === hit.id);
-        if (site) this.enterRegion(site.region);
-      }
+      if (hit) this.openFrom(hit);
     });
     c.addEventListener('pointercancel', (e) => pointers.delete(e.pointerId));
     c.addEventListener(
@@ -589,13 +626,10 @@ export class App {
           break;
         case 'Escape':
           if (this.selection) this.select(null);
-          else if (this.region) this.exitRegion();
+          else if (this.stack.length > 1) this.closeTop();
           break;
         case 'Enter':
-          if (this.level === 'system' && this.selection?.kind === 'site' && document.activeElement === this.canvas) {
-            const site = this.grid.sites.find((x) => this.selection?.kind === 'site' && x.id === this.selection.id);
-            if (site) this.enterRegion(site.region);
-          }
+          if (this.selection && document.activeElement === this.canvas) this.openFrom(this.selection);
           break;
         case '[':
         case ']':
@@ -616,7 +650,7 @@ export class App {
 
   private pick(x: number, y: number): Selection | null {
     if (this.anim) return null;
-    return this.region ? this.region.pick(x, y, this.cam) : this.system.pick(x, y, this.cam);
+    return this.top.pick(x, y, this.cam);
   }
 
   private hover(x: number, y: number): void {
@@ -628,60 +662,87 @@ export class App {
   }
 
   // ------------------------------------------------------------------ levels
+  /** The level on the sheet. */
+  get top(): Level {
+    return this.stack[this.stack.length - 1]!;
+  }
+
+  get level(): LevelKind {
+    return this.top.kind;
+  }
+
+  /** The open region, if any (the System stays under it as context). */
+  get region(): RegionLevel | null {
+    return (this.stack.find((l) => l instanceof RegionLevel) as RegionLevel | undefined) ?? null;
+  }
+
   private updateCrumbs(): void {
     const c = this.crumbs;
     c.replaceChildren();
-    if (!this.region) {
-      const here = document.createElement('span');
-      here.className = 'here';
-      here.textContent = 'California · System';
-      c.appendChild(here);
-      return;
-    }
-    const up = document.createElement('button');
-    up.className = 'crumb';
-    up.textContent = 'California · System';
-    up.title = 'Back to the whole state (Esc)';
-    up.addEventListener('click', () => this.exitRegion());
-    const sep = document.createElement('span');
-    sep.className = 'sep';
-    sep.textContent = '›';
-    const here = document.createElement('span');
-    here.className = 'here';
-    here.append(dataText(this.region.name, data(`network.region.${this.region.id}.name`)));
-    c.append(up, sep, here);
+    this.stack.forEach((l, i) => {
+      if (i) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = '›';
+        c.appendChild(sep);
+      }
+      // a level's name can carry figures (a feeder's number): it comes from the data like any other
+      const name = l instanceof RegionLevel ? dataText(l.name, data(`network.region.${l.id}.name`)) : /\d/.test(l.name) ? dataText(l.name, data(`level.${l.kind}.name`)) : document.createTextNode(l.name);
+      if (i === this.stack.length - 1) {
+        const here = document.createElement('span');
+        here.className = 'here';
+        here.append(name);
+        c.appendChild(here);
+      } else {
+        const up = document.createElement('button');
+        up.className = 'crumb';
+        up.append(name);
+        up.title = i === this.stack.length - 2 ? 'Up one level (Esc)' : 'Back to this level';
+        up.addEventListener('click', () => this.closeTo(i));
+        c.appendChild(up);
+      }
+    });
   }
 
-  /** Where the camera must be (System frame) for the exploded region to fill the free area. */
-  private regionFit(r: RegionLevel): { x: number; z: number; zoom: number } {
-    const pts = r.corners.flatMap((c) => [c, [c[0], r.height, c[2]] as const]);
+  /** The ground point (y = 0) that projects to the same place on screen as p. */
+  private groundUnder(p: Vec3): [number, number] {
+    const [vx, vy] = projectToView(p[0], p[1], p[2]);
+    const [ax, ay] = projectToView(1, 0, 0);
+    const [bx, by] = projectToView(0, 0, 1);
+    const det = ax * by - bx * ay;
+    return [(vx * by - bx * vy) / det, (ax * vy - vx * ay) / det];
+  }
+
+  /** Where the camera must be (in the level's frame) for the level to fill the free area. */
+  private levelFit(l: Level): { x: number; z: number; zoom: number } {
     let x0 = Infinity;
     let x1 = -Infinity;
     let y0 = Infinity;
     let y1 = -Infinity;
-    for (const p of pts) {
+    for (const p of l.fitPoints()) {
       const [vx, vy] = projectToView(p[0], p[1], p[2]);
       x0 = Math.min(x0, vx);
       x1 = Math.max(x1, vx);
       y0 = Math.min(y0, vy);
       y1 = Math.max(y1, vy);
     }
-    const free = this.freeRect(true); // the region's balance opens in the inspector
+    const free = this.freeRect(true); // levels open with their balance in the inspector
     const zoom = Math.min(free.w / (x1 - x0), (free.h - 30) / (y1 - y0)) * 0.94;
-    // the ground point (y = 0) that projects to the middle of that box
+    const [gx, gz] = this.groundUnder([(0 + 0) / 2, 0, 0]);
+    void gx;
+    void gz;
+    // the ground point under the middle of the box
     const [ax, ay] = projectToView(1, 0, 0);
     const [bx, by] = projectToView(0, 0, 1);
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     const det = ax * by - bx * ay;
-    const gx = (cx * by - bx * cy) / det;
-    const gz = (ax * cy - cx * ay) / det;
-    return { x: gx + r.center[0], z: gz + r.center[1], zoom };
+    return { x: (cx * by - bx * cy) / det, z: (ax * cy - cx * ay) / det, zoom };
   }
 
   /** System → Region: fly to the region, hand the network to it, and unfold its layers. */
   enterRegion(id: RegionId): void {
-    if (this.level !== 'system' || this.anim || id === 'tie') return;
+    if (this.top !== this.system || this.anim || this.flight || id === 'tie') return;
     this.scrubber.setPlaying(false);
     let r = this.regions.get(id);
     if (!r) {
@@ -689,12 +750,10 @@ export class App {
       this.regions.set(id, r);
     }
     const reg = r;
-    const fit = this.regionFit(reg);
-    this.regionFitZoom = fit.zoom;
-    this.flyTo(fit.x, fit.z, fit.zoom, 700, () => {
+    const f = this.levelFit(reg);
+    const saved = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
+    this.flyTo(f.x + reg.center[0], f.z + reg.center[1], f.zoom, 700, () => {
       // hand-off: the region's frame, its drawing folded flat exactly over the System sheet's
-      this.level = 'region';
-      this.region = reg;
       if (this.current) reg.applySnapshot(this.current);
       reg.highlight(this.selection);
       reg.morph = 0;
@@ -703,67 +762,242 @@ export class App {
       this.cam.target.x -= reg.center[0];
       this.cam.target.z -= reg.center[1];
       this.system.setNetworkShown(false, new Set(reg.siteIds), 0);
+      this.stack.push(reg);
+      this.links.push({ mode: 'fold', anchor: [0, 0, 0], origin: [0, 0, 0], ratio: 1, saved, hand: { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit }, fitZoom: f.zoom, autoClose: true });
       this.labels.set([]);
       this.updateCrumbs();
       this.updateLegend();
-      this.animate(0, 1, 1500, (m) => this.foldFrame(m), () => {
-        this.refreshLabels();
-        this.updateLegend();
-        this.inspect();
-      });
+      this.tween(1500, (e) => this.foldFrame(reg, e), () => this.arrived());
     }, this.freeRect(true));
   }
 
-  /** Region → System: fold the layers flat, then hand the network back. */
-  exitRegion(): void {
-    const r = this.region;
-    if (!r || this.anim) return;
+  /**
+   * Open a level inside the one on the sheet: fly toward `anchor` (a node of the parent,
+   * in its frame), hand the camera to the child's frame so that its `origin` sits where
+   * the node was, and unfold the child out of that point while the camera settles on
+   * it. `ratio` is parent frame units per child frame unit.
+   */
+  private open(child: Level, anchor: Vec3, origin: Vec3, ratio: number, opts: { dive?: number; autoClose?: boolean } = {}): void {
+    if (this.anim || this.flight) return;
     this.scrubber.setPlaying(false);
-    this.labels.set([]);
-    this.animate(r.morph, 0, 1100, (m) => this.foldFrame(m), () => {
-      this.scene.remove(r.group);
-      this.system.group.position.set(0, 0, 0);
-      this.cam.target.x += r.center[0];
-      this.cam.target.z += r.center[1];
-      this.system.setNetworkShown(true);
-      this.level = 'system';
-      this.region = null;
-      this.focusSites = this.system.highlight(this.selection);
+    const parent = this.top;
+    const saved = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
+    const [gx, gz] = this.groundUnder(anchor);
+    const zh = this.cam.pxPerUnit * (opts.dive ?? 2.2);
+    this.select(null);
+    this.flyTo(gx, gz, zh, 650, () => {
+      // where the node is on screen now
+      const v = new THREE.Vector3(...anchor).applyMatrix4(parent.group.matrixWorld);
+      const sA = this.cam.worldToScreen(v, new THREE.Vector2());
+      const parentHand = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
+      // hand-off to the child's frame
+      for (const l of this.stack) l.group.visible = false;
+      this.scene.add(child.group);
+      child.group.visible = true;
+      child.group.position.set(0, 0, 0);
+      child.morph = 0;
+      if (this.current) child.applySnapshot(this.current);
+      this.stack.push(child);
+      const [ox, oz] = this.groundUnder(origin);
+      this.cam.pxPerUnit = zh / ratio;
+      this.cam.target.set(ox, 0, oz);
+      this.cam.update();
+      const sO = this.cam.worldToScreen(new THREE.Vector3(...origin), new THREE.Vector2());
+      this.panPixels(sA.x - sO.x, sA.y - sO.y);
+      this.cam.update();
+      const from = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
+      const fit = this.levelFit(child);
+      const to = this.cameraFor(fit);
+      this.links.push({ mode: 'unfold', anchor, origin, ratio, saved, hand: from, parentHand, fitZoom: fit.zoom, autoClose: opts.autoClose ?? true });
+      this.labels.set([]);
       this.updateCrumbs();
-      this.refreshLabels();
       this.updateLegend();
-      if (this.selection) this.inspect();
-      else this.inspector.hide();
-    });
+      this.requestSolve(); // this level may need the substation and feeder solved
+      this.tween(
+        1700,
+        (e) => {
+          // the camera leads (it covers most of a large zoom early) and the level unfolds
+          // behind it, so what unfolds is always big enough to follow
+          const c = 1 - (1 - e) ** 3;
+          child.morph = e;
+          this.cam.target.lerpVectors(from.target, to.target, c);
+          this.cam.pxPerUnit = from.zoom * (to.zoom / from.zoom) ** c;
+          this.cameraDirty = true;
+        },
+        () => this.arrived(),
+      );
+    }, this.freeRect(true));
+  }
+
+  /** The camera target and zoom that put a fit's ground point in the free area's middle. */
+  private cameraFor(fit: { x: number; z: number; zoom: number }): { target: THREE.Vector3; zoom: number } {
+    const save = { t: this.cam.target.clone(), z: this.cam.pxPerUnit };
+    this.cam.pxPerUnit = fit.zoom;
+    this.cam.target.set(fit.x, 0, fit.z);
+    this.cam.update();
+    const free = this.freeRect(true);
+    const g0 = this.cam.screenToGround(this.cam.width / 2, this.cam.height / 2);
+    const g1 = this.cam.screenToGround(free.x + free.w / 2, free.y + free.h / 2);
+    const target = new THREE.Vector3(fit.x - (g1.x - g0.x), 0, fit.z - (g1.z - g0.z));
+    this.cam.pxPerUnit = save.z;
+    this.cam.target.copy(save.t);
+    this.cam.update();
+    return { target, zoom: fit.zoom };
+  }
+
+  /** A level has finished unfolding: its labels, key and inspector. */
+  private arrived(): void {
+    this.refreshLabels();
+    this.updateLegend();
+    this.inspect();
+  }
+
+  /** Close the level on the sheet, folding it back into its node one level up. */
+  closeTop(done?: () => void): void {
+    if (this.stack.length < 2 || this.anim || this.flight) return;
+    this.scrubber.setPlaying(false);
+    const child = this.top;
+    const link = this.links[this.links.length - 1]!;
+    const parent = this.stack[this.stack.length - 2]!;
+    this.labels.set([]);
+    this.select(null);
+    if (link.mode === 'fold') {
+      const r = child as RegionLevel;
+      this.tween(1100, (e) => this.foldFrame(r, 1 - e), () => {
+        this.scene.remove(r.group);
+        this.system.group.position.set(0, 0, 0);
+        this.cam.target.x += r.center[0];
+        this.cam.target.z += r.center[1];
+        this.system.setNetworkShown(true);
+        this.stack.pop();
+        this.links.pop();
+        this.afterClose(done);
+      });
+      return;
+    }
+    const from = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
+    const to = link.hand;
+    this.tween(
+      1200,
+      (e) => {
+        child.morph = 1 - e;
+        this.cam.target.lerpVectors(from.target, to.target, e);
+        this.cam.pxPerUnit = from.zoom * (to.zoom / from.zoom) ** e;
+        this.cameraDirty = true;
+      },
+      () => {
+        this.scene.remove(child.group);
+        this.stack.pop();
+        this.links.pop();
+        // the parent (and, under a region, the System as its ground) back on the sheet
+        parent.group.visible = true;
+        if (parent instanceof RegionLevel) this.system.group.visible = true;
+        this.cam.target.copy(link.parentHand!.target);
+        this.cam.pxPerUnit = link.parentHand!.zoom;
+        this.cam.update();
+        this.cameraDirty = true;
+        this.flyTo(link.saved.target.x, link.saved.target.z, link.saved.zoom, 600, () => this.afterClose(done));
+      },
+    );
+  }
+
+  private afterClose(done?: () => void): void {
+    this.focusSites = this.top.highlight(this.selection);
+    this.updateCrumbs();
+    this.refreshLabels();
+    this.updateLegend();
+    this.requestSolve();
+    if (this.stack.length > 1) this.inspect();
+    else this.inspector.hide();
+    done?.();
+  }
+
+  /** Close levels until the one at `index` is on the sheet. */
+  closeTo(index: number): void {
+    if (this.stack.length - 1 > index) this.closeTop(() => this.closeTo(index));
+  }
+
+  /** Region → Substation (Evergreen): its busbar unfolds into the yard. */
+  enterSubstation(): void {
+    const r = this.region;
+    if (!r || this.top !== r || !r.siteIds.includes('EVERGREEN')) return;
+    this.substation ??= new SubstationLevel(this.grid);
+    const s = this.substation;
+    this.open(s, r.busbarOf('EVERGREEN', 60), s.origin, 1000, { dive: 2.5 });
+  }
+
+  private feeder: Feeder | null = null;
+  /** The feeder model the drawing thread keeps (same topology as the solver's). */
+  feederModel(): Feeder {
+    this.feeder ??= makeFeeder();
+    return this.feeder;
+  }
+
+  /** Open whatever the selection is a node for, one level down. */
+  openFrom(sel: Selection): void {
+    const top = this.top;
+    if (top === this.system && sel.kind === 'site') {
+      const site = this.grid.sites.find((x) => x.id === sel.id);
+      if (site) this.enterRegion(site.region);
+    } else if (top instanceof RegionLevel && sel.kind === 'site' && sel.id === 'EVERGREEN') this.enterSubstation();
+    else if (top instanceof SubstationLevel && sel.kind === 'dist' && sel.what === 'feeder') this.enterFeeder();
+    else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'transformer') this.enterService(sel.id);
+    else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'home') {
+      const h = this.feederModel().layout.homes.find((x) => x.id === sel.id);
+      if (h) this.enterService(h.transformer);
+    }
+  }
+
+  /** Substation → Feeder: feeder 1105 grows out of its exit at the yard's west fence. */
+  enterFeeder(): void {
+    const s = this.substation;
+    if (!s || this.top !== s) return;
+    this.feederLevel ??= new FeederLevel(this.feederModel());
+    const f = this.feederLevel;
+    this.open(f, s.feederExit, f.origin, 1, { dive: 1.4, autoClose: false });
+  }
+
+  /** Feeder → Service: a pole-top transformer unfolds into its secondary, drops and homes. */
+  enterService(transformerId: string): void {
+    const f = this.feederLevel;
+    if (!f || this.top !== f) return;
+    let sv = this.services.get(transformerId);
+    if (!sv) {
+      sv = new ServiceLevel(this.feederModel(), transformerId);
+      this.services.set(transformerId, sv);
+    }
+    this.open(sv, f.transformerAt(transformerId), sv.origin, 1, { dive: 3 });
+  }
+
+  /** Back-compat for tests and the guided route. */
+  exitRegion(): void {
+    this.closeTo(0);
   }
 
   /** One frame of the fold: layers rise, and the System's symbols give way to the Region's. */
-  private foldFrame(m: number): void {
-    const r = this.region;
-    if (!r) return;
+  private foldFrame(r: RegionLevel, m: number): void {
     r.morph = m;
     this.system.setNetworkShown(false, new Set(r.siteIds), Math.max(0, Math.min(1, (m - 0.35) / 0.5)));
     this.cameraDirty = true;
   }
 
-  private animate(from: number, to: number, ms: number, frame: (m: number) => void, done: () => void): void {
+  private tween(ms: number, frame: (e: number) => void, done: () => void): void {
     if (this.reducedMotion) {
-      frame(to);
+      frame(1);
       done();
       return;
     }
-    frame(from);
-    this.anim = { t0: performance.now(), ms, from, to, frame, done };
+    frame(0);
+    this.anim = { t0: performance.now(), ms, frame, done };
   }
 
   private advanceAnim(now: number): void {
     const a = this.anim;
     if (!a) return;
     const u = Math.min(1, (now - a.t0) / a.ms);
-    const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
-    let m = a.from + (a.to - a.from) * e;
-    if (this.freezeMorph !== null) m = a.from + (a.to - a.from) * Math.min(e, Math.abs(this.freezeMorph - a.from) / Math.max(1e-9, Math.abs(a.to - a.from)));
-    a.frame(m);
+    let e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+    if (this.freezeMorph !== null) e = Math.min(e, this.freezeMorph);
+    a.frame(e);
     if (u >= 1 && this.freezeMorph === null) {
       this.anim = null;
       a.done();
@@ -773,6 +1007,7 @@ export class App {
   get transitioning(): boolean {
     return !!this.anim || !!this.flight;
   }
+
 
   /** Keyboard: step through places in order of importance. */
   private cycle(dir: number): void {
@@ -785,8 +1020,8 @@ export class App {
   select(sel: Selection | null): void {
     this.selection = sel;
     this.focusSites = this.system.highlight(sel);
-    if (this.region) this.focusSites = this.region.highlight(sel);
-    if (!sel && !this.region) this.inspector.hide();
+    if (this.top !== this.system) this.focusSites = this.top.highlight(sel);
+    if (!sel && this.stack.length === 1) this.inspector.hide();
     else this.inspect();
     this.refreshLabels();
   }
@@ -795,20 +1030,55 @@ export class App {
     const s = this.current;
     const sel = this.selection;
     if (!s) return;
+    const top = this.top;
+    const show = (header: string, v: { name: string | Node; kind: Node; intro?: Node; sections: Section[] }, actions: Action[] = []) =>
+      this.inspector.show({ header, name: v.name, kind: v.kind, actions, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
+    if (top instanceof SubstationLevel) {
+      const f = this.feederModel();
+      if (!sel) return show('Substation', substationView(this.grid, s));
+      if (sel.kind === 'dist') {
+        if (sel.what === 'bank') return show('Selected transformer', bankView(s, f));
+        if (sel.what === 'bus60' || sel.what === 'bus12') return show('Selected bus', busView(this.grid, s, sel.what, f));
+        if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f), [{ label: 'Follow feeder 1105', title: 'Out of the yard and down the street (Enter)', run: () => this.enterFeeder() }]);
+      }
+    }
+    if (top instanceof FeederLevel) {
+      const f = this.feederModel();
+      if (!sel) return show('Feeder', feederView(s, f));
+      if (sel.kind === 'dist') {
+        if (sel.what === 'line' || sel.what === 'device') return show('Selected', feederElementView(s, f, sel.id, sel.what));
+        if (sel.what === 'transformer')
+          return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Open this service', title: 'Down the pole to the homes (Enter)', run: () => this.enterService(sel.id) }]);
+        if (sel.what === 'home') {
+          const h = f.layout.homes.find((x) => x.id === sel.id)!;
+          return show('Selected home', homeView(s, f, sel.id), [{ label: 'Open its service', title: 'Down the pole to this home (Enter)', run: () => this.enterService(h.transformer) }]);
+        }
+        if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f));
+      }
+    }
+    if (top instanceof ServiceLevel) {
+      const f = this.feederModel();
+      if (!sel) return show('Service', serviceView(s, f, top.transformerId));
+      if (sel.kind === 'dist') {
+        if (sel.what === 'outlet') return show('Selected outlet', outletTraceView(this.grid, s, f));
+        if (sel.what === 'home') return show('Selected home', homeView(s, f, sel.id));
+        if (sel.what === 'transformer') return show('Selected transformer', distTransformerView(s, f, sel.id));
+      }
+    }
     if (!sel) {
       // in a region with nothing selected: the region's own balance
-      if (this.region) {
-        const v = regionView(this.grid, s, this.region.id, this.region.siteIds);
-        this.inspector.show({ header: 'Region', name: v.name, kind: v.kind, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
-      }
+      if (top instanceof RegionLevel) show('Region', regionView(this.grid, s, top.id, top.siteIds));
       return;
     }
+    if (sel.kind === 'dist') return;
     if (sel.kind === 'site') {
       const v = siteView(this.grid, s, sel.id);
       const site = this.grid.sites.find((x) => x.id === sel.id)!;
       const actions: Action[] = [];
-      if (this.level === 'system' && site.region !== 'tie')
+      if (this.top === this.system && site.region !== 'tie')
         actions.push({ label: `Open ${REGIONS[site.region].name}`, title: 'Unfold the region into its voltage layers (Enter)', run: () => this.enterRegion(site.region) });
+      if (this.top instanceof RegionLevel && site.id === 'EVERGREEN')
+        actions.push({ label: 'Open the substation', title: 'Unfold the busbar into the substation yard (Enter)', run: () => this.enterSubstation() });
       this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, ...(v.intro ? { intro: v.intro } : {}), sections: v.sections });
     } else if (sel.kind === 'branch') {
       const k = sel.index;
@@ -836,7 +1106,7 @@ export class App {
   // ------------------------------------------------------------------ labels & legend
   private refreshLabels(): void {
     const sel = this.selection;
-    const specs = this.region ? this.region.labels : this.system.labels;
+    const specs = this.top.labels;
     const items: LabelItem[] = specs.map((l) => {
       const site = l.kind === 'site' ? l.id.slice(5) : null;
       const selected = sel?.kind === 'site' && site === sel.id;
@@ -862,8 +1132,9 @@ export class App {
   private updateLegend(): void {
     const s = this.current;
     this.legend.update({
-      level: this.region ? 'region' : 'system',
-      classes: this.region ? this.region.classes : this.system.visibleClasses(this.cam.pxPerUnit),
+      level: this.top.kind,
+      classes: this.top === this.system ? this.system.visibleClasses(this.cam.pxPerUnit) : this.top.classes,
+      flowScale: this.top.flowScale,
       showSignal: true,
       showOutOfService: !!s && s.inService.some((x) => x === 0),
       noSolution: s?.outcome === 'none',
@@ -892,13 +1163,12 @@ export class App {
     const w = this.cam.width;
     const h = this.cam.height;
     const pr = this.pixelRatio;
-    for (const b of [this.system.lines, this.system.glyphs, this.system.marks]) b.frame({ width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time });
-    this.system.flow.frame(w, h, pr, time);
-    this.system.faces.frame(pr);
-    this.region?.frame({ width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time });
-    this.paper.frame(this.cam.pxPerUnit, pr);
-    // zooming well out of a region folds it back into the state
-    if (this.region && !this.anim && !this.flight && this.cam.pxPerUnit < this.regionFitZoom * 0.4) this.exitRegion();
+    const fi = { width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time };
+    for (const l of this.stack) if (l.group.visible) l.frame(fi);
+    this.paper.frame(this.cam.pxPerUnit / this.top.unitKm, pr);
+    // zooming well out of a level folds it back into its node one level up
+    const link = this.links[this.links.length - 1];
+    if (link?.autoClose && !this.anim && !this.flight && this.cam.pxPerUnit < link.fitZoom * 0.4) this.closeTop();
     if (this.cam.pxPerUnit !== this.lastZoom) {
       this.system.setZoom(this.cam.pxPerUnit);
       this.updateLegend();
@@ -908,7 +1178,7 @@ export class App {
     if (this.cameraDirty) {
       this.labels.reserve(this.reserveRects());
       this.labels.layout(this.cam);
-      this.furniture.update(this.cam);
+      this.furniture.update(this.cam, this.top.unitKm, this.top.north);
       this.cameraDirty = false;
     }
     const cpu = performance.now() - c0;

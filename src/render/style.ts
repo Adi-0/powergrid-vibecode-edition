@@ -101,5 +101,5 @@ export const PEN = {
 /** Flows the key draws chevron samples for, MW. */
 export const FLOW_LEGEND_MW = [500, 2000] as const;
 
-/** Scale-bar lengths the sheet may choose from, km. */
-export const SCALE_STEPS_KM = [5, 10, 20, 50, 100, 200, 500] as const;
+/** Scale-bar lengths the sheet may choose from, metres (the sheet shows km from 1000 up). */
+export const SCALE_STEPS_M = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000] as const;

@@ -1,6 +1,6 @@
 # Progress
 
-Current phase: **5 — Substation → feeder → service**
+Current phase: **6 — Math panel everywhere**
 
 | Phase | State | Done-condition |
 |---|---|---|
@@ -9,7 +9,7 @@ Current phase: **5 — Substation → feeder → service**
 | 2 Distribution solver + coupling | done | IEEE 13 passes; energy closes across boundary |
 | 3 System view | done | 60 fps full network; legend complete; critique recorded |
 | 4 Scrubber, trips, region, transition | done | Live re-solve per interval; honest no-solution |
-| 5 Substation → feeder → service | — | Outlet traceable to transmission; meters + losses = head |
+| 5 Substation → feeder → service | done | Outlet traceable to transmission; meters + losses = head |
 | 6 Math panel | — | Arithmetic-consistency test passes on every panel |
 | 7 Plant + machine + SFR | — | Plant energy closes; SMIB equal-area fixture |
 | 8 Faults + protection | — | Textbook fault fixture; coordinated sequence |
@@ -72,3 +72,15 @@ Current phase: **5 — Substation → feeder → service**
   its demand as unserved; an islanded unit's output is made up elsewhere. Rendering
   fixes: offset strokes' depth, instanced batches that grow. Critique:
   `docs/critique/phase-4.md`. 63 tests pass.
+- **Phase 5 done.** Level stack with per-level frames and an unfold transition out of a
+  node (decision 0018). Evergreen substation as an isometric yard (60 kV entries,
+  breakers, bus, 30 MVA bank with tap changer, 12 kV switchgear, feeder exits) with its
+  balance; feeder 1105 pole by pole with devices, pole-top transformers and 380 homes,
+  its balance (meters + losses = head, residual 0.000 W) and a voltage profile against
+  ANSI C84.1; a service with the outlet home cut open, and the trace from Metcalf's
+  230 kV bus to the outlet on one 120 V base (123.60 V → 118.08 V at 19:00). The worker
+  solves the substation and feeder coupled to the transmission system whenever these
+  levels are open. Sweep rewritten on typed arrays (127 → 31 ms, identical results).
+  Tests: meters + losses = head and the substation closes, to 1 mW, at three times of
+  day; the feeder's source is the transmission solution's 60 kV bus to 12 digits; the
+  outlet sits in Range A. Critique: `docs/critique/phase-5.md`. 69 tests pass.
