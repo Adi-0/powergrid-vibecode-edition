@@ -18,12 +18,16 @@ import { branchView, regionView, siteView, transformerView } from './inspect-sys
 import { bankView, busView, distTransformerView, feederBreakerView, feederElementView, feederView, homeView, outletTraceView, serviceView, substationView } from './inspect-dist';
 import { makeFeeder, type Feeder } from '../model/feeder';
 import { RegionLevel } from '../levels/region';
-import { SubstationLevel } from '../levels/substation';
+import { BANK, BANK_DRIVE, SubstationLevel, XF_BANK_KEY } from '../levels/substation';
+import { TransformerLevel } from '../levels/transformer';
+import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../model/xfmrState';
+import { enIso } from '../levels/sketch';
+import { voltageClassFor } from '../render/style';
 import { FeederLevel } from '../levels/feeder';
 import { ServiceLevel } from '../levels/service';
 import { PlantLevel } from '../levels/plant';
 import { MachineLevel } from '../levels/machine';
-import { SiteLevel } from '../levels/site';
+import { SiteLevel, xfKey } from '../levels/site';
 import { smoothstep } from '../levels/exits';
 import { equipView, machineView, plantView } from './inspect-plant';
 import { tripResponse, type TripResponse } from '../model/frequency';
@@ -44,7 +48,9 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel } from '../math/panels';
+import { transformerLevelView, transformerPartView } from './inspect-parts';
+import { EVERGREEN } from '../data/dist/evergreen';
 
 /**
  * A place in a level that has a level of its own. Zoom toward it and that level
@@ -60,9 +66,12 @@ interface Portal {
   make: () => Level;
   /** What the node is in its level's own terms (to dive into it from a selection). */
   sel: Selection;
-  /** The parent's label for the node, which gives way to the child's own names. */
-  label?: string;
+  /** The parent's labels for the node, which give way to the child's own names. */
+  label?: string | string[];
 }
+
+/** Named places in the tree, for the guided route and the harness. */
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -1184,8 +1193,29 @@ export class App {
           make: () => (id === 'EVERGREEN' ? new FeederLevel(this.feederModel(), this.grid) : new SiteLevel(this.grid, id)),
         });
       }
-    } else if (l instanceof SiteLevel && l.unit1At) {
-      ps.push({ key: 'plant:ML1', anchor: l.unit1At, ratio: 1, sel: { kind: 'plant', id: 'ML1' }, label: 'st:plant:ML1', make: () => new PlantLevel(this.grid) });
+    } else if (l instanceof SiteLevel) {
+      if (l.unit1At) ps.push({ key: 'plant:ML1', anchor: l.unit1At, ratio: 1, sel: { kind: 'plant', id: 'ML1' }, label: 'st:plant:ML1', make: () => new PlantLevel(this.grid) });
+      // each transformer bank opens where it stands, in the yard's own frame
+      for (const b of l.bankBodies) {
+        const key = xfKey(this.grid.branches[b.branch]!.id);
+        ps.push({
+          key,
+          anchor: l.sk.plan(b.body.e, 0, b.body.n),
+          ratio: 1,
+          sel: { kind: 'branch', index: b.branch },
+          make: () => new TransformerLevel(gridPlate(this.grid, b.branch, key), b.body, l.sk.plan, (s) => gridXfmrState(this.grid, s, b.branch), [voltageClassFor(b.hvKV), voltageClassFor(b.lvKV)], false),
+        });
+      }
+    } else if (l instanceof SubstationLevel) {
+      const body = { e: BANK.e, n: BANK.n, se: BANK.se, sh: BANK.sh, sn: BANK.sn, f: BANK.f, hvSide: 1 as const, alongN: false };
+      ps.push({
+        key: XF_BANK_KEY,
+        anchor: l.bankAt,
+        ratio: 1,
+        sel: { kind: 'dist', what: 'bank', id: 'EV-BANK' },
+        label: ['eq:bank', 'eq:rad', 'eq:cons'],
+        make: () => new TransformerLevel(evergreenPlate(XF_BANK_KEY), body, enIso, (s) => evergreenXfmrState(this.grid, s, this.feederModel()), [voltageClassFor(60), voltageClassFor(12.47)], true, BANK_DRIVE),
+      });
     } else if (l instanceof FeederLevel) {
       ps.push({ key: 'substation', anchor: l.substationAt, ratio: 1, sel: { kind: 'dist', what: 'bank', id: 'EV-BANK' }, label: 'fd:sub', make: () => new SubstationLevel(this.grid) });
       for (const t of this.feederModel().layout.transformers)
@@ -1278,6 +1308,8 @@ export class App {
   private bandGate(l: Level): number {
     if (l === this.system) return 5;
     if (l instanceof FeederLevel) return this.fitZoom(l) * 1.4;
+    // a yard's transformers are worth building only once the yard is zoomed past its fit
+    if (l instanceof SiteLevel || l instanceof SubstationLevel) return this.fitZoom(l) * 1.3;
     return 0;
   }
 
@@ -1459,6 +1491,7 @@ export class App {
     if (l instanceof SiteLevel) return (sel.kind === 'site' && sel.id === l.siteId) || sel.kind === 'branch' || sel.kind === 'plant';
     if (l instanceof FeederLevel || l instanceof SubstationLevel || l instanceof ServiceLevel) return sel.kind === 'dist' || sel.kind === 'branch';
     if (l instanceof PlantLevel || l instanceof MachineLevel) return sel.kind === 'equip';
+    if (l instanceof TransformerLevel) return sel.kind === 'part' && sel.id === l.plate.key;
     return false;
   }
 
@@ -1713,7 +1746,11 @@ export class App {
       const h = this.feederModel().layout.homes.find((x) => x.id === sel.id);
       if (h) s = { kind: 'dist', what: 'transformer', id: h.transformer };
     }
-    const same = (a: Selection, b: Selection) => a.kind === b.kind && (a as { id?: string }).id === (b as { id?: string }).id && (a as { what?: string }).what === (b as { what?: string }).what;
+    const same = (a: Selection, b: Selection) => {
+      const A = a as unknown as Record<string, unknown>;
+      const B = b as unknown as Record<string, unknown>;
+      return ['kind', 'id', 'what', 'index', 'sub'].every((k) => A[k] === B[k]);
+    };
     const p = this.portalsOf(top).find((x) => same(x.sel, s));
     if (p) void this.dive(p.key);
   }
@@ -1755,7 +1792,7 @@ export class App {
   }
 
   /** The keys from the System to a named place (for the guided route and the harness). */
-  keysFor(place: 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine'): string[] {
+  keysFor(place: Place): string[] {
     const outletT = this.feederModel().layout.homes.find((h) => h.id === this.feederModel().layout.outlet.home)!.transformer;
     switch (place) {
       case 'site':
@@ -1770,13 +1807,17 @@ export class App {
         return ['site:MOSS_LANDING', 'plant:ML1'];
       case 'machine':
         return ['site:MOSS_LANDING', 'plant:ML1', 'machine:GT1'];
+      case 'transformer':
+        return ['site:TESLA', xfKey('TESLA 500/230 #1')];
+      case 'bank':
+        return ['site:EVERGREEN', 'substation', XF_BANK_KEY];
       default:
         return [];
     }
   }
 
   /** Back-compat for tests and the guided route: the last element names the place. */
-  async navigate(path: Array<'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine'>): Promise<void> {
+  async navigate(path: Array<Exclude<Place, 'system'>>): Promise<void> {
     const want = path[path.length - 1];
     if (want === 'region') {
       await this.goTo([]);
@@ -1976,7 +2017,7 @@ export class App {
       const f = this.feederModel();
       if (!sel) return show('Substation', substationView(this.grid, s));
       if (sel.kind === 'dist') {
-        if (sel.what === 'bank') return show('Selected transformer', bankView(s, f));
+        if (sel.what === 'bank') return show('Selected transformer', bankView(s, f), [{ label: 'Look inside', title: 'Open the tank: core, windings, oil, tap changer (Enter, or double-click)', run: () => void this.dive(XF_BANK_KEY) }]);
         if (sel.what === 'bus60' || sel.what === 'bus12') return show('Selected bus', busView(this.grid, s, sel.what, f));
         if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f), [{ label: 'Follow feeder 1105', title: 'Out of the yard and down the street (Enter)', run: () => void this.ascend() }]);
       }
@@ -2064,6 +2105,17 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    if (top instanceof TransformerLevel) {
+      const st = top.stateFor(s);
+      const up = this.levelPortal.get(top);
+      const acts: Action[] = [];
+      if (up?.sel.kind === 'branch') {
+        const k = up.sel.index;
+        acts.push(this.outages.has(k) ? { label: 'Return it to service', title: 'Close its breakers again and solve', run: () => this.restore(k) } : { label: 'Take it out of service', title: 'Open its breakers on both sides and solve again: watch the flux and the oil stop', run: () => this.trip(k) });
+      }
+      if (sel?.kind === 'part') return show('Selected part', transformerPartView(top.plate, top.core, st, sel.what, sel.sub), acts);
+      return show('Transformer', transformerLevelView(top.plate, top.core, st), acts);
+    }
     const siteActions = (id: string): Action[] => {
       const site = this.grid.sites.find((x) => x.id === id)!;
       const acts: Action[] = [];
@@ -2110,6 +2162,8 @@ export class App {
           : { label: `Trip this ${what}`, title: 'Open the breakers at both ends and solve again', run: () => this.trip(k) },
       ];
       if (this.outages.size > (out ? 1 : 0)) actions.push({ label: 'Restore everything', run: () => this.restore('all') });
+      const inside = isX ? this.portalsOf(this.top).find((x) => x.key === xfKey(this.grid.branches[k]!.id)) : undefined;
+      if (inside) actions.unshift({ label: 'Look inside', title: 'Open the tank: core, windings, oil (Enter, or double-click)', run: () => void this.dive(inside.key) });
       this.inspector.show({
         header: isX ? 'Selected transformer' : 'Selected circuit',
         name: dataText(v.name, data(`network.${isX ? 'xfmr' : 'line'}.${this.grid.branches[k]!.id}.name`)),
@@ -2127,7 +2181,14 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof PlantLevel) out.push(plantPanel(this.grid, s, top.plantId));
+    if (top instanceof TransformerLevel) {
+      const up = this.levelPortal.get(top);
+      const st = top.stateFor(s);
+      if (up?.sel.kind === 'branch') {
+        const br = this.grid.branches[up.sel.index]!;
+        out.push(transformerPanel(top.plate, st, { r: br.r, rProv: `data:network.xfmr.${br.id}.r_pu`, vBase: br.from.kv, vProv: `data:network.bus.${br.from.id}.baseKV`, sBase: S_BASE, sProv: 'data:model.S_BASE', side: 'H' }));
+      } else out.push(transformerPanel(top.plate, st, { r: EVERGREEN.bank.zpu.re, rProv: 'data:evergreen.bank.zpu.re', vBase: EVERGREEN.bank.kvLowLL, vProv: 'data:evergreen.bank.kvLowLL', sBase: EVERGREEN.bank.kva / 1000, sProv: 'data:evergreen.bank.kva', side: 'L' }));
+    } else if (top instanceof PlantLevel) out.push(plantPanel(this.grid, s, top.plantId));
     else if (top instanceof MachineLevel) out.push(machinePanel(this.grid, s, top.genId));
     else if (top instanceof SubstationLevel) out.push(substationPanel(s));
     else if (top instanceof FeederLevel) {
@@ -2171,7 +2232,7 @@ export class App {
     const sel = this.selection;
     const items: LabelItem[] = [];
     // a node whose own level has (nearly) unfolded gives its name over to that level
-    const yielding = new Set([...this.bands.values()].filter((b) => b.m >= 0.7 && b.portal.label).map((b) => b.portal.label!));
+    const yielding = new Set([...this.bands.values()].filter((b) => b.m >= 0.7 && b.portal.label).flatMap((b) => ([] as string[]).concat(b.portal.label!)));
     for (const l of this.top.labels) {
       const site = l.kind === 'site' ? l.id.slice(5) : null;
       if (yielding.has(l.id)) continue;
@@ -2202,7 +2263,7 @@ export class App {
       const parent = this.stack[this.stack.length - 2]!;
       for (const l of parent.labels) {
         if (l.kind === 'region' || l.kind === 'sea') continue;
-        if (l.id === p.label) continue;
+        if (p.label && ([] as string[]).concat(p.label).includes(l.id)) continue;
         items.push(this.contextLabel(l, `up/${l.id}`, this.toChild(p, this.top, l.anchor), l.minZoom / p.ratio, -3));
       }
     }

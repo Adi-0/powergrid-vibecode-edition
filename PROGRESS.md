@@ -181,3 +181,11 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
   - **Evergreen's substation rebuilt with the kit.**
   - **Homes shared by the feeder and service levels:** pitched roofs, doors, meters, rooftop panels.
   - **The key shows each piece of equipment as a small drawing;** new glossary terms (disconnect, insulator, bushing, gantry).
+- **Components opened up** (the author's third review: zoom into individual components and see how they work, visually). Decision 0025.
+  - **A Transformer level inside every bank:** zoom into any yard's transformer, or Evergreen's bank, and the tank opens on the plane through its limbs.
+    - Inside: the core's sheets; the windings in section, turns drawn in the ratio of their voltages; the leads; the tap changer and its dial (Evergreen).
+    - Flux arrows alternate at a stated slowed 60 Hz, sized by the solved voltage.
+    - Chevrons carry the solved loss round the oil's loop.
+  - **The inspector explains it in four steps** with live numbers, and each part picked says what it is for.
+  - **A transformer math panel** (currents from S = V·I*, their ratio against the turns ratio, the loss as P_H + P_L and as 3I²R). It is in the arithmetic-consistency test for every transmission bank and for Evergreen.
+  - **Honesty, glossary and key:** a new "transformer" section in the honesty panel; glossary terms core, winding, turn, flux, turns ratio, conservator, radiator, tertiary and eddy current; key rows for the cutaway.

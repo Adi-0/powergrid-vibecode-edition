@@ -7,7 +7,10 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel } from '../src/math/panels';
+import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../src/model/xfmrState';
+import { S_BASE } from '../src/model/grid';
+import { EVERGREEN } from '../src/data/dist/evergreen';
 import { faultStudy } from '../src/model/faultStudy';
 import { faultOnFeeder, feederSource } from '../src/model/feederFault';
 import { simulateProtection } from '../src/model/protection';
@@ -150,6 +153,22 @@ describe('math panels', () => {
         const p = meterPanel(s, fd, h.id);
         if (p) check(p, h.id);
       }
+      // the Evergreen bank, opened up
+      const B = EVERGREEN.bank;
+      const ev = transformerPanel(evergreenPlate('xf:EV-BANK'), evergreenXfmrState(g, s, fd), { r: B.zpu.re, rProv: 'data:evergreen.bank.zpu.re', vBase: B.kvLowLL, vProv: 'data:evergreen.bank.kvLowLL', sBase: B.kva / 1000, sProv: 'data:evergreen.bank.kva', side: 'L' });
+      expect(ev).not.toBeNull();
+      check(ev!, 'Evergreen bank');
+    });
+
+    it(`every transmission transformer, opened up, at interval ${t}`, () => {
+      const s = snapshot(g, day.points[t]!);
+      let n = 0;
+      g.branches.forEach((br, k) => {
+        if (br.kind !== 'transformer' || br.id.endsWith('GSU')) return;
+        const p = transformerPanel(gridPlate(g, k, br.id), gridXfmrState(g, s, k), { r: br.r, rProv: 'r', vBase: br.from.kv, vProv: 'v', sBase: S_BASE, sProv: 's', side: 'H' });
+        if (p) (check(p, br.id), n++);
+      });
+      expect(n).toBeGreaterThan(30);
     });
   }
 });

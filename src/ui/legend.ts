@@ -3,6 +3,7 @@ import { chevronSizeFor, type FlowScale, type LevelKind } from '../levels/level'
 import { converterSymbol, generatorSymbol, substationSymbol, transformerSymbol, warningSymbol, crossSymbol, faultSymbol, type Symbol } from '../render/symbols';
 import { el, qty, data, dataText } from './quantity';
 import { rich } from './glossary';
+import { COMPONENTS } from '../data/components';
 
 /**
  * The KEY: always present, always complete for what the current view draws, always
@@ -147,6 +148,32 @@ function machineRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 12], [16, 2], [28, 12], [40, 2], [50, 9]], w: 0.8, color: INK_60 }]), 'Break line: the turbine continues off the sheet'));
 }
 
+/** The Transformer level: a transformer cut open. */
+function transformerRows(g: HTMLElement): void {
+  const arrow = drawSample(14, [{ pts: [[8, 7], [46, 7]], w: 1.4 }, { pts: [[39, 3], [46, 7], [39, 11]], w: 1.4 }]);
+  const fx = document.createElement('span');
+  fx.append(
+    rich('[[flux|Magnetic flux]] around the core, alternating: one phase per limb, a third of a cycle apart. Shown '),
+    el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })),
+    document.createTextNode(' times slower than its '),
+    el(qty(COMPONENTS.fHz, 'Hz', data('components.fHz'), { digits: 0 })),
+  );
+  g.appendChild(row(arrow, fx));
+  g.appendChild(
+    row(
+      drawSample(18, [
+        { pts: [[10, 2], [44, 2], [44, 16], [10, 16], [10, 2]], w: 0.8 },
+        { pts: [[14, 5], [40, 5]], w: 2.2, color: INK_35 },
+        { pts: [[14, 9], [40, 9]], w: 2.2, color: INK_35 },
+        { pts: [[14, 13], [40, 13]], w: 2.2, color: INK_35 },
+      ]),
+      'A [[winding]] cut through: each block one [[turn]], drawn in the ratio of the windings’ voltages',
+    ),
+  );
+  g.appendChild(row(drawSample(18, [{ pts: [[8, 2], [46, 2], [46, 16], [8, 16], [8, 2]], w: 1.4 }, { pts: [[16, 2], [16, 16]], w: 0.6, color: INK_60 }, { pts: [[24, 2], [24, 16]], w: 0.6, color: INK_60 }, { pts: [[32, 2], [32, 16]], w: 0.6, color: INK_60 }, { pts: [[40, 2], [40, 16]], w: 0.6, color: INK_60 }]), 'The [[core]] cut through: its thin steel sheets'));
+  g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -278,6 +305,8 @@ export class Legend {
       plantRows(g2);
     } else if (s.level === 'machine') {
       machineRows(g2);
+    } else if (s.level === 'transformer') {
+      transformerRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -295,7 +324,7 @@ export class Legend {
     const fs = s.flowScale;
     fs.samples.forEach((v, i) => {
       const c = document.createElement('span');
-      c.append(document.createTextNode('flow of '), el(qty(v, fs.unit, data(`style.flowScale.${s.level}.samples.${i}`), { digits: 0 })));
+      c.append(document.createTextNode(s.level === 'transformer' ? 'heat of ' : 'flow of '), el(qty(v, fs.unit, data(`style.flowScale.${s.level}.samples.${i}`), { digits: 0 })));
       g3.appendChild(row(chevronSample(chevronSizeFor(v, fs)), c));
     });
     const fn = document.createElement('div');
@@ -304,7 +333,9 @@ export class Legend {
       rich(
         s.level === 'plant' || s.level === 'machine'
           ? `Chevrons show where power goes, whatever its form — fuel, heat, steam, shaft work, electricity; size and speed ∝ ${fs.unit} (`
-          : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
+          : s.level === 'transformer'
+            ? `Chevrons carry heat: the windings’ [[losses]], taken by the oil to the radiators; size and speed ∝ ${fs.unit} (`
+            : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
       ),
     );
     fn.append(el(qty(fs.perPx, fs.unit, data(`style.flowScale.${s.level}.perPx`), { digits: fs.perPx < 10 ? 1 : 0 })), document.createTextNode(' per px on this sheet).'));

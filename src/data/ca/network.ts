@@ -262,13 +262,18 @@ export interface TransformerRecord {
   xr: number;
   /** Winding connection per IEEE C57.12.00 notation, and neutral grounding. */
   vectorGroup: string;
+  /**
+   * The delta tertiary's line-to-line voltage, kV: a typical value (estimate), used only
+   * to draw its turns; the tertiary carries no load in this model.
+   */
+  tertiaryKV?: number;
   plain?: string;
   src: SourceId;
 }
 
 // 500/230 kV banks are autotransformers (YNa0 with a delta tertiary). 230/60 and
 // 230/115 kV banks are grounded-wye/grounded-wye with a delta tertiary.
-const AUTO = { xPct: 10, xr: 50, vectorGroup: 'YNa0d1', src: 'estimate' as SourceId };
+const AUTO = { xPct: 10, xr: 50, vectorGroup: 'YNa0d1', tertiaryKV: 13.8, src: 'estimate' as SourceId };
 export const TRANSFORMERS: TransformerRecord[] = [
   { site: 'ROUND_MTN', hvKV: 500, lvKV: 230, banks: 1, mva: 1120, ...AUTO },
   { site: 'TABLE_MTN', hvKV: 500, lvKV: 230, banks: 2, mva: 1120, ...AUTO },
@@ -286,7 +291,7 @@ export const TRANSFORMERS: TransformerRecord[] = [
   { site: 'DEVERS', hvKV: 500, lvKV: 230, banks: 2, mva: 1120, ...AUTO },
   { site: 'MIGUEL', hvKV: 500, lvKV: 230, banks: 3, mva: 1120, ...AUTO },
   { site: 'IMPERIAL_VALLEY', hvKV: 500, lvKV: 230, banks: 2, mva: 1120, ...AUTO },
-  { site: 'COTTONWOOD', hvKV: 230, lvKV: 115, banks: 1, mva: 200, xPct: 10, xr: 35, vectorGroup: 'YNyn0d1', src: 'estimate' },
+  { site: 'COTTONWOOD', hvKV: 230, lvKV: 115, banks: 1, mva: 200, xPct: 10, xr: 35, vectorGroup: 'YNyn0d1', tertiaryKV: 13.8, src: 'estimate' },
   {
     site: 'METCALF',
     hvKV: 230,
@@ -296,6 +301,7 @@ export const TRANSFORMERS: TransformerRecord[] = [
     xPct: 11,
     xr: 35,
     vectorGroup: 'YNyn0d1',
+    tertiaryKV: 13.8,
     plain: 'Steps bulk transmission down to the 60 kV subtransmission network that feeds San José’s neighbourhood substations.',
     src: 'estimate',
   },

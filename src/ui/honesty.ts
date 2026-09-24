@@ -47,6 +47,7 @@ export const LEVEL_SECTIONS: Record<LevelKind, string[]> = {
   service: ['service', 'distribution'],
   plant: ['plant', 'dispatch'],
   machine: ['machine', 'smib'],
+  transformer: ['transformer', 'transmission'],
 };
 
 /** Sections that apply because of what the reader has done (tripped, faulted, opened the working). */

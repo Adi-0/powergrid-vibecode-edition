@@ -589,6 +589,100 @@ export default [
     },
   },
   {
+    name: 'xfmr-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        window.__app.inspector.hide();
+        window.__app.holdBand('xf:TESLA 500/230 #1', 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'xfmr',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['transformer']));
+      await page.waitForFunction(() => window.__app.level === 'transformer' && !window.__app.transitioning, null, { timeout: 60000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'xfmr-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['transformer']));
+      await page.waitForFunction(() => window.__app.level === 'transformer' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'xfmr-part',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['transformer']));
+      await page.waitForFunction(() => window.__app.level === 'transformer' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.select({ kind: 'part', id: 'xf:TESLA 500/230 #1', what: 'winding', sub: 'common' }));
+    },
+    probe: provenance,
+  },
+  {
+    name: 'bank',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['bank']));
+      await page.waitForFunction(() => window.__app.level === 'transformer' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'bank-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['bank']));
+      await page.waitForFunction(() => window.__app.level === 'transformer' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

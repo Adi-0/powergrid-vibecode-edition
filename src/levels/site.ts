@@ -9,7 +9,10 @@ import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type Labe
 import { NORTH_MAP, Sketch, enIso as P } from './sketch';
 import { siteExits, type SiteExit } from './exits';
 import { UNIT1, unit1Shell } from './plant';
-import { breaker, disconnect, gantry, insulator, kvClass, post, tower, transformer, vcyl, wire, type KvClass } from './kit';
+import { breaker, disconnect, gantry, insulator, kvClass, post, tower, transformer, vcyl, wire, type KvClass, type XfBody } from './kit';
+
+/** The portal key of a transformer bank's own level (by its branch id). */
+export const xfKey = (branchId: string): string => `xf:${branchId}`;
 
 /**
  * The Site level: the inside of any substation or plant switchyard on the System
@@ -86,6 +89,8 @@ export class SiteLevel implements Level {
   private banks: Array<{ k: number; segs: number[]; flows: number[] }> = [];
   private busSegs: Array<{ bus: GridBus; segs: number[]; at: Vec3 }> = [];
   private corridors = new Map<string, Corridor>();
+  /** The transformer banks as drawn: where each tank stands, and its strokes (hidden while its own level is open). */
+  readonly bankBodies: Array<{ branch: number; body: XfBody; lines: [number, number]; faces: [number, number]; hvKV: number; lvKV: number }> = [];
   /** Moss Landing Unit 1's footprint here: hidden while its own level is open. */
   private unit1Lines: [number, number] = [0, 0];
   private unit1Faces: [number, number] = [0, 0];
@@ -501,7 +506,11 @@ export class SiteLevel implements Level {
       const e = (i % 2 === 0 ? 1 : -1) * (slot * dx - dx / 2 + hv.k.sp * 1.5);
       sk.stagger = 0.2;
       sk.anchor = P(0, 0, gapN);
-      const xf = transformer(sk, e, gapN, se, sh, sn, f * 0.7, 1, true);
+      const l0 = sk.lines.count;
+      const f0 = sk.faces.vertexCount;
+      const body = { e, n: gapN, se, sh, sn, f: f * 0.7, hvSide: 1 as const, alongN: true };
+      const xf = transformer(sk, e, gapN, se, sh, sn, body.f, 1, true);
+      this.bankBodies.push({ branch: br.index, body, lines: [l0, sk.lines.count - l0], faces: [f0, sk.faces.vertexCount - f0], hvKV: hv.bus.kv, lvKV: lv.bus.kv });
       const segs: number[] = [];
       const hvT = [...xf.hv].sort((a, b) => a[0] - b[0]);
       const lvT = [...xf.lv].sort((a, b) => a[0] - b[0]);
@@ -580,6 +589,13 @@ export class SiteLevel implements Level {
   }
 
   yieldTo(key: string, m: number): void {
+    const bank = this.bankBodies.find((b) => key === xfKey(this.grid.branches[b.branch]!.id));
+    if (bank) {
+      // the bank's own level draws it, cut open
+      for (let i = bank.lines[0]; i < bank.lines[0] + bank.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      this.sk.faces.setHidden(bank.faces[0], bank.faces[1], m > 0, 0.2);
+      return;
+    }
     if (key !== `plant:${UNIT1.plant}`) return;
     // the silhouette is drawn by the plant's own level while it is open
     const hide = m > 0;

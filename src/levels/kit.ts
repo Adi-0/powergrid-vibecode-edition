@@ -1,5 +1,7 @@
 import type { Vec3 } from '../render/lines';
-import { INK, INK_60, PEN } from '../render/style';
+import { INK, INK_35, INK_60, PEN } from '../render/style';
+import { BOX_EDGES, boxCorners } from '../render/faces';
+import { projectToView } from '../render/iso';
 import type { Sketch } from './sketch';
 
 /**
@@ -199,42 +201,194 @@ export function tower(sk: Sketch, e: number, n: number, ue: number, un: number, 
 }
 
 /**
- * A power transformer: its tank, cooling radiators down both long sides, the
- * conservator (the oil expansion tank) on legs above one end, three high-voltage
- * bushings on one side of the lid and three low-voltage on the other. Size by rating.
- * Returns the bushing tops, HV then LV, in order along north.
+ * A transformer's tank in its own axes: `u` along the row of phases (the core's limbs
+ * stand along it, one under each pair of bushings), `v` across it. The camera looks
+ * toward +east and +north, so in both orientations the side toward the viewer is v < v0.
  */
-export function transformer(sk: Sketch, e: number, n: number, se: number, sh: number, sn: number, f: number, hvSide: 1 | -1 = 1, alongN = false): { hv: P3[]; lv: P3[]; tank: Vec3[] } {
+export interface XfBody {
+  e: number;
+  n: number;
+  se: number;
+  sh: number;
+  sn: number;
+  f: number;
+  hvSide: 1 | -1;
+  alongN: boolean;
+}
+
+export interface XfAxes {
+  su: number;
+  sv: number;
+  u0: number;
+  v0: number;
+  /** The lid's height (the tank stands on a 0.4 m plinth). */
+  lid: number;
+  /** (u, height, v) → plan (east, height, north). */
+  at: (u: number, h: number, v: number) => P3;
+}
+
+export function xfAxes(b: XfBody): XfAxes {
+  return {
+    su: b.alongN ? b.se : b.sn,
+    sv: b.alongN ? b.sn : b.se,
+    u0: b.alongN ? b.e : b.n,
+    v0: b.alongN ? b.n : b.e,
+    lid: 0.4 + b.sh,
+    at: (u, h, v) => (b.alongN ? [u, h, v] : [v, h, u]),
+  };
+}
+
+/** Something drawn cut away: a light outline where it was, no faces. */
+export const GHOST = { width: PEN.hairline, color: INK_35 };
+
+/** A box's twelve edges and no faces (a cut-away part's outline). */
+export function ghostBox(sk: Sketch, e: number, h: number, n: number, se: number, sh: number, sn: number): void {
+  const c = boxCorners(e - se / 2, h, n - sn / 2, e + se / 2, h + sh, n + sn / 2).map(([x, y, z]) => sk.plan(x, y, z));
+  for (const [i, j] of BOX_EDGES) sk.seg(c[i]!, c[j]!, GHOST);
+}
+
+/**
+ * A horizontal cylinder between two plan points (any horizontal direction): end circles,
+ * the two silhouettes the camera sees, faces for hidden-line removal.
+ */
+export function hcyl(sk: Sketch, a: P3, b: P3, r: number, s: { width: number; color: string } = fine): void {
+  const N = 24;
+  const dx = b[0] - a[0];
+  const dz = b[2] - a[2];
+  const L = Math.hypot(dx, dz) || 1;
+  // the circle's plane: across the axis (horizontal) and up
+  const cx = -dz / L;
+  const cz = dx / L;
+  const ring = (p: P3, t: number): Vec3 => sk.plan(p[0] + r * Math.cos(t) * cx, p[1] + r * Math.sin(t), p[2] + r * Math.cos(t) * cz);
+  const fs = { collapse: sk.anchor, stagger: sk.stagger };
+  for (let i = 0; i < N; i++) {
+    const t0 = (2 * Math.PI * i) / N;
+    const t1 = (2 * Math.PI * (i + 1)) / N;
+    sk.faces.quad(ring(a, t0), ring(b, t0), ring(b, t1), ring(a, t1), fs);
+    sk.faces.tri(sk.plan(...a), ring(a, t0), ring(a, t1), fs);
+    sk.faces.tri(sk.plan(...b), ring(b, t0), ring(b, t1), fs);
+    sk.seg(ring(a, t0), ring(a, t1), s);
+    sk.seg(ring(b, t0), ring(b, t1), s);
+  }
+  // silhouettes: the ring points furthest either side of the axis on screen
+  const [ax, ay] = projectToView(...sk.plan(...a));
+  const [bx, by] = projectToView(...sk.plan(...b));
+  const l = Math.hypot(bx - ax, by - ay) || 1;
+  let tMin = 0;
+  let tMax = 0;
+  let dMin = Infinity;
+  let dMax = -Infinity;
+  for (let i = 0; i < 360; i++) {
+    const t = (2 * Math.PI * i) / 360;
+    const [px, py] = projectToView(...ring(a, t));
+    const d = ((px - ax) * -(by - ay) + (py - ay) * (bx - ax)) / l;
+    if (d < dMin) (dMin = d), (tMin = t);
+    if (d > dMax) (dMax = d), (tMax = t);
+  }
+  for (const t of [tMin, tMax]) sk.seg(ring(a, t), ring(b, t), s);
+}
+
+/**
+ * A power transformer: its tank, cooling radiators across both ends (fins, with the
+ * header pipes that take oil out at the top and back in at the bottom), the
+ * conservator (the oil expansion tank) across the lid at one end with the pipe to the
+ * tank, three high-voltage bushings on one side of the lid and three low-voltage on the
+ * other. Size by rating. Returns the bushing tops, HV then LV, in order along u.
+ *
+ * `cut`: the tank drawn cut open on the vertical plane through its limbs — the half
+ * toward the viewer (walls, lid, radiator fins) reduced to a light outline, the far
+ * walls standing with their cut edges drawn heavy — for a level that draws what is
+ * inside. Everything that stays is drawn exactly where the uncut drawing has it.
+ */
+export function transformer(sk: Sketch, e: number, n: number, se: number, sh: number, sn: number, f: number, hvSide: 1 | -1 = 1, alongN = false, cut = false): { hv: P3[]; lv: P3[]; tank: Vec3[] } {
+  const X = xfAxes({ e, n, se, sh, sn, f, hvSide, alongN });
+  const { su, sv, u0, v0, lid, at } = X;
+  const P = (u: number, h: number, v: number): Vec3 => sk.plan(...at(u, h, v));
   sk.box(e, 0, n, se + 1.2, 0.4, sn + 1.2, { width: PEN.fine, color: INK_60 });
-  const tank = sk.box(e, 0.4, n, se, sh, sn);
-  // radiators: thin fins along the two east-facing sides
+  const tank = boxCorners(e - se / 2, 0.4, n - sn / 2, e + se / 2, 0.4 + sh, n + sn / 2).map(([x, y, z]) => sk.plan(x, y, z));
+  if (!cut) sk.box(e, 0.4, n, se, sh, sn);
+  else cutTank(sk, X);
+  // radiators: fins across both ends, and their header pipes along the top and bottom
+  const fins = Math.max(3, Math.round(sv / 1.1));
+  const finH = sh * 0.72;
   for (const s of [-1, 1]) {
-    const fins = Math.max(3, Math.round(sn / 1.1));
+    const uf = u0 + s * (su / 2 + 0.45);
     for (let i = 0; i < fins; i++) {
-      const fn = n - sn / 2 + ((i + 0.5) * sn) / fins;
-      sk.box(e + s * (se / 2 + 0.45), 0.9, fn, 0.8, sh * 0.72, 0.12, { width: PEN.hairline, color: INK });
+      const vf = v0 - sv / 2 + ((i + 0.5) * sv) / fins;
+      const [fe, , fnn] = at(uf, 0, vf);
+      const [we, wn] = alongN ? [0.8, 0.12] : [0.12, 0.8];
+      if (cut && vf < v0) ghostBox(sk, fe, 0.9, fnn, we, finH, wn);
+      else sk.box(fe, 0.9, fnn, we, finH, wn, { width: PEN.hairline, color: INK });
+    }
+    const v1 = v0 - sv / 2 + (0.5 * sv) / fins;
+    const v2 = v0 + sv / 2 - (0.5 * sv) / fins;
+    for (const hh of [0.9 + finH - 0.25, 1.15]) {
+      if (cut) {
+        sk.seg(P(uf, hh, v1), P(uf, hh, v0), GHOST);
+        sk.seg(P(uf, hh, v0), P(uf, hh, v2), thin);
+      } else sk.seg(P(uf, hh, v1), P(uf, hh, v2), thin);
     }
   }
-  // conservator on two legs
-  const cE0 = e - se / 2 + 0.4;
-  const cE1 = e - se / 2 + se * 0.55;
-  const cH = 0.4 + sh + 1.1;
-  for (const ce of [cE0 + 0.3, cE1 - 0.3]) sk.seg(sk.plan(ce, 0.4 + sh, n - sn / 2 + 0.6), sk.plan(ce, cH - 0.35, n - sn / 2 + 0.6), thin);
-  sk.cylinder(cE0, cE1, cH, n - sn / 2 + 0.6, 0.38, { width: PEN.fine, color: INK });
-  // bushings
-  const lid = 0.4 + sh;
+  // conservator across the lid at the +u end, on two legs, with its pipe down to the tank
+  const cr = 0.18 + 0.05 * sh;
+  const cu = u0 + su / 2 - 0.2 - cr;
+  const cH = lid + 0.75 + cr;
+  for (const s of [-1, 1]) sk.seg(P(cu, lid, v0 + s * 0.25 * sv), P(cu, cH - cr * 0.9, v0 + s * 0.25 * sv), thin);
+  hcyl(sk, at(cu, cH, v0 - 0.32 * sv), at(cu, cH, v0 + 0.32 * sv), cr);
+  const pipe: Vec3[] = [P(cu, cH - cr, v0 + 0.1 * sv), P(cu - 0.35, lid + 0.45, v0 + 0.1 * sv), P(cu - 0.7, lid, v0 + 0.1 * sv)];
+  sk.poly(pipe, thin);
+  // bushings: the two rows, HV toward `hvSide` of v, LV opposite
   const hv: P3[] = [];
   const lv: P3[] = [];
   for (let i = 0; i < 3; i++) {
-    // the two rows of bushings: HV toward `hvSide` (along east, or along north), LV opposite
-    const h = alongN ? [e - se * 0.3 + (i * se * 0.6) / 2, n + hvSide * sn * 0.28] : [e + hvSide * se * 0.28, n - sn * 0.3 + (i * sn * 0.6) / 2];
-    const l = alongN ? [h[0]!, n - hvSide * sn * 0.28] : [e - hvSide * se * 0.28, h[1]!];
-    insulator(sk, [h[0]!, lid, h[1]!], [h[0]!, lid + 2.2 * f, h[1]!], 0.22 * f);
-    insulator(sk, [l[0]!, lid, l[1]!], [l[0]!, lid + 1.2 * f, l[1]!], 0.2 * f);
-    hv.push([h[0]!, lid + 2.2 * f, h[1]!]);
-    lv.push([l[0]!, lid + 1.2 * f, l[1]!]);
+    const u = u0 + (i - 1) * 0.3 * su;
+    const h = at(u, lid, v0 + hvSide * sv * 0.28);
+    const l = at(u, lid, v0 - hvSide * sv * 0.28);
+    insulator(sk, h, [h[0], lid + 2.2 * f, h[2]], 0.22 * f);
+    insulator(sk, l, [l[0], lid + 1.2 * f, l[2]], 0.2 * f);
+    if (cut) {
+      // the bushings' lower ends, in the oil
+      insulator(sk, h, [h[0], lid - 0.9 * f, h[2]], 0.16 * f);
+      insulator(sk, l, [l[0], lid - 0.6 * f, l[2]], 0.15 * f);
+    }
+    hv.push([h[0], lid + 2.2 * f, h[2]]);
+    lv.push([l[0], lid + 1.2 * f, l[2]]);
   }
   return { hv, lv, tank };
+}
+
+/**
+ * The tank cut open on v = v0: the far wall and the far halves of the end walls and
+ * floor stand, their cut edges heavy; the near half and the lid are a light outline.
+ */
+function cutTank(sk: Sketch, X: XfAxes): void {
+  const { su, sv, u0, v0, lid, at } = X;
+  const P = (u: number, h: number, v: number): Vec3 => sk.plan(...at(u, h, v));
+  const fs = { collapse: sk.anchor, stagger: sk.stagger };
+  const ua = u0 - su / 2;
+  const ub = u0 + su / 2;
+  const vn = v0 - sv / 2;
+  const vf = v0 + sv / 2;
+  const h0 = 0.4;
+  const wall = { width: PEN.outline, color: INK };
+  const cutEdge = { width: PEN.bold, color: INK };
+  // far wall, far halves of the end walls, far half of the floor
+  sk.faces.quad(P(ua, h0, vf), P(ub, h0, vf), P(ub, lid, vf), P(ua, lid, vf), fs);
+  for (const u of [ua, ub]) sk.faces.quad(P(u, h0, v0), P(u, h0, vf), P(u, lid, vf), P(u, lid, v0), fs);
+  sk.faces.quad(P(ua, h0, v0), P(ub, h0, v0), P(ub, h0, vf), P(ua, h0, vf), fs);
+  // the rim and the far corners
+  sk.poly([P(ua, lid, v0), P(ua, lid, vf), P(ub, lid, vf), P(ub, lid, v0)], wall);
+  sk.seg(P(ua, h0, v0), P(ua, h0, vf), wall);
+  sk.seg(P(ua, h0, vf), P(ua, lid, vf), wall);
+  sk.seg(P(ua, h0, vf), P(ub, h0, vf), { width: PEN.fine, color: INK });
+  // the section: where the walls and floor were cut
+  sk.seg(P(ua, h0, v0), P(ua, lid, v0), cutEdge);
+  sk.seg(P(ub, h0, v0), P(ub, lid, v0), cutEdge);
+  sk.seg(P(ua, h0, v0), P(ub, h0, v0), cutEdge);
+  // the near half, cut away
+  sk.poly([P(ua, lid, v0), P(ua, lid, vn), P(ub, lid, vn), P(ub, lid, v0)], GHOST);
+  sk.poly([P(ua, h0, v0), P(ua, h0, vn), P(ub, h0, vn), P(ub, h0, v0)], GHOST);
+  for (const u of [ua, ub]) sk.seg(P(u, h0, vn), P(u, lid, vn), GHOST);
 }
 
 /** A conductor from terminal to terminal (plan points), returning the segment index. */

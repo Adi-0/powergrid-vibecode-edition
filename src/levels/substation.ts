@@ -30,11 +30,17 @@ import { breaker, disconnect, gantry, kvClass, post, tower, transformer, wire } 
  * Every conductor carries chevrons in proportion to megawatts, at this level's scale.
  */
 
+/** The portal key of the bank's own level. */
+export const XF_BANK_KEY = 'xf:EV-BANK';
+
 const FEEDER_N = [EV_EXIT_N, -2.5, 2.5, 7.5]; // north positions of the four feeder exits
 const FEEDER_IDS = ['1105', '1102', '1103', '1104'];
 const CIRCUIT_N = [-10, 0, 10]; // incoming 60 kV circuits
 const BUS60 = { e: 14, h: 7, n0: -16, n1: 16 };
-const BANK = { e: -2, n: 0, se: 6, sh: 4.5, sn: 4 };
+/** The bank's tank: its three phases stand along north (the transformer level draws inside it). */
+export const BANK = { e: -2, n: 0, se: 4.4, sh: 4.5, sn: 6, f: 1.1 };
+/** The tap changer's motor drive: a cabinet on the bank's low-voltage side. */
+export const BANK_DRIVE = { e: BANK.e - BANK.se / 2 - 0.35, h: 0.8, n: BANK.n - 1.4, se: 0.5, sh: 1.6, sn: 0.9 };
 const GEAR = { e: -22, n: 0, se: 3, sh: 3, sn: 16 };
 
 export class SubstationLevel implements Level {
@@ -59,6 +65,8 @@ export class SubstationLevel implements Level {
   private feederFlows: number[] = [];
   private busSegs: number[] = [];
   private bankGlyphs: [number, number] = [0, 0];
+  /** The bank as drawn here: hidden while its own level (the cut-open tank) is open. */
+  private bankDraw = { lines: [0, 0] as [number, number], faces: [0, 0] as [number, number] };
   private snapshot: Snapshot | null = null;
   private selection: Selection | null = null;
 
@@ -151,8 +159,12 @@ export class SubstationLevel implements Level {
 
     // ---- the bank: 30 MVA, 60/12.47 kV, its high side toward the bus
     sk.stagger = 0.2;
-    const xf = transformer(sk, BANK.e, BANK.n, BANK.se, BANK.sh, BANK.sn, 1.1, 1);
-    sk.box(BANK.e + BANK.se / 2 + 0.7, 0.8, BANK.n + 1.3, 0.9, 2.6, 1.4); // tap changer compartment
+    const bl0 = sk.lines.count;
+    const bf0 = sk.faces.vertexCount;
+    const xf = transformer(sk, BANK.e, BANK.n, BANK.se, BANK.sh, BANK.sn, BANK.f, 1);
+    const D = BANK_DRIVE;
+    sk.box(D.e, D.h, D.n, D.se, D.sh, D.sn, { width: PEN.fine, color: INK });
+    this.bankDraw = { lines: [bl0, sk.lines.count - bl0], faces: [bf0, sk.faces.vertexCount - bf0] };
     const tank = xf.tank;
     const hvB = [...xf.hv].sort((a, c) => a[2] - c[2]);
     const lvB = [...xf.lv].sort((a, c) => a[2] - c[2]).map((q) => en(...q));
@@ -160,8 +172,8 @@ export class SubstationLevel implements Level {
     this.bankFlow = sk.flowSeg(en(tubes[1]!, k.busH, hvB[1]![2]), en(...hvB[1]!));
     sk.target({ kind: 'dist', what: 'bank', id: 'EV-BANK' }, tank, true);
     this.labels.push({ id: 'eq:bank', text: 'Bank 1 · 60/12 kV', anchor: en(BANK.e, BANK.sh + 3, BANK.n - 2), priority: 8, minZoom: 0, kind: 'equip', prov: 'data:evergreen.bank' });
-    this.labels.push({ id: 'eq:rad', text: 'Radiators', anchor: en(BANK.e + BANK.se / 2 + 0.5, BANK.sh * 0.6, BANK.n - BANK.sn / 2), priority: 2, minZoom: 6, kind: 'equip' });
-    this.labels.push({ id: 'eq:cons', text: 'Conservator', anchor: en(BANK.e - BANK.se / 4, BANK.sh + 1.8, BANK.n - BANK.sn / 2 + 0.6), priority: 2, minZoom: 6, kind: 'equip' });
+    this.labels.push({ id: 'eq:rad', text: 'Radiators', anchor: en(BANK.e, BANK.sh * 0.6, BANK.n - BANK.sn / 2 - 0.45), priority: 2, minZoom: 6, kind: 'equip' });
+    this.labels.push({ id: 'eq:cons', text: 'Conservator', anchor: en(BANK.e - BANK.se * 0.32, BANK.sh + 2.2, BANK.n + BANK.sn / 2 - 0.6), priority: 2, minZoom: 6, kind: 'equip' });
 
     // ---- 12 kV switchgear and the feeders
     sk.stagger = 0.28;
@@ -263,6 +275,20 @@ export class SubstationLevel implements Level {
   highlight(sel: Selection | null): Set<string> | null {
     this.selection = sel;
     return null;
+  }
+
+  /** The bank's own level draws it (cut open) while it is open. */
+  yieldTo(key: string, m: number): void {
+    if (key !== XF_BANK_KEY) return;
+    const hide = m > 0;
+    const d = this.bankDraw;
+    for (let i = d.lines[0]; i < d.lines[0] + d.lines[1]; i++) this.sk.lines.setDim(i, hide ? 1 : 0);
+    this.sk.faces.setHidden(d.faces[0], d.faces[1], hide, 0.2);
+  }
+
+  /** Where the bank's level sits here: the ground under its tank (its frame is this one). */
+  get bankAt(): Vec3 {
+    return en(BANK.e, 0, BANK.n);
   }
 
   pick(sx: number, sy: number, cam: IsoCamera): Selection | null {

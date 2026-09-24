@@ -12,6 +12,7 @@ import type { TripResponse } from '../model/frequency';
 import { busFaultLevel, type FaultStudy } from '../model/faultStudy';
 import { C37_112, PROTECTION } from '../data/dist/protection';
 import type { FeederEvent } from '../app/inspect-fault';
+import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 
 /**
  * Math panels for what can be selected: the working behind the numbers the inspector
@@ -720,6 +721,70 @@ export function feederFaultPanel(s: Snapshot, ev: FeederEvent): Panel {
   return {
     title: 'The fault, and how fast each device acts',
     intro: 'Relay curves are [[c37112|IEEE C37.112]]’s; the fuse’s is fitted to the shape of a T-link’s. Load is neglected in the fault current.',
+    steps,
+  };
+}
+
+/**
+ * A transformer's working: the current at each terminal from its power and voltage
+ * (S = V·I*, three-phase: |I| = |S| / (√3 |V|)), their ratio against the turns ratio,
+ * and its loss two ways — what goes in less what comes out, and 3I²R in the windings.
+ */
+export function transformerPanel(
+  p: XfmrPlate,
+  st: XfmrState | null,
+  R: { r: number; rProv: string; vBase: number; vProv: string; sBase: number; sProv: string; side: 'H' | 'L' },
+): Panel | null {
+  if (!st || !st.on) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.${p.key}.${x}`;
+  const three = num(3, 0, '', 'data:notation.three');
+  const kilo = num(1000, 0, '', 'data:notation.kilo');
+  const a = p.hvKV / p.lvKV / (st.ltcRatio ?? 1);
+  const unb = st.unbalanced ? { note: 'The feeder is solved phase by phase and its phases differ a little; the three-phase power gives the balanced equivalent.', tol: 0.004 } : undefined;
+  const steps: Step[] = [
+    { label: 'High-side voltage', general: '|V_H| = V_{H,pu} × V_{base,H}', sym: '|V_H|', expr: mul(num(st.vH, 6, 'pu', st.prov.vH, 'V_{H,pu}'), num(p.hvKV, 0, 'kV', `data:${p.keys.hvKV}`, 'V_{base,H}')), unit: 'kV', digits: 3, prov: k('vHkV'), solver: st.vHkV },
+    { label: 'Apparent power in at the high side, three-phase', general: '|S_H| = √(P_H^2 + Q_H^2)', sym: '|S_H|', expr: sqrt(add(sq(num(st.pH, 4, 'MW', st.prov.pH, 'P_H')), sq(num(st.qH, 4, 'MVAr', st.prov.qH, 'Q_H')))), unit: 'MVA', digits: 4, prov: k('sH'), solver: Math.hypot(st.pH, st.qH) },
+    { label: 'High-side current', general: 'I_H = |S_H| / (√3 |V_H|)', sym: 'I_H', expr: mul(div(ref(1), par(mul(sqrt(three), ref(0)))), kilo), unit: 'A', digits: 2, prov: k('iH'), solver: st.iH },
+    { label: 'Low-side voltage', general: '|V_L| = V_{L,pu} × V_{base,L}', sym: '|V_L|', expr: mul(num(st.vL, 6, 'pu', st.prov.vL, 'V_{L,pu}'), num(p.lvKV, 2, 'kV', `data:${p.keys.lvKV}`, 'V_{base,L}')), unit: 'kV', digits: 3, prov: k('vLkV'), solver: st.vLkV, ...(unb ? { approx: { note: 'The average of the three phases’ voltages.', tol: 0.01 } } : {}) },
+    { label: 'Apparent power at the low side, three-phase', general: '|S_L| = √(P_L^2 + Q_L^2)', sym: '|S_L|', expr: sqrt(add(sq(num(st.pL, 4, 'MW', st.prov.pL, 'P_L')), sq(num(st.qL, 4, 'MVAr', st.prov.qL, 'Q_L')))), unit: 'MVA', digits: 4, prov: k('sL'), solver: Math.hypot(st.pL, st.qL) },
+    { label: 'Low-side current', general: 'I_L = |S_L| / (√3 |V_L|)', sym: 'I_L', expr: mul(div(ref(4), par(mul(sqrt(three), ref(3)))), kilo), unit: 'A', digits: 2, prov: k('iL'), solver: st.iL, ...(unb ? { approx: { note: 'From the average voltage.', tol: 0.5 } } : {}) },
+    {
+      label: st.ltcRatio !== undefined ? 'The currents’ ratio: the turns ratio, as the tap changer has set it (the model has no magnetizing current)' : 'The currents’ ratio: the turns ratio (the model has no magnetizing current)',
+      general: st.ltcRatio !== undefined ? 'I_L / I_H = (V_{base,H} / V_{base,L}) / n_{tap}' : 'I_L / I_H = a = V_{base,H} / V_{base,L}',
+      sym: 'I_L/I_H',
+      expr: div(ref(5), ref(2)),
+      unit: '',
+      digits: 3,
+      prov: k('ratio'),
+      solver: a,
+      ...(unb ? { approx: unb } : {}),
+    },
+    { label: 'Loss: what goes in less what comes out (P_L is negative: power leaves there)', general: 'P_{loss} = P_H + P_L', sym: 'P_{loss}', expr: mul(par(add(num(st.pH, 4, 'MW', st.prov.pH, 'P_H'), num(st.pL, 4, 'MW', st.prov.pL, 'P_L'))), kilo), unit: 'kW', digits: 1, prov: k('loss'), solver: st.loss * 1000 },
+    {
+      label: R.side === 'H' ? 'Winding resistance, referred to the high side' : 'Winding resistance, referred to the low side (where the model puts it)',
+      general: R.side === 'H' ? 'R_H = r × V_{base,H}^2 / S_{base}' : 'R_L = r × V_{rated,L}^2 / S_{rated}',
+      sym: R.side === 'H' ? 'R_H' : 'R_L',
+      expr: div(mul(num(R.r, sigDigits(R.r, 5), 'pu', R.rProv, 'r'), sq(num(R.vBase, R.vBase >= 100 ? 0 : 2, 'kV', R.vProv, R.side === 'H' ? 'V_{base,H}' : 'V_{rated,L}'))), num(R.sBase, 0, 'MVA', R.sProv, R.side === 'H' ? 'S_{base}' : 'S_{rated}')),
+      unit: 'Ω',
+      digits: sigDigits((R.r * R.vBase * R.vBase) / R.sBase, 5),
+      prov: k('R'),
+    },
+    {
+      label: 'Loss again: the heat in the windings’ resistance',
+      general: R.side === 'H' ? 'P_{loss} = 3 I_H^2 R_H' : 'P_{loss} = 3 I_L^2 R_L',
+      sym: 'P_{loss}',
+      expr: div(mul(mul(three, sq(ref(R.side === 'H' ? 2 : 5))), ref(8)), kilo),
+      unit: 'kW',
+      digits: 1,
+      prov: k('lossI2R'),
+      solver: st.loss * 1000,
+      ...(unb ? { approx: { note: 'Each phase carries its own current; three times the balanced equivalent’s square is close, not exact.', tol: Math.max(0.5, st.loss * 1000 * 0.01) } } : {}),
+    },
+  ];
+  return {
+    title: 'Through the transformer',
+    intro: 'Complex power S = V·I* (the current conjugated), three-phase. The currents follow from the power and voltage at each terminal; the loss is found twice, as the energy balance and as the heat in the resistance.',
     steps,
   };
 }
