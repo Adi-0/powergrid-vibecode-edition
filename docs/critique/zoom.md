@@ -24,11 +24,14 @@ The level views now reach their places through the zoom tree:
 | 7 | At the generator, the plant's machinery drawn as heavily as the cut-open machine. | Levels above were drawn at full ink. | The levels above recede: half ink, then a third. The level on the sheet recedes the same way as a child unfolds in it, so the hand-off does not jump. The System around a station stays in full ink: its circuits are the station's own. |
 | 8 | "Moss Landing Unit 1" twice when inside the plant. | The parent's name for the node was kept as context. | Each portal names the label it replaces. |
 | 9 | Two tour stops failed the provenance probe ("500 kV" in plain text). | Figures in prose. | Reworded without figures. |
+| 10 | Some fifty wheel notches from the whole state to a yard. | A notch was 1.16×, the range is some 2700×. | A notch (or `+`/`−`) is 1.4×: about twenty notches from state to yard, six through a node's unfold. |
+| 11 | The inspector sprang open over the sheet every time a zoom by hand crossed a hand-off. | Every level change opened the level's balance. | A zoom by hand leaves the panel as it was (an open one follows the sheet); a dive or a crumb opens it; clicking the ground of a level shows its balance. |
+| 12 | Unit 1 unfolded in one or two notches. | The Moss Landing yard is nearly all plant, so the plant's band was squeezed between the yard's own hand-off and the plant's fit. | No band is shorter than 2.6×; the yard settles a little further out, so the plant rests folded. The fold after an ascent never goes past the parent's own hand-back. |
+| 13 | While a station unfolded on the System sheet, the key still described the map. | The key followed the level on the sheet only. | Once the child in focus is 70 % unfolded, the key is its key, with the sheet's voltage classes too. |
 
 ## Still wrong or weak
 
 - **A big station's yard is busy at its fitted zoom.** Tesla brings twelve circuits in from every side. Each runs from its gantry over its corridor's tower to where the map's stroke takes it up, and runs cross the yard where a circuit's bearing points across the bus. Real stations route these with more care: bays on the side each line comes from, and ring or breaker-and-a-half arrangements.
-- **Unit 1 has a short band.** It starts only once the Moss Landing yard is on the sheet and ends before the plant's own fit, so a wheel notch or two covers it. Double-click plays it at a readable pace.
 - **The 60 kV circuits from Metcalf to Evergreen look busy.** On the System sheet near Evergreen, their chevrons and dash-dot pattern together make a busy stroke.
-- **Neighbouring children pop at the hand-off.** When the sheet goes to one of several children unfolding side by side (services on a lateral, the three generators), the others drop to the parent's receded drawing: their homes and boxes stay, but their own details (cans, secondaries, cut-aways) go at once.
+- **Neighbouring children lose their details at the hand-off.** When the sheet goes to one of several children unfolding side by side (services on a lateral, the three generators), the others recede with the parent as they unfold, but their own details (cans, secondaries, cut-aways) still go at once.
 - **The GPU frame rate while six children unfold was not measured.** The software rasteriser cannot; the main-thread cost is measured on the System sheet only.

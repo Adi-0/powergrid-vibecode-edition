@@ -79,8 +79,10 @@ interface Band {
  * it starts to unfold BAND times further out: a station out of the System when its
  * yard would span some 45 px, a part of a level (ratio 1) when it would span some 70.
  */
-const HANDOFF = { deep: 0.6, near: 0.85 };
+const HANDOFF = { deep: 0.6, near: 0.95 };
 const BAND = { deep: 9, near: 6 };
+/** No band is shorter than this (a wheel notch is 1.4×): the parent settles further out instead. */
+const BAND_MIN = 2.6;
 /** At most this many children unfold at once (the ones nearest where the reader zooms). */
 const MAX_BANDS = 6;
 
@@ -537,7 +539,7 @@ export class App {
     this.updateTitleblock();
     this.updateNotice();
     this.updateLegend();
-    if (this.selection || this.stack.length > 1) this.inspect();
+    if (this.selection || (this.stack.length > 1 && (!this.inspector.root.hidden || this.inspectorUnder))) this.inspect();
     this.onReady();
   }
 
@@ -986,8 +988,12 @@ export class App {
       'wheel',
       (e) => {
         e.preventDefault();
-        const k = e.ctrlKey ? 0.01 : 0.0015; // trackpad pinch arrives as ctrl+wheel
-        this.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * k));
+        // a mouse notch (deltaY 100, or 3 lines) is a step of about 1.4×: from the whole
+        // state into a yard is some twenty notches, a node's unfold about six.
+        // Trackpad pinch arrives as ctrl+wheel, in small steps.
+        const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+        const k = e.ctrlKey ? 0.01 : 0.0034;
+        this.zoomAt(e.offsetX, e.offsetY, Math.exp(-Math.max(-240, Math.min(240, dy)) * k));
       },
       { passive: false },
     );
@@ -1009,11 +1015,11 @@ export class App {
           break;
         case '+':
         case '=':
-          this.zoomAt(this.cam.width / 2, this.cam.height / 2, 1.25);
+          this.zoomAt(this.cam.width / 2, this.cam.height / 2, 1.4);
           break;
         case '-':
         case '_':
-          this.zoomAt(this.cam.width / 2, this.cam.height / 2, 0.8);
+          this.zoomAt(this.cam.width / 2, this.cam.height / 2, 1 / 1.4);
           break;
         case 'Escape':
           if (!this.honesty.root.hidden || !this.glossary.root.hidden) this.closeSidePanels();
@@ -1224,7 +1230,7 @@ export class App {
         // not before the parent has the sheet, and not in the view that fits the parent
         // (a level at rest shows its children folded) — so long as the band keeps some length
         const hand = this.zooms(up).zOut / up.ratio;
-        zIn = Math.min(Math.max(zIn, hand * 1.08, this.fitZoom(this.child(up)) * 1.15), zOut / 1.6);
+        zIn = Math.min(Math.max(zIn, hand * 1.08, this.fitZoom(this.child(up)) * 1.15), zOut / BAND_MIN);
       }
       zz = { zIn, zOut };
       this.bandZooms.set(p.key, zz);
@@ -1232,11 +1238,16 @@ export class App {
     return zz;
   }
 
-  /** The zoom a level settles at when the camera arrives: its fit, with its children folded. */
+  /**
+   * The zoom a level settles at when the camera arrives: its fit, or further out so its
+   * own children are still folded — but not so far that it hands the sheet back.
+   */
   private settleZoom(l: Level): number {
     let z = this.fitZoom(l);
     const ps = this.portalsOf(l);
     if (ps.length && ps.length <= 4) for (const p of ps) z = Math.min(z, this.zooms(p).zIn / 1.12);
+    const up = this.levelPortal.get(l);
+    if (up) z = Math.max(z, (this.zooms(up).zOut / up.ratio) * 1.08);
     return z;
   }
 
@@ -1462,7 +1473,10 @@ export class App {
     this.updateLegend();
     // the level may draw what the last solve did not include (the substation and feeder)
     this.requestSolve();
-    if (this.stack.length > 1 || this.selection) this.inspect();
+    // a zoom by hand does not throw a panel over the sheet; a move asked for (a dive, a
+    // crumb) opens the level's balance, and a panel already open follows the sheet
+    const show = !!this.selection || (this.stack.length > 1 && (this.diving || !this.inspector.root.hidden || this.inspectorUnder));
+    if (show) this.inspect();
     else this.inspector.hide();
     if (!this.honesty.root.hidden) this.honesty.show(this.top.kind, this.honestyContext());
     this.cameraDirty = true;
@@ -1631,7 +1645,10 @@ export class App {
         () => {
           this.handBack();
           const z1 = this.cam.pxPerUnit;
-          const L2 = Math.log((zz.zIn * 0.7) / z1);
+          // folded — but not so far out that the parent hands the sheet on up
+          const up = this.levelPortal.get(this.top);
+          const z2 = Math.max(zz.zIn * 0.7, up ? (this.zooms(up).zOut / up.ratio) * 1.08 : 0);
+          const L2 = Math.log(z2 / z1);
           this.fly(
             1300,
             easeOut,
@@ -2055,7 +2072,7 @@ export class App {
       if (this.top === this.system && site.region !== 'tie')
         acts.push({ label: 'See the region in layers', title: `${REGIONS[site.region].name}, pulled apart by voltage`, run: () => this.enterRegion(site.region) });
       if (this.top instanceof SiteLevel && this.top.unit1At && id === this.top.siteId)
-        acts.push({ label: 'Zoom into Unit 1', title: 'The combined-cycle plant beside the yard', run: () => void this.dive('plant:ML1') });
+        acts.push({ label: 'Zoom into the plant', title: 'Unit 1, the combined-cycle plant beside the yard', run: () => void this.dive('plant:ML1') });
       return acts;
     };
     const siteShow = (header: string, id: string) => {
@@ -2076,7 +2093,7 @@ export class App {
       if (!g) return;
       const siteId = g.bus.site.id;
       siteShow('Selected plant', siteId);
-      if (top instanceof SiteLevel && sel.id === 'ML1') this.inspector.show({ header: 'Selected plant', name: g.plant.name, kind: siteView(this.grid, s, siteId).kind, actions: [{ label: 'Zoom into Unit 1', title: 'Into the plant (Enter)', run: () => void this.dive('plant:ML1') }], panels, sections: siteView(this.grid, s, siteId).sections });
+      if (top instanceof SiteLevel && sel.id === 'ML1') this.inspector.show({ header: 'Selected plant', name: g.plant.name, kind: siteView(this.grid, s, siteId).kind, actions: [{ label: 'Zoom into the plant', title: 'Into Unit 1 (Enter)', run: () => void this.dive('plant:ML1') }], panels, sections: siteView(this.grid, s, siteId).sections });
       return;
     }
     if (sel.kind === 'site') {
@@ -2208,14 +2225,20 @@ export class App {
 
   private updateLegend(): void {
     const s = this.current;
+    // a child nearly whole on the sheet is what the reader is looking at: the key is its
+    // key, with the voltage classes of the sheet around it too
+    const fb = this.focusBand ? this.bands.get(this.focusBand) : undefined;
+    const shown = fb && fb.m >= 0.7 ? fb.level : this.top;
+    const own = this.top === this.system ? this.system.visibleClasses(this.cam.pxPerUnit) : this.top.classes;
+    const classes = shown === this.top ? own : [...shown.classes, ...own.filter((c) => !shown.classes.some((x) => x.id === c.id))].sort((a, b) => b.kvNominal - a.kvNominal);
     this.legend.update({
-      level: this.top.kind,
-      classes: this.top === this.system ? this.system.visibleClasses(this.cam.pxPerUnit) : this.top.classes,
-      flowScale: this.top.flowScale,
+      level: shown.kind,
+      classes,
+      flowScale: shown.flowScale,
       showSignal: true,
       showOutOfService: (!!s && s.inService.some((x) => x === 0)) || this.plantOutages.size > 0,
       noSolution: s?.outcome === 'none',
-      fault: this.top instanceof FeederLevel && (this.feederEvent !== null || this.feederOpen.size > 0),
+      fault: shown instanceof FeederLevel && (this.feederEvent !== null || this.feederOpen.size > 0),
     });
   }
 
