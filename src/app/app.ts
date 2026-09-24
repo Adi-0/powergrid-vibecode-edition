@@ -26,6 +26,9 @@ import { SpanLevel, spanGeom } from '../levels/span';
 import { CapBankLevel } from '../levels/capacitor';
 import { CanLevel } from '../levels/can';
 import { RegulatorLevel } from '../levels/regulator';
+import { InverterLevel } from '../levels/inverter';
+import { invState } from '../model/invState';
+import { invPartView, invView } from './inspect-inv';
 import { regState } from '../model/regState';
 import { regPartView, regView } from './inspect-reg';
 import { capBankState, type CapBefore } from '../model/capState';
@@ -59,7 +62,7 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel } from '../math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel, invPanel } from '../math/panels';
 import { breakerLevelView, breakerPartView, canPartView, canView, capBankPartView, capBankView, poletopLevelView, poletopPartView, spanView, transformerLevelView, transformerPartView } from './inspect-parts';
 import type { Wind } from '../model/spanState';
 import { EVERGREEN } from '../data/dist/evergreen';
@@ -84,7 +87,7 @@ interface Portal {
 }
 
 /** Named places in the tree, for the guided route and the harness. */
-export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span' | 'capacitor' | 'capunit' | 'regulator';
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span' | 'capacitor' | 'capunit' | 'regulator' | 'inverter';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -1335,6 +1338,15 @@ export class App {
       for (const t of this.feederModel().layout.transformers)
         ps.push({ key: `service:${t.id}`, anchor: l.transformerAt(t.id), ratio: 1, sel: { kind: 'dist', what: 'transformer', id: t.id }, make: () => new ServiceLevel(this.feederModel(), t.id) });
     } else if (l instanceof ServiceLevel) {
+      // each home's solar inverter opens where it hangs on the wall
+      for (const inv of l.inverters)
+        ps.push({
+          key: `inv:${inv.homeId}`,
+          anchor: InverterLevel.anchorIn(inv.e, inv.n, inv.streetE),
+          ratio: 1,
+          sel: { kind: 'dist', what: 'home', id: inv.homeId },
+          make: () => new InverterLevel(inv.homeId, inv.e, inv.n, inv.streetE, (s) => invState(s, this.feederModel(), inv.homeId)),
+        });
       // the pole-top transformer opens where it hangs
       const id = l.transformerId;
       const tr = this.feederModel().layout.transformers.find((x) => x.id === id)!;
@@ -1992,6 +2004,11 @@ export class App {
         return ['site:EVERGREEN', `service:${outletT}`, `pt:${outletT}`];
       case 'regulator':
         return ['site:EVERGREEN', 'reg:REG-1'];
+      case 'inverter': {
+        const L = this.feederModel().layout;
+        const h = L.homes.find((x) => x.pvKW > 0 && x.id !== L.outlet.home)!;
+        return ['site:EVERGREEN', `service:${h.transformer}`, `inv:${h.id}`];
+      }
       case 'capacitor':
       case 'capunit': {
         const k = this.grid.shunts.findIndex((x) => x.stepMVAr > 0 && x.bus.site.id === 'TESLA');
@@ -2308,6 +2325,10 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    if (top instanceof InverterLevel) {
+      if (sel?.kind === 'part') return show('Selected part', invPartView(top.name, top.state, sel.what));
+      return show('Solar inverter', invView(top.name, top.state));
+    }
     if (top instanceof RegulatorLevel) {
       const st = top.state;
       const vset = st?.control.vset ?? 0;
@@ -2450,7 +2471,8 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof RegulatorLevel) out.push(regPanel(top.state, 0));
+    if (top instanceof InverterLevel) out.push(invPanel(top.state));
+    else if (top instanceof RegulatorLevel) out.push(regPanel(top.state, 0));
     else if (top instanceof CapBankLevel) out.push(capBankPanel(top.state, top.key));
     else if (top instanceof CanLevel) out.push(canPanel(top.state, top.key, top.bankKey));
     else if (top instanceof SpanLevel) {
@@ -2612,7 +2634,7 @@ export class App {
       this.breakerTickAt = performance.now();
       this.inspect();
     }
-    if (this.top instanceof CapBankLevel || this.top instanceof CanLevel) this.moveCapCursor(this.top.tau);
+    if (this.top instanceof CapBankLevel || this.top instanceof CanLevel || this.top instanceof InverterLevel) this.moveCapCursor(this.top.tau);
     this.cam.update();
     if (!this.lens) {
       // what unfolds, whether the sheet changes hands, and where every drawn level sits

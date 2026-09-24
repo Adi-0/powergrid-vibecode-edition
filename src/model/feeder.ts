@@ -1,7 +1,7 @@
 import { Complex } from '../physics/complex';
 import { balancedSource, type DLoad, type DistNetwork } from '../physics/dist/network';
 import { solveSweep, type SweepResult } from '../physics/dist/sweep';
-import { clearSky, planeOfArray, pvOutput, sunPosition, PV_DEFAULTS } from '../physics/solar';
+import { clearSky, planeOfArray, pvOutput, sunPosition, PV_DEFAULTS, type PVOutput } from '../physics/solar';
 import { DAY, GROCERY_KW, LOAD_SHAPE, RESIDENTIAL_KW, airTemperature, hourly } from '../data/ca/profiles';
 import { buildEvergreen, EVERGREEN, type FeederLayout } from '../data/dist/evergreen';
 
@@ -22,13 +22,21 @@ export function makeFeeder(): Feeder {
   return { base: net, layout };
 }
 
+/** A home's rooftop array here: tilted 20°, clear sky; DC and AC output as fractions of its inverter's AC rating. */
+export const HOME_PV = { ...PV_DEFAULTS, dcacRatio: 1.15, dcLosses: 0.1, tiltDeg: 20 };
+
+/** Rooftop solar at Evergreen at this hour: sun on the panels (W/m²), cell temperature, DC and AC output per unit of AC rating. */
+export function homePV(hour: number): PVOutput {
+  const sun = sunPosition(EVERGREEN_SITE.lat, EVERGREEN_SITE.lon, DAY.doy, hour, DAY.tzHours);
+  const poa = planeOfArray(sun, clearSky(sun.zenith), 'fixed', HOME_PV.tiltDeg).poa;
+  return pvOutput(poa, airTemperature('bay', hour), HOME_PV);
+}
+
 /** Everything plugged in at this hour: homes, rooftop solar, the grocery, the other feeders. */
 export function feederLoads(f: Feeder, hour: number): DLoad[] {
   const loads: DLoad[] = [];
   const avg = hourly(RESIDENTIAL_KW, hour);
-  const sun = sunPosition(EVERGREEN_SITE.lat, EVERGREEN_SITE.lon, DAY.doy, hour, DAY.tzHours);
-  const poa = planeOfArray(sun, clearSky(sun.zenith), 'fixed', 20).poa;
-  const pvFrac = pvOutput(poa, airTemperature('bay', hour), { ...PV_DEFAULTS, dcacRatio: 1.15, dcLosses: 0.1 }).pac;
+  const pvFrac = homePV(hour).pac;
   for (const h of f.layout.homes) {
     const p = avg * h.scale;
     const base = Math.min(p, 0.6 * h.scale);

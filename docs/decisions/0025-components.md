@@ -281,6 +281,44 @@ the inside of a piece of equipment, working, driven by the solved state.
   - *Honesty:* a "regulator" section covers the ideal ratio (a real Type B regulator's is
     1/(1 − 0.00625·tap), within about one percent), the control acting without its time
     delay, and the schematic construction.
+- *An Inverter level for every home with rooftop solar.* The home drawing (shared by
+  the Feeder and Service levels) now carries each solar home's inverter on its south
+  wall, the wall the camera sees. The DC conduit comes down from the array, and the AC
+  cable runs along the wall to the meter. Zooming in opens the box face-on, in the order
+  the power passes:
+  - DC terminals and disconnect;
+  - the DC link capacitors;
+  - the H-bridge's four switches on two legs;
+  - the filter inductors, the output relay and the control board.
+
+  What moves is the solved state, slowed:
+  - the switches conduct in pairs, opposite corners, by bipolar pulse-width modulation
+    against the line's voltage (drawn with nine pulses a cycle, a display choice);
+  - the panels' power comes down the conduit as steady chevrons;
+  - the power out along the cable pulses from nothing to twice its average, twice a
+    cycle (unity power factor), which is what the DC link buffers.
+
+  The inspector's chart draws one cycle of the pulses, the line voltage and the
+  current, with a cursor that follows the drawing. Its text ties the home to the state:
+  the home's own use, the meter's net, and California's rooftop total in the interval
+  (the duck's belly on the time strip).
+  - *The working (`invPanel`)*:
+    - P_dc = P_ac/η;
+    - the loss;
+    - I_dc = P_dc/V_dc;
+    - |I| = P_ac/|V_12|;
+    - V_peak = √2|V_12|;
+    - m = V_peak/V_dc;
+    - the pulsing power's peak, 2|V||I|.
+
+    Every solar home is in the arithmetic test at both intervals. `test/inverter.test.ts`
+    checks four things. The output is the array model's (one function, `homePV`, now
+    feeds both the feeder loads and the inverter). The current is in step with the
+    voltage, so the power pulses between nothing and twice its average. The pulses
+    average to the sine over each carrier period. Night output is zero.
+  - *Honesty:* an "inverter" section covers the single-stage bridge drawn slowly, the
+    fixed DC voltage and efficiency, and the unity-power-factor sine with none of IEEE
+    1547's grid-support functions.
 - *A correction found on the way: shunt reactors were drawn as capacitor banks.* Every
   500 kV bus's switched reactors carried the yard's capacitor rack and its label. They
   are now three single-phase oil-filled units per step, labelled as reactors, switched

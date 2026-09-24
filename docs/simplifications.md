@@ -89,6 +89,12 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** The control acts at once on each interval's solution, stepping taps until each phase's compensated voltage is inside the band; there is no time delay, and it never hunts. **Full treatment:** The control's time delay (typically tens of seconds), each tap change's own duration, and how the regulator, the substation's tap changer and the capacitor bank take turns.
 - **Simplified:** The construction is schematic: a shell-form core, the series winding drawn with a tenth of the shunt winding's turns in eight tapped sections, the tap changer's contacts laid out face-on behind the cut. **Full treatment:** The manufacturer's design, in which the tap changer usually sits in its own compartment under the cover, driven by a motor.
 
+## inverter — Inside a solar inverter
+
+- **Simplified:** The inverter is drawn as one H-bridge switching by bipolar pulse-width modulation, nine pulses a cycle as drawn and slowed 120 times; a real one switches tens of thousands of times a second, usually with a DC–DC stage ahead of the bridge that tracks the panels' best operating point, and smoother modulation. **Full treatment:** The inverter's own topology and controls.
+- **Simplified:** The DC link's voltage is a fixed typical value; the panels' power comes from a clear-sky array model at the station, and the inverter's efficiency is constant. **Full treatment:** Measured sun on the array, the tracker's operating voltage, and efficiency that changes with load.
+- **Simplified:** The output is a pure sine at unity power factor: no reactive power, no harmonics, and none of the grid-support responses (volt-var, frequency-watt) that IEEE 1547 now asks of new inverters. **Full treatment:** The IEEE 1547-2018 functions and their settings, and the inverter's harmonic spectrum.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

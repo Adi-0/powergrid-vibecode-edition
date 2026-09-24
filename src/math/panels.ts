@@ -18,6 +18,7 @@ import { HALF_V, PRIMARY_LN_V, type PoleTopState } from '../model/poletopState';
 import type { SpanState } from '../model/spanState';
 import type { CapBankState } from '../model/capState';
 import type { RegState } from '../model/regState';
+import { INVERTER_EFF, type InvState } from '../model/invState';
 import { COMPONENTS } from '../data/components';
 
 /**
@@ -1247,6 +1248,34 @@ export function regPanel(st: RegState | null, p = 0): Panel | null {
   return {
     title: `The regulator, phase ${'abc'[p]}`,
     intro: 'RMS phasors, line-to-neutral, in rectangular form. The model’s regulator is ideal: its output is its input times the ratio, and its current the other way, so power passes through unchanged. Line-drop compensation as in Kersting.',
+    steps,
+  };
+}
+
+/**
+ * A home's solar inverter: the power from the panels (the AC out over the efficiency),
+ * the loss, the currents on each side, how deep the modulation must run, and the peak
+ * of the pulsing power out — twice its average, what the DC link must buffer.
+ */
+export function invPanel(st: InvState | null): Panel | null {
+  if (!st || st.pAC <= 1) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.inv:${st.homeId}.${x}`;
+  const pac = num(st.pAC, 2, 'W', st.prov.pAC, 'P_{ac}');
+  const vdc = num(st.vdc, 0, 'V', 'data:components.inverter.vdc', 'V_{dc}');
+  const v12 = num(st.v12, 3, 'V', st.prov.V, '|V_{12}|');
+  const steps: Step[] = [
+    { label: 'Power taken from the panels: what comes out, over the inverter’s efficiency', general: 'P_{dc} = P_{ac} / η', sym: 'P_{dc}', expr: div(pac, num(INVERTER_EFF, 2, '', 'data:solar.PV_DEFAULTS.inverterEff', 'η')), unit: 'W', digits: 1, prov: k('pDC'), solver: st.pDC },
+    { label: 'Lost as heat in the switches, coils and control', general: 'P_{loss} = P_{dc} − P_{ac}', sym: 'P_{loss}', expr: sub(ref(0), pac), unit: 'W', digits: 1, prov: k('loss'), solver: st.loss },
+    { label: 'The panels’ current into the DC link', general: 'I_{dc} = P_{dc} / V_{dc}', sym: 'I_{dc}', expr: div(ref(0), vdc), unit: 'A', digits: 3, prov: k('idc'), solver: st.idc },
+    { label: 'The current out (RMS), in phase with the voltage (unity power factor)', general: '|I| = P_{ac} / |V_{12}|', sym: '|I|', expr: div(pac, v12), unit: 'A', digits: 4, prov: k('iac'), solver: st.iac },
+    { label: 'The peak of the line’s voltage, leg to leg', general: 'V_{peak} = √2 |V_{12}|', sym: 'V_{peak}', expr: mul(sqrt(num(2, 0, '', 'data:notation.two')), v12), unit: 'V', digits: 2, prov: k('vpk'), solver: Math.SQRT2 * st.v12 },
+    { label: 'How deep the modulation must run: below one, or the DC is not enough', general: 'm = V_{peak} / V_{dc}', sym: 'm', expr: div(ref(4), vdc), unit: '', digits: 4, prov: k('m'), solver: st.m },
+    { label: 'The power out pulses twice a cycle, $p = |V||I|(1 + cos 2ωt)$: its peak is twice its average', general: 'p_{max} = 2 |V_{12}| |I|', sym: 'p_{max}', expr: mul(mul(num(2, 0, '', 'data:notation.two'), v12), ref(3)), unit: 'W', digits: 1, prov: k('pmax'), solver: 2 * st.pAC },
+  ];
+  return {
+    title: 'The inverter',
+    intro: 'Generator convention: power out of the inverter is positive. RMS values; the voltage is the service’s leg to leg, at the meter.',
     steps,
   };
 }

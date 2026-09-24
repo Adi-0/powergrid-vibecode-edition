@@ -159,6 +159,7 @@ export class ServiceLevel implements Level {
       const seg = sk.seg(a, b, { width: lv.weight, color: INK, dash: lv.dash });
       this.flows.push({ k: bidx.get(drop.id)!, flow: sk.flowSeg(a, b), seg, sign: 1 });
       if (home) sk.target({ kind: 'dist', what: 'home', id: h.id }, home.corners, true);
+      if (home?.inverter) this.inverters.push({ homeId: h.id, e, n, streetE, ...home.inverter });
       else {
         this.cutaway(e, n, b, h.id);
         (this as { outletAt: Vec3 | null }).outletAt = enIso(e + HOUSE.se / 2 - 0.02, 0.35, n + 1.5);
@@ -233,8 +234,17 @@ export class ServiceLevel implements Level {
   private canGlyphs: [number, number] = [0, 0];
   /** Where the secondary's three wires meet the triplex. */
   secondaryAt: Vec3 = [0, 0, 0];
+  /** Each home's solar inverter as drawn (each opens into a level of its own). */
+  readonly inverters: Array<{ homeId: string; e: number; n: number; streetE: number; lines: [number, number]; faces: [number, number]; at: Vec3 }> = [];
 
   yieldTo(key: string, m: number): void {
+    const inv = this.inverters.find((x) => key === `inv:${x.homeId}`);
+    if (inv) {
+      // the inverter's own level draws it, opened, with its conduit and cable
+      for (let i = inv.lines[0]; i < inv.lines[0] + inv.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      this.sk.faces.setHidden(inv.faces[0], inv.faces[1], m > 0, 0);
+      return;
+    }
     if (key !== `pt:${this.transformerId}`) return;
     const hide = m > 0;
     const d = this.canDraw;

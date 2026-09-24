@@ -11,7 +11,27 @@ import type { Sketch } from './sketch';
  */
 export const HOME = { se: 10, sn: 8, wall: 3, ridge: 5.2, eave: 3.2 };
 
-export function drawHome(sk: Sketch, e: number, n: number, pv: boolean, streetE: number): { corners: Vec3[]; meter: Vec3; drop: Vec3 } {
+/**
+ * A home's solar inverter, on the south wall near the street-side corner (the wall the
+ * sheet's camera sees): the box, the DC conduit down from the array, and the AC cable
+ * along the wall to the meter. Plan (east, height, north), metres.
+ */
+export function inverterGeom(e: number, n: number, streetE: number) {
+  const { se, sn, wall, ridge } = HOME;
+  const x0 = e - se / 2;
+  const y0 = n - sn / 2;
+  const sx = streetE < e ? x0 : e + se / 2;
+  const ei = e + (streetE < e ? -1 : 1) * (se / 2 - 1.3);
+  const box = { e: ei, h: 1.2, n: y0 - 0.1, se: 0.5, sh: 0.7, sn: 0.2 };
+  // the array's south-west corner on the roof, over the eave, along under it, down to the box
+  const ua = 0.2;
+  const roof: [number, number, number] = [x0 + (e - x0) * ua, wall + (ridge - wall) * ua + 0.05, y0 + 1];
+  const dc: Array<[number, number, number]> = [roof, [roof[0], wall - 0.1, y0 - 0.05], [ei - 0.15, wall - 0.1, y0 - 0.05], [ei - 0.15, box.h + box.sh, box.n]];
+  const ac: Array<[number, number, number]> = [[ei + 0.15, box.h, box.n], [ei + 0.15, 0.8, y0 - 0.05], [sx, 0.8, y0 - 0.05], [sx, 0.8, n + 3.2], [sx, 1.3, n + 3.2]];
+  return { box, dc, ac };
+}
+
+export function drawHome(sk: Sketch, e: number, n: number, pv: boolean, streetE: number): { corners: Vec3[]; meter: Vec3; drop: Vec3; inverter?: { lines: [number, number]; faces: [number, number]; at: Vec3 } } {
   const { se, sn, wall, ridge } = HOME;
   const x0 = e - se / 2;
   const x1 = e + se / 2;
@@ -58,5 +78,16 @@ export function drawHome(sk: Sketch, e: number, n: number, pv: boolean, streetE:
     sk.poly(q, { width: PEN.thin, color: INK }, true);
     for (let i = 1; i < 4; i++) sk.seg(t(0.2, i / 4), t(0.85, i / 4), { width: PEN.hairline, color: INK_60 });
   }
-  return { corners: [P(x0, 0, y0), P(x1, 0, y1), P(x0, ridge, y1), P(x1, ridge, y0)], meter, drop };
+  let inverter: { lines: [number, number]; faces: [number, number]; at: Vec3 } | undefined;
+  if (pv) {
+    // its inverter on the wall: DC down from the array, AC along to the meter
+    const g = inverterGeom(e, n, streetE);
+    const l0 = sk.lines.count;
+    const f0 = sk.faces.vertexCount;
+    sk.box(g.box.e, g.box.h, g.box.n, g.box.se, g.box.sh, g.box.sn, style);
+    sk.poly(g.dc.map((q) => P(...q)), hair);
+    sk.poly(g.ac.map((q) => P(...q)), hair);
+    inverter = { lines: [l0, sk.lines.count - l0], faces: [f0, sk.faces.vertexCount - f0], at: P(g.box.e, g.box.h + g.box.sh / 2, g.box.n) };
+  }
+  return { corners: [P(x0, 0, y0), P(x1, 0, y1), P(x0, ridge, y1), P(x1, ridge, y0)], meter, drop, ...(inverter ? { inverter } : {}) };
 }

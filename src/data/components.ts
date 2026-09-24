@@ -62,5 +62,13 @@ export const COMPONENTS = {
    * the peak of its rated voltage to 50 V or less within 5 minutes of being switched off.
    */
   discharge: { v: 50, s: 300, src: 'ieee18' as SourceId },
+  /**
+   * A home's solar inverter (a typical transformerless string inverter, estimates): the
+   * DC link's voltage, V, which must stay above the peak of the 240 V line-to-line
+   * voltage it makes; and the switching as drawn — carrier periods per 60 Hz cycle. A
+   * real one switches some hundreds of times a cycle; drawn at this rate, the pulses can
+   * be followed by eye.
+   */
+  inverter: { vdc: 400, drawnCarrier: 9 },
   src: 'estimate' as SourceId,
 };

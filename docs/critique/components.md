@@ -3,7 +3,7 @@
 Screenshots: `xfmr`, `xfmr-unfold`, `xfmr-math`, `xfmr-part`, `bank`, `bank-math`,
 `cb-unfold`, `cb`, `cb-opening`, `cb-math`, `cb60`, `poletop`, `poletop-math`,
 `span-unfold`, `span`, `span-math`, `cap-unfold`, `cap`, `cap-math`, `can-unfold`, `can`,
-`can-math`, `reg-unfold`, `reg`, `reg-math`. Checked against the visual
+`can-math`, `reg-unfold`, `reg`, `reg-math`, `inv-unfold`, `inv`, `inv-math`. Checked against the visual
 direction in CLAUDE.md, and against the author's ask: see how a thing works, visually,
 without a wall of words.
 
@@ -33,6 +33,8 @@ without a wall of words.
 | 22 | The regulator's title failed the provenance probe. | "REG-1" is a figure from the data, shown as plain text. | The name carries its data key. |
 | 23 | The transformer's currents were only told, not shown (a standing weakness since the level was built). | No mark for a winding's current in the section. | ⊙/⊗ marks on each main winding, both sides of each limb, alternating with the limb's current (a quarter cycle ahead of the flux, less the power-factor angle); high and low sides always opposite. |
 | 24 | The new current marks did not appear at all. | Their line batch's opacity was copied from the flux batch's, but opacity is a setter only: the copy was undefined. | Both set from the same computed value. |
+| 25 | The inverter's inside was a small grey cluster at its fit. | The fit took in the box with a metre of wall around it for the conduit and cable. | The fit is taken on the box; the conduit and cable run on off the sheet, their chevrons still readable. |
+| 26 | The chart's current trace was missing. | At unity power factor the current, scaled to the voltage's height, lay exactly on the voltage curve. | The current is drawn at a smaller height, labelled not to scale: in step, and visibly so. |
 
 ## Still wrong or weak
 

@@ -7,9 +7,10 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel, invPanel } from '../src/math/panels';
 import { capBankState } from '../src/model/capState';
 import { regState } from '../src/model/regState';
+import { invState } from '../src/model/invState';
 import { spanState } from '../src/model/spanState';
 import { poletopState } from '../src/model/poletopState';
 import { breakerState } from '../src/model/breakerState';
@@ -176,6 +177,12 @@ describe('math panels', () => {
       const rs = regState(s, fd, null);
       expect(rs).not.toBeNull();
       for (const p of [0, 1, 2]) check(regPanel(rs, p)!, `regulator phase ${p}`);
+      // every home's solar inverter (by day)
+      for (const h of fd.layout.homes) {
+        if (h.pvKW <= 0) continue;
+        const ip = invPanel(invState(s, fd, h.id));
+        if (ip) check(ip, `inverter ${h.id}`);
+      }
     });
 
     it(`every transmission transformer, opened up, at interval ${t}`, () => {

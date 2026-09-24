@@ -1006,6 +1006,63 @@ export default [
     probe: both(provenance, mathShown, mathArithmetic),
   },
   {
+    name: 'inv-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.setTime(50));
+      await page.evaluate(() => window.__app.navigate(['inverter']));
+      await page.waitForFunction(() => window.__app.level === 'inverter' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => window.__app.closeTo(2));
+      await page.waitForFunction(() => window.__app.level === 'service' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        const keys = a.keysFor('inverter');
+        a.holdBand(keys[keys.length - 1], 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'inv',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.setTime(50));
+      await page.evaluate(() => window.__app.navigate(['inverter']));
+      await page.waitForFunction(() => window.__app.level === 'inverter' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'inv-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.setTime(50));
+      await page.evaluate(() => window.__app.navigate(['inverter']));
+      await page.waitForFunction(() => window.__app.level === 'inverter' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

@@ -235,6 +235,14 @@ function regulatorRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
 }
 
+/** The Inverter level: a solar inverter opened. */
+function inverterRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(20, [{ pts: [[22, 3], [32, 3], [32, 17], [22, 17], [22, 3]], w: 0.8 }, { pts: [[27, 4], [27, 16]], w: 3 }]), 'A switch conducting: the bar across it. Two at a time, opposite corners of the bridge'));
+  const t = document.createElement('span');
+  t.append(rich('The switching, shown '), el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })), document.createTextNode(' times slower, with far fewer pulses than a real inverter makes'));
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 14], [8, 14], [8, 4], [14, 4], [14, 14], [17, 14], [17, 4], [27, 4], [27, 14], [30, 14], [30, 4], [36, 4], [36, 14], [40, 14], [40, 4], [44, 4], [44, 14], [50, 14]], w: 0.8 }]), t));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -380,6 +388,8 @@ export class Legend {
       capunitRows(g2);
     } else if (s.level === 'regulator') {
       regulatorRows(g2);
+    } else if (s.level === 'inverter') {
+      inverterRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -412,6 +422,8 @@ export class Legend {
               ? `Chevrons: [[real-power|real power]] through the pole cut open, one phase of the three; size and speed ∝ ${fs.unit} (`
               : s.level === 'poletop'
                 ? `Chevrons: [[real-power|real power]] out along each leg to the homes; size and speed ∝ ${fs.unit} (`
+              : s.level === 'inverter'
+                ? `Chevrons: power, steady down from the panels, pulsing out to the meter twice a cycle; size and speed ∝ ${fs.unit} (`
               : s.level === 'regulator'
                 ? `Chevrons: [[real-power|real power]] down to each phase’s regulator and back up to the line; size and speed ∝ ${fs.unit} (`
               : s.level === 'capacitor' || s.level === 'capunit'

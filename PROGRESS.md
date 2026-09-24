@@ -226,3 +226,8 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - "Raise / Lower the set point" re-solves the feeder with the new set point (`regVset`).
     - The math panel per phase: the ratio, |V_L| = a|V_S|, the PT voltage, the compensator's drop, |V_relay| and its distance from the set point. It is in the arithmetic test; `test/regulator.test.ts` checks the band, the ratio, and the set point's effect.
   - **Transformer currents shown:** ⊙/⊗ marks on each winding's section, alternating with each limb's solved current, the high and low sides always opposite.
+  - **An Inverter level for every home with rooftop solar** (drawn on the south wall of every solar home, from the Feeder level down).
+    - Opened face-on: the DC disconnect, DC link capacitors, the H-bridge's four switches, filter inductors, output relay and control board.
+    - The switches conduct in pairs by PWM against the line voltage (drawn slowly, nine pulses a cycle). The panels' power comes down the conduit steadily; the power out pulses twice a cycle, which the DC link buffers.
+    - The inspector gives the sun on the panels, DC and AC power, the currents, the modulation index, and a one-cycle chart of pulses, voltage and current. It ties the home to the meter and to California's rooftop total.
+    - The math panel covers P_dc, loss, I_dc, |I|, V_peak, m and the pulsing power's peak; every solar home is in the arithmetic test; `test/inverter.test.ts` covers the physics. `homePV` is now the one source of rooftop output.
