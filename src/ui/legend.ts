@@ -105,18 +105,25 @@ function drawSample(h: number, parts: Array<{ pts: Array<[number, number]>; w: n
 
 /** The Substation level: equipment drawn to scale. */
 function substationRows(g: HTMLElement): void {
-  g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), 'Equipment drawn to scale: breakers, the [[transformer|bank]], switchgear, buildings'));
-  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 4 }]), '[[bus|Bus]]: rigid conductor on post insulators'));
-  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.3, dash: '5 3' }]), 'Underground cable'));
+  yardRows(g);
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.3, dash: '5 3' }]), 'Underground cable, from the switchgear out under the fence'));
+}
+
+/** Equipment drawn in a yard (Site and Substation levels), each as a small drawing. */
+function yardRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 3], [30, 3], [50, 9]], w: 1 }, { pts: [[4, 9], [50, 9]], w: 1 }, { pts: [[4, 15], [30, 15], [50, 9]], w: 1 }]), 'Inside a yard, one conductor per phase — [[three-phase|three per circuit]]. On the map one stroke stands for all three.'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 4], [50, 4]], w: 1.8 }, { pts: [[4, 10], [50, 10]], w: 1.8 }]), '[[bus|Bus]]: rigid tubes on post insulators'));
+  g.appendChild(row(drawSample(20, [{ pts: [[12, 19], [12, 6]], w: 0.8 }, { pts: [[42, 19], [42, 6]], w: 0.8 }, { pts: [[12, 6], [42, 6]], w: 1.4 }, { pts: [[9, 11], [15, 11]], w: 0.6 }, { pts: [[39, 11], [45, 11]], w: 0.6 }]), '[[disconnect|Disconnect switch]]: a blade between two [[insulator|insulators]], opened to isolate equipment'));
+  g.appendChild(row(drawSample(20, [{ pts: [[14, 13], [40, 13], [40, 19], [14, 19], [14, 13]], w: 1.2 }, { pts: [[17, 13], [10, 3]], w: 0.8 }, { pts: [[37, 13], [44, 3]], w: 0.8 }]), '[[breaker|Circuit breaker]]: a tank that interrupts current, its [[bushing|bushings]] rising to the conductors'));
+  g.appendChild(row(drawSample(22, [{ pts: [[8, 21], [8, 3], [26, 3], [26, 21]], w: 1.2 }, { pts: [[40, 21], [45, 2], [50, 21]], w: 0.8 }, { pts: [[38, 5], [52, 5]], w: 0.8 }]), '[[gantry|Gantry]] where a line ends in the yard; outside, the tower that carries it away'));
+  g.appendChild(row(drawSample(22, [{ pts: [[14, 20], [40, 20], [40, 8], [14, 8], [14, 20]], w: 1.2 }, { pts: [[18, 8], [18, 2]], w: 0.8 }, { pts: [[27, 8], [27, 2]], w: 0.8 }, { pts: [[36, 8], [36, 4]], w: 0.8 }, { pts: [[42, 10], [42, 18]], w: 0.6 }, { pts: [[45, 10], [45, 18]], w: 0.6 }]), '[[transformer|Transformer]]: tank, cooling radiators, high-voltage bushings on one side and low on the other'));
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
 }
 
 /** The Site level: a station's yard, drawn from the network data. */
 function siteRows(g: HTMLElement): void {
-  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 4 }]), 'One [[bus]] per voltage, on post insulators'));
-  g.appendChild(row(drawSample(22, [{ pts: [[8, 21], [8, 3], [24, 3], [24, 21]], w: 1.4 }, { pts: [[40, 21], [44, 2], [48, 21]], w: 1 }, { pts: [[38, 5], [50, 5]], w: 1 }]), 'A circuit’s bay: breaker, disconnect, gantry; outside the fence, its first tower'));
-  g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), '[[transformer|Transformer]] banks between the buses; generators and demand in their own bays'));
-  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
+  yardRows(g);
+  g.appendChild(row(drawSample(18, [{ pts: [[10, 17], [24, 17], [24, 7], [10, 7], [10, 17]], w: 1 }, { pts: [[34, 17], [34, 2]], w: 1 }, { pts: [[42, 17], [42, 2]], w: 1 }]), 'A plant beside its bay, by kind: turbine hall and stack, powerhouse, turbines, panels, batteries'));
 }
 
 /** The Plant level: machinery to scale, pipes, the shaft, the enclosed bus. */

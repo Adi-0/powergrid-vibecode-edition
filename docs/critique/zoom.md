@@ -35,3 +35,18 @@ The level views now reach their places through the zoom tree:
 - **The 60 kV circuits from Metcalf to Evergreen look busy.** On the System sheet near Evergreen, their chevrons and dash-dot pattern together make a busy stroke.
 - **Neighbouring children lose their details at the hand-off.** When the sheet goes to one of several children unfolding side by side (services on a lateral, the three generators), the others recede with the parent as they unfold, but their own details (cans, secondaries, cut-aways) still go at once.
 - **The GPU frame rate while six children unfold was not measured.** The software rasteriser cannot; the main-thread cost is measured on the System sheet only.
+
+## Second round — detail where one zooms in (decision 0024)
+
+| # | What the screenshot showed | Cause | Fix |
+|---|---|---|---|
+| 14 | At The Geysers, conductors jumped from the bus to a breaker box and up to a gantry, past disconnect posts they never touched. | Equipment and conductors drawn independently. | An equipment kit whose parts have terminals; each phase is wired terminal to terminal: bus tube → disconnect → breaker bushings → disconnect → gantry string. |
+| 15 | The load's lines started at a box and ended in the air. | Stubs drawn to a fixed point. | A step-down bank, then the circuits out on wood H-frames at 60 kV, two spans and off the sheet. |
+| 16 | At Helms, the penstocks ran back through the yard and the powerhouse stood alone far off. | The block ignored which side of the bus it was on; its lead ran to an edge point. | Plants face the yard. A span runs from the bay's gantry to the step-up transformer at the plant's edge, and an enclosed bus runs from there into the plant. Penstocks climb away from the yard. |
+| 17 | Long spans crossed the whole yard. | The corridor tower stood toward the far exit. | Towers stand straight out from their gantries, past the fence. What still reads as crossing is a line at tower height running alongside the yard, as real lines approach a station. |
+| 18 | Insulator sheds made ladders all over the yard. | Too many sheds, in full ink. | At most four per insulator, in 60 % ink. |
+| 19 | Homes were plain boxes. | — | A home drawn once for both levels: pitched roof, door to the street, windows, the meter under the drop, panels on the roof slope. The pole-top can is round. |
+
+Still weak:
+- A big station at its fitted zoom is intricate: every bay is three phases of real equipment. It reads when zoomed in; fitted, it reads as texture.
+- Every station is drawn with the same bay arrangement (single bus). Real ones differ: breaker-and-a-half, ring bus, double bus.

@@ -175,3 +175,9 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
   - **Double-click, Enter, "Zoom inside", Esc and the breadcrumbs** fly the same zoom.
   - **The Region's layers are now a lens** opened from a place's inspector.
   - **Tour and harness:** the tour has a stop for "every node is a place"; the harness has views held part-way through each unfold.
+- **Detail where one zooms in** (the author's second review: lines that did not connect; more substation detail). Decision 0024.
+  - **An equipment kit, with every conductor run terminal to terminal**, in three phases inside a yard: insulators, disconnects, dead-tank breakers, gantries, lattice towers, transformers.
+  - **Plants face their bays**, each reached over a span to its step-up transformer, and drawn by kind.
+  - **Evergreen's substation rebuilt with the kit.**
+  - **Homes shared by the feeder and service levels:** pitched roofs, doors, meters, rooftop panels.
+  - **The key shows each piece of equipment as a small drawing;** new glossary terms (disconnect, insulator, bushing, gantry).

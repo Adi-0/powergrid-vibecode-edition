@@ -160,6 +160,10 @@ export const TERMS: Term[] = [
   T('recloser', 'Recloser', 'A breaker on a feeder that opens on a fault and closes again automatically, clearing temporary faults.'),
   T('fuse', 'Fuse', 'A link that melts on overcurrent, isolating a lateral.'),
   T('breaker', 'Circuit breaker', 'A switch that can interrupt fault current, opened by protective relays.'),
+  T('disconnect', 'Disconnect switch', 'A switch that opens a visible gap to isolate equipment for work; it is opened only after a breaker has stopped the current.'),
+  T('insulator', 'Insulator', 'Porcelain or polymer that holds a live conductor off its support; the ribs (sheds) lengthen the path a leakage current would have to creep along.'),
+  T('bushing', 'Bushing', 'An insulated passage that carries a conductor through the grounded wall of a tank — a transformer\'s or a breaker\'s.'),
+  T('gantry', 'Gantry', 'The steel frame at a substation\'s edge where an overhead line ends and is held off the yard.'),
   T('outlet', 'Outlet', 'The wall socket: 120 V between the hot and neutral slots.'),
   // ---- models
   T('quasi-static', 'Quasi-static', 'A sequence of independent steady states, one per time interval; nothing between them is simulated.'),

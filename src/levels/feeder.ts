@@ -9,6 +9,7 @@ import { FLOW_MAX_PX, FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameIn
 import { NORTH_MAP, Sketch, enIso as en } from './sketch';
 import type { Grid } from '../model/grid';
 import { siteExits } from './exits';
+import { drawHome } from './home';
 
 /**
  * The Feeder level: the neighbourhood Evergreen serves, and feeder 1105 through it,
@@ -59,6 +60,8 @@ export class FeederLevel implements Level {
   /** Under the substation's centre: where this level sits on the System's Evergreen node. */
   readonly seat: Vec3 = en(SUB[0], 0, SUB[1]);
   private exitPts: Array<{ branch: number; at: Vec3; stagger: number }> = [];
+  /** The 60 kV gantry, towers and spans, drawn one-line: the Substation level's take their place. */
+  private inLines: [number, number] = [0, 0];
   /** The substation's stand-in (its own level draws the yard): strokes, faces, glyphs. */
   private standIn = { lines: [0, 0] as [number, number], faces: [0, 0] as [number, number], glyphs: [0, 0] as [number, number] };
   /** Each pole-top transformer's homes and symbol, hidden while its service is open. */
@@ -129,6 +132,8 @@ export class FeederLevel implements Level {
       [0, 25],
     ];
     sk.poly(sub.map(([e, n]) => en(e, 0, n)), { width: PEN.hairline, color: INK_60, dash: 'long' }, true);
+    // (the substation's own level draws these in three phases: this one-line stand-in gives way to it)
+    const inFirst = sk.lines.count;
     for (const x of evergreenIn(grid)) {
       const g = x.gantry.map((p) => en(p[0] + SUB[0], p[1], p[2] + SUB[1]));
       for (const [a, b] of x.frame) sk.seg(en(a[0] + SUB[0], a[1], a[2] + SUB[1]), en(b[0] + SUB[0], b[1], b[2] + SUB[1]), { width: PEN.medium, color: INK });
@@ -139,6 +144,7 @@ export class FeederLevel implements Level {
       sk.target({ kind: 'branch', index: x.branch }, [g[0]!, g[1]!, X]);
       this.exitPts.push({ branch: x.branch, at: X, stagger: 0 });
     }
+    this.inLines = [inFirst, sk.lines.count - inFirst];
     // feeder 1105's riser at the west fence, and its first span to the first pole
     for (const [a, b] of evergreenRiser()) sk.seg(en(a[0] + SUB[0], a[1], a[2] + SUB[1]), en(b[0] + SUB[0], b[1], b[2] + SUB[1]), { width: PEN.medium, color: INK });
     const riserTop = en(-40 + SUB[0], 9, EV_EXIT_N + SUB[1]);
@@ -163,7 +169,18 @@ export class FeederLevel implements Level {
       sk.stagger = stag(id);
       const up = parentOf.get(id);
       sk.anchor = up && L.pos.has(up) ? at(up, 0) : this.seat;
-      sk.seg(at(id, 0), at(id, POLE), { width: PEN.hairline, color: INK_60 });
+      sk.seg(at(id, 0), at(id, POLE + 0.6), { width: PEN.thin, color: INK_60 });
+      // the pole's head: a crossarm across the line for three phases, a bracket for one
+      const p = L.pos.get(id)!;
+      const q = up && L.pos.has(up) ? L.pos.get(up)! : { x: p.x - 1, z: p.z };
+      const dl = Math.hypot(p.x - q.x, p.z - q.z) || 1;
+      // across the line in plan (east, north): the layout is mirrored, so negate both
+      const ae = (p.z - q.z) / dl;
+      const an = -(p.x - q.x) / dl;
+      const [pe, pn] = EN(p);
+      const three = (net.nodes.get(id)?.phases.length ?? 1) === 3;
+      const half = three ? 1.3 : 0.45;
+      sk.seg(en(pe - ae * half, POLE - 0.2, pn - an * half), en(pe + ae * half, POLE - 0.2, pn + an * half), { width: PEN.thin, color: INK_60 });
     }
     net.branches.forEach((b, k) => {
       if (!primary(b.from) || !primary(b.to) || b.kind === 'centertap') return;
@@ -231,14 +248,10 @@ export class FeederLevel implements Level {
       const first = sk.lines.count;
       const f0 = sk.faces.vertexCount;
       sk.anchor = from ? at(from, SEC) : en(e, 0, n);
-      if (from) sk.seg(at(from, SEC), en(e, EAVE, n), { width: lv.weight, color: INK, dash: lv.dash });
-      const c = sk.box(e, 0, n, 10, HOME_H, 8, { width: PEN.fine, color: INK });
-      if (h.pvKW > 0) {
-        // a panel on the roof
-        const r = [en(e - 3.5, HOME_H + 0.02, n - 2.5), en(e + 3.5, HOME_H + 0.02, n - 2.5), en(e + 3.5, HOME_H + 0.02, n + 2.5), en(e - 3.5, HOME_H + 0.02, n + 2.5)];
-        sk.poly(r, { width: PEN.hairline, color: INK }, true);
-        sk.seg(r[0]!, r[2]!, { width: PEN.hairline, color: INK });
-      }
+      const streetE = from ? EN(L.pos.get(from)!)[0] : e;
+      const home = drawHome(sk, e, n, h.pvKW > 0, streetE);
+      const c = home.corners;
+      if (from) sk.seg(at(from, SEC), home.drop, { width: lv.weight, color: INK, dash: lv.dash });
       this.homeSegs.push({ id: h.id, first, count: sk.lines.count - first });
       const sd = this.serviceDraw.get(h.transformer);
       if (sd) {
@@ -410,6 +423,7 @@ export class FeederLevel implements Level {
     };
     if (key === 'substation') {
       lines(this.standIn.lines);
+      lines(this.inLines);
       glyphs(this.standIn.glyphs);
       sk.faces.setHidden(this.standIn.faces[0], this.standIn.faces[1], hide, 0);
       return;

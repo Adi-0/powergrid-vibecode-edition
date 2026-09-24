@@ -8,6 +8,7 @@ import type { Snapshot } from '../model/snapshot';
 import { ccgtDesign, plantState, type CcgtBalance, type CcgtDesign } from '../model/ccgt';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 import { NORTH_ISO, PERSIST, Sketch, enIso as en } from './sketch';
+import { transformer, vcyl } from './kit';
 
 /**
  * The Plant level: Moss Landing Unit 1, a 2-on-1 combined cycle, in metres.
@@ -40,6 +41,7 @@ const COND = { e: 2, n: 33, se: 14, sh: 5, sn: 6 };
  */
 export const UNIT1 = {
   plant: PLANT,
+  site: 'MOSS_LANDING',
   bus: 'MOSS_LANDING-230',
   busE: BUS.e,
   busSpan: [BUS.n0, BUS.n1] as [number, number],
@@ -59,19 +61,16 @@ export const UNIT1 = {
  * them never folding, the Site level folding with its yard). Returns each unit's
  * high-voltage bushing, where its lead to the bus starts (plan coordinates).
  */
-export function unit1Shell(sk: Sketch, _site = false): Record<string, [number, number, number]> {
-  const en = sk.plan;
-  const hv: Record<string, [number, number, number]> = {};
+export function unit1Shell(sk: Sketch): Record<string, Array<[number, number, number]>> {
+  const hv: Record<string, Array<[number, number, number]>> = {};
   for (const [u, n] of Object.entries(TRAIN_N)) {
-    sk.box(GSU_E, 0.4, n, 6, 5.5, 6);
-    sk.box(GSU_E, 0, n, 7.4, 0.4, 7.4);
-    sk.seg(en(GSU_E + 1.5, 5.9, n), en(GSU_E + 1.5, 8.5, n), { width: PEN.medium, color: INK });
-    hv[u] = [GSU_E + 1.5, 8.5, n];
+    // step-up transformer: high-voltage bushings toward the switchyard (east)
+    hv[u] = transformer(sk, GSU_E, n, 6, 5.1, 6, 1.6, 1).hv;
   }
   for (const u of ['GT1', 'GT2']) {
     const n = TRAIN_N[u]!;
     sk.box(HRSG.e, 0, n, HRSG.se, HRSG.sh, HRSG.sn);
-    sk.box(STACK.e, 0, n, STACK.s, STACK.h, STACK.s);
+    vcyl(sk, STACK.e, n, STACK.s / 2, STACK.h);
   }
   return hv;
 }

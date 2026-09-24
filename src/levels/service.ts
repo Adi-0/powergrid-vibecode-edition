@@ -8,6 +8,8 @@ import { nodeIndex, type Feeder } from '../model/feeder';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 import { NORTH_ISO, PERSIST, Sketch, enIso } from './sketch';
 import { ANSI_A } from './feeder';
+import { drawHome } from './home';
+import { insulator, vcyl } from './kit';
 
 /**
  * The Service level: one pole-top transformer and the homes it serves, in metres,
@@ -110,10 +112,13 @@ export class ServiceLevel implements Level {
     this.labels.push({ id: 'sv:primary', text: `Lateral ${lat.id}, phase ${'abc'[lat.phase]}`, anchor: up, priority: 5, minZoom: 0, kind: 'equip', prov: `data:evergreen.layout.laterals.${lat.id}` });
     // the can: a box standing on a bracket, and its drop from the primary
     sk.stagger = 0.08;
-    const can = sk.box(0.9, CAN - 0.8, 0, 0.8, 1.6, 0.8);
+    // the can: a round tank hung on the pole, its primary bushing on the lid
+    vcyl(sk, 0.9, 0, 0.42, CAN + 0.8, CAN - 0.8);
+    insulator(sk, [0.9, CAN + 0.8, 0], [0.9, CAN + 1.25, 0], 0.12);
+    const can: Vec3[] = [enIso(0.5, CAN - 0.8, -0.4), enIso(1.3, CAN + 0.8, 0.4)];
     const ctK = bidx.get(transformerId)!;
-    const tap = sk.seg(here, enIso(0.9, CAN + 0.8, 0), { width: PEN.thin, color: INK });
-    this.flows.push({ k: ctK, flow: sk.flowSeg(here, enIso(0.9, CAN + 0.8, 0)), seg: tap, sign: 1 });
+    const tap = sk.seg(here, enIso(0.9, CAN + 1.25, 0), { width: PEN.thin, color: INK });
+    this.flows.push({ k: ctK, flow: sk.flowSeg(here, enIso(0.9, CAN + 1.25, 0)), seg: tap, sign: 1 });
     sk.symbol(enIso(0.9, CAN, 0), transformerSymbol(3.5), PEN.thin, 16, 0);
     sk.target({ kind: 'dist', what: 'transformer', id: transformerId }, can, true);
     this.labels.push({ id: 'sv:can', text: `${tr.kva} kVA`, anchor: enIso(0.9, CAN + 1, 0), priority: 8, minZoom: 0, kind: 'equip', prov: `data:evergreen.layout.transformers.${transformerId}.kva` });
@@ -136,18 +141,14 @@ export class ServiceLevel implements Level {
       const drop = net.branches.find((b) => b.to === h.id)!;
       const outlet = h.id === L.outlet.home;
       const a = secAt(drop.from);
-      const b = enIso(e + (e > 0 ? -HOUSE.se / 2 : HOUSE.se / 2), EAVE, n);
+      const streetE = EN(L.pos.get(drop.from)!)[0];
+      // the home first (the Feeder level draws the same one here), then its drop to the eave over the meter
+      const home = outlet ? null : drawHome(sk, e, n, h.pvKW > 0, streetE);
+      const b = home ? home.drop : enIso(e + (e > 0 ? -HOUSE.se / 2 : HOUSE.se / 2), EAVE, n);
       const seg = sk.seg(a, b, { width: lv.weight, color: INK, dash: lv.dash });
       this.flows.push({ k: bidx.get(drop.id)!, flow: sk.flowSeg(a, b), seg, sign: 1 });
-      if (!outlet) {
-        const c = sk.box(e, 0, n, HOUSE.se, HOUSE.sh, HOUSE.sn, { width: PEN.fine, color: INK });
-        if (h.pvKW > 0) {
-          const r = [enIso(e - 3.5, HOUSE.sh + 0.02, n - 2.5), enIso(e + 3.5, HOUSE.sh + 0.02, n - 2.5), enIso(e + 3.5, HOUSE.sh + 0.02, n + 2.5), enIso(e - 3.5, HOUSE.sh + 0.02, n + 2.5)];
-          sk.poly(r, { width: PEN.thin, color: INK }, true);
-          for (let q = 1; q < 4; q++) sk.seg(enIso(e - 3.5 + (7 * q) / 4, HOUSE.sh + 0.02, n - 2.5), enIso(e - 3.5 + (7 * q) / 4, HOUSE.sh + 0.02, n + 2.5), { width: PEN.hairline, color: INK });
-        }
-        sk.target({ kind: 'dist', what: 'home', id: h.id }, c, true);
-      } else {
+      if (home) sk.target({ kind: 'dist', what: 'home', id: h.id }, home.corners, true);
+      else {
         this.cutaway(e, n, b, h.id);
         (this as { outletAt: Vec3 | null }).outletAt = enIso(e + HOUSE.se / 2 - 0.02, 0.35, n + 1.5);
       }

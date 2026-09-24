@@ -9,6 +9,7 @@ import { COUPLING_BUS } from '../model/coupling';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
 import { NORTH_ISO, PERSIST, Sketch, enIso as en } from './sketch';
 import { EV_EXIT_N, evergreenIn, evergreenRiser } from './feeder';
+import { breaker, disconnect, gantry, kvClass, post, tower, transformer, wire } from './kit';
 
 /**
  * The Substation level: the Evergreen 60/12 kV substation as a yard, in metres.
@@ -91,81 +92,83 @@ export class SubstationLevel implements Level {
     }
     // control building
     sk.stagger = 0;
-    sk.box(26, 0, 18, 9, 3.5, 5);
-    this.labels.push({ id: 'eq:ctrl', text: 'Control building', anchor: en(26, 3.5, 18), priority: 2, minZoom: 0, kind: 'equip' });
+    sk.box(29, 0, -20.5, 9, 3.5, 5);
+    this.labels.push({ id: 'eq:ctrl', text: 'Control building', anchor: en(29, 3.5, -20.5), priority: 2, minZoom: 0, kind: 'equip' });
 
-    // ---- 60 kV: gantry, the three circuits in (as the neighbourhood draws them), the bus
+    // ---- 60 kV, three phases: the circuits in over their towers to one gantry, each
+    // through a disconnect, a breaker and a second disconnect, down onto the bus
+    const k = kvClass(60);
+    const wp = Math.max(0.9, cls60.weight * 0.55);
     const lines60 = evergreenIn(g);
-    lines60.forEach((x) => {
-      sk.stagger = PERSIST;
-      for (const [a, b] of x.frame) sk.seg(en(...a), en(...b), { width: PEN.medium, color: INK });
-      const X = en(x.exit[0], x.exit[1], x.exit[2]);
-      const tower = en(...x.gantry[1]);
-      const top = en(...x.gantry[0]);
+    const ns = lines60.flatMap((x) => [-1, 0, 1].map((p) => x.gantry[0][2] + p * k.sp));
+    sk.stagger = 0.02;
+    const G = gantry(sk, 37, ns, 11, k);
+    const tubes = [BUS60.e - k.sp, BUS60.e, BUS60.e + k.sp];
+    lines60.forEach((x, ci) => {
       const n = x.gantry[0][2];
-      const segs = [
-        sk.seg(X, tower, { width: w60, color: INK, dash: cls60.dash, px: [x.sidePx[0], x.sidePx[1], 0, 0], collapsePx: [x.sidePx[0], x.sidePx[1], 0, 0] }),
-        sk.seg(tower, top, { width: w60, color: INK, dash: cls60.dash }),
-      ];
-      // inside the fence: a disconnect switch (two posts and a blade) and a dead-tank breaker
+      const pn = [-1, 0, 1].map((p) => n + p * k.sp);
+      // outside: the tower carrying the circuit away toward Metcalf, its conductors converging on the exit point
+      sk.stagger = 0;
+      const X = en(x.exit[0], x.exit[1], x.exit[2]);
+      const te = x.gantry[1][0];
+      const L = Math.hypot(x.exit[0] - te, x.exit[2] - n) || 1;
+      const att = tower(sk, te, n, (x.exit[0] - te) / L, (x.exit[2] - n) / L, 15, 3, k.sp, k.f);
+      const byN = [...att].sort((a, c) => a[2] - c[2]);
+      const segs: number[] = [];
+      const gat = G.slice(ci * 3, ci * 3 + 3);
+      for (let p = 0; p < 3; p++) {
+        segs.push(sk.seg(en(...gat[p]!), en(...byN[p]!), { width: wp, color: INK, dash: cls60.dash }));
+        segs.push(sk.seg(en(...byN[p]!), X, { width: wp, color: INK, dash: cls60.dash, px: [0, 0, x.sidePx[0], x.sidePx[1]], collapsePx: [0, 0, x.sidePx[0], x.sidePx[1]] }));
+      }
+      // inside the fence
       sk.stagger = 0.08;
-      const sw = en(31, 5, n);
-      segs.push(sk.seg(top, sw, { width: w60, color: INK }), sk.seg(sw, en(24, 4.2, n), { width: w60, color: INK }));
-      sk.seg(en(31, 0, n), en(31, 5, n), { width: PEN.thin, color: INK });
-      sk.box(24, 0, n, 2.4, 3.2, 1.8);
-      segs.push(sk.seg(en(24, 4.2, n), en(BUS60.e, BUS60.h, n), { width: w60, color: INK }));
-      // chevrons follow the conductor: in from the exit, over the gantry, through the switch and breaker, onto the bus
-      const path = [X, tower, top, sw, en(24, 4.2, n), en(BUS60.e, BUS60.h, n)];
-      const flows = path.slice(1).map((p, j) => sk.flowSeg(path[j]!, p));
+      const D3 = disconnect(sk, 31.5, 29.1, pn, k);
+      const B = breaker(sk, 27, 24.2, pn, k);
+      const D1 = disconnect(sk, 22.1, 19.7, pn, k);
+      for (let p = 0; p < 3; p++) {
+        segs.push(wire(sk, gat[p]!, D3[p]![0], wp), wire(sk, D3[p]![1], B[p]![0], wp), wire(sk, B[p]![1], D1[p]![0], wp), wire(sk, D1[p]![1], [tubes[p]!, k.busH, pn[p]!], wp));
+      }
+      // chevrons ride the middle phase: in from the exit, over the tower and gantry, through the bay, onto the bus
+      const mid: Vec3[] = [X, en(...byN[1]!), en(...gat[1]!), en(...D3[1]![0]), en(...D3[1]![1]), en(...B[1]![0]), en(...B[1]![1]), en(...D1[1]![0]), en(...D1[1]![1]), en(tubes[1]!, k.busH, n)];
+      const flows = mid.slice(1).map((q, j) => sk.flowSeg(mid[j]!, q));
       this.circuits.push({ k: x.branch, flows, seg: segs });
-      sk.target({ kind: 'branch', index: x.branch }, path);
+      sk.target({ kind: 'branch', index: x.branch }, mid);
     });
     this.labels.push({ id: 'eq:in', text: 'From Metcalf', anchor: en(66, 15, 12), priority: 5, minZoom: 0, kind: 'equip' });
-    // the bus on post insulators
+    // the bus: three tubes on post insulators
     sk.stagger = 0.12;
-    for (const n of [-14, 0, 14]) sk.seg(en(BUS60.e, 0, n), en(BUS60.e, BUS60.h, n), { width: PEN.thin, color: INK });
-    this.busSegs.push(sk.seg(en(BUS60.e, BUS60.h, BUS60.n0), en(BUS60.e, BUS60.h, BUS60.n1), { width: 4, color: INK }));
-    sk.target({ kind: 'dist', what: 'bus60', id: 'EV-60' }, [en(BUS60.e, BUS60.h, BUS60.n0), en(BUS60.e, BUS60.h, BUS60.n1)]);
-    this.labels.push({ id: 'eq:bus60', text: '60 kV bus', anchor: en(BUS60.e, BUS60.h, BUS60.n1), priority: 6, minZoom: 0, kind: 'equip', prov: 'data:network.bus.EVERGREEN-60.baseKV' });
-    // onward 60 kV to the other substations (lumped in the transmission model)
-    this.onward.push(sk.seg(en(BUS60.e, BUS60.h, BUS60.n1), en(BUS60.e + 6, 11, 40), { width: w60 - 0.6, color: INK, dash: cls60.dash }));
-    this.onward.push(sk.flowSeg(en(BUS60.e, BUS60.h, BUS60.n1), en(BUS60.e + 6, 11, 40)));
-    this.labels.push({ id: 'eq:onward', text: 'On to the rest of east San José', anchor: en(BUS60.e + 6, 11, 40), priority: 3, minZoom: 0, kind: 'equip' });
-
-    // ---- the bank
-    sk.stagger = 0.2;
-    const tank = sk.box(BANK.e, 0.4, BANK.n, BANK.se, BANK.sh, BANK.sn);
-    sk.box(BANK.e, 0, BANK.n, BANK.se + 1.4, 0.4, BANK.sn + 1.4); // pad
-    for (const s of [-1, 1]) sk.box(BANK.e, 0.8, BANK.n + s * (BANK.sn / 2 + 0.6), BANK.se - 1.2, 3.4, 0.8); // radiators
-    sk.box(BANK.e + BANK.se / 2 + 0.7, 0.8, BANK.n + 1, 1.2, 2.6, 1.6); // tap changer compartment
-    const topH = 0.4 + BANK.sh;
-    const hvB: Vec3[] = [];
-    const lvB: Vec3[] = [];
-    for (const dn of [-1.2, 0, 1.2]) {
-      const hb = en(BANK.e + 1.8, topH, BANK.n + dn);
-      const ht = en(BANK.e + 1.8, topH + 2.2, BANK.n + dn);
-      sk.seg(hb, ht, { width: PEN.medium, color: INK });
-      hvB.push(ht);
-      const lb = en(BANK.e - 2.2, topH, BANK.n + dn);
-      const lt = en(BANK.e - 2.2, topH + 1.1, BANK.n + dn);
-      sk.seg(lb, lt, { width: PEN.medium, color: INK });
-      lvB.push(lt);
+    for (const e of tubes) {
+      for (const n of [-15, -5, 5, 15]) post(sk, e, n, k.busH, k.f);
+      this.busSegs.push(wire(sk, [e, k.busH, BUS60.n0], [e, k.busH, BUS60.n1], cls60.weight + 0.6));
     }
-    // bus to the HV bushings
-    const busTap = en(BUS60.e, BUS60.h, 0);
-    this.busSegs.push(sk.seg(busTap, hvB[1]!, { width: w60, color: INK }));
-    this.bankFlow = sk.flowSeg(busTap, hvB[1]!);
-    this.bankGlyphs = sk.symbol(en(BANK.e, topH + 3.2, BANK.n), transformerSymbol(5), PEN.thin);
+    sk.target({ kind: 'dist', what: 'bus60', id: 'EV-60' }, [en(BUS60.e, k.busH, BUS60.n0), en(BUS60.e, k.busH, BUS60.n1)]);
+    this.labels.push({ id: 'eq:bus60', text: '60 kV bus', anchor: en(BUS60.e + k.sp, k.busH, BUS60.n1), priority: 6, minZoom: 0, kind: 'equip', prov: 'data:network.bus.EVERGREEN-60.baseKV' });
+    // onward at 60 kV to the other substations (lumped in the transmission model): off the north end
+    const onEnd = en(BUS60.e + 8, 9, 42);
+    for (const e of tubes) this.busSegs.push(sk.seg(en(e, k.busH, BUS60.n1), en(e + 8, 9, 42), { width: wp, color: INK, dash: cls60.dash }));
+    this.onward.push(sk.flowSeg(en(BUS60.e, k.busH, BUS60.n1), onEnd));
+    this.labels.push({ id: 'eq:onward', text: 'On to the rest of east San José', anchor: onEnd, priority: 3, minZoom: 0, kind: 'equip' });
+
+    // ---- the bank: 30 MVA, 60/12.47 kV, its high side toward the bus
+    sk.stagger = 0.2;
+    const xf = transformer(sk, BANK.e, BANK.n, BANK.se, BANK.sh, BANK.sn, 1.1, 1);
+    sk.box(BANK.e + BANK.se / 2 + 0.7, 0.8, BANK.n + 1.3, 0.9, 2.6, 1.4); // tap changer compartment
+    const tank = xf.tank;
+    const hvB = [...xf.hv].sort((a, c) => a[2] - c[2]);
+    const lvB = [...xf.lv].sort((a, c) => a[2] - c[2]).map((q) => en(...q));
+    hvB.forEach((q, p) => this.busSegs.push(wire(sk, [tubes[p]!, k.busH, q[2]], q, wp)));
+    this.bankFlow = sk.flowSeg(en(tubes[1]!, k.busH, hvB[1]![2]), en(...hvB[1]!));
     sk.target({ kind: 'dist', what: 'bank', id: 'EV-BANK' }, tank, true);
-    this.labels.push({ id: 'eq:bank', text: 'Bank 1 · 60/12 kV', anchor: en(BANK.e, topH + 2.5, BANK.n - 2), priority: 8, minZoom: 0, kind: 'equip', prov: 'data:evergreen.bank' });
+    this.labels.push({ id: 'eq:bank', text: 'Bank 1 · 60/12 kV', anchor: en(BANK.e, BANK.sh + 3, BANK.n - 2), priority: 8, minZoom: 0, kind: 'equip', prov: 'data:evergreen.bank' });
+    this.labels.push({ id: 'eq:rad', text: 'Radiators', anchor: en(BANK.e + BANK.se / 2 + 0.5, BANK.sh * 0.6, BANK.n - BANK.sn / 2), priority: 2, minZoom: 6, kind: 'equip' });
+    this.labels.push({ id: 'eq:cons', text: 'Conservator', anchor: en(BANK.e - BANK.se / 4, BANK.sh + 1.8, BANK.n - BANK.sn / 2 + 0.6), priority: 2, minZoom: 6, kind: 'equip' });
 
     // ---- 12 kV switchgear and the feeders
     sk.stagger = 0.28;
     const gear = sk.box(GEAR.e, 0, GEAR.n, GEAR.se, GEAR.sh, GEAR.sn);
     // cable bus from the LV bushings to the gear
-    const cb0 = lvB[1]!;
-    const cb1 = en(GEAR.e + GEAR.se / 2, GEAR.sh - 0.4, 0);
-    this.busSegs.push(sk.seg(cb0, cb1, { width: w12, color: INK }));
+    // cable bus from the low-voltage bushings to the gear, one conductor per phase
+    lvB.forEach((q, p) => this.busSegs.push(sk.seg(q, en(GEAR.e + GEAR.se / 2, GEAR.sh - 0.4, (p - 1) * 1.2), { width: w12, color: INK })));
     sk.target({ kind: 'dist', what: 'bus12', id: 'EV-12' }, gear, true);
     this.labels.push({ id: 'eq:gear', text: '12 kV switchgear', anchor: en(GEAR.e, GEAR.sh, GEAR.n + GEAR.sn / 2), priority: 7, minZoom: 0, kind: 'equip', prov: 'data:evergreen.bank.kvLowLL' });
     sk.stagger = 0.36;
