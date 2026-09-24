@@ -82,6 +82,12 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** The inside is schematic: a dozen elements drawn where a real can has more, one drawn pulled out with the end of its winding unrolled, and the plastic film between the foils (a few hundredths of a millimetre) drawn thousands of times thicker. The field is drawn uniform between flat plates. **Full treatment:** The manufacturer's design: the number and connection of elements, internal fuses, film and foil thickness, the impregnating fluid, and the field's fringing at the foils' edges.
 - **Simplified:** The discharge resistor is the largest that meets the IEEE 18 requirement (the peak of rated voltage down to 50 V within 5 minutes); the charge left when a step is switched off is not shown draining. **Full treatment:** The unit's actual resistor, and the trapped charge's decay, which is why a step must wait before it is switched back in.
 
+## regulator — Inside a voltage regulator
+
+- **Simplified:** The regulator is ideal: its output voltage is its input times the tap's ratio, 1 + 0.00625 × tap, and its current goes the other way in the same ratio; it has no impedance, losses or magnetizing current. A real Type B regulator's ratio is 1 / (1 − 0.00625 × tap) (raise), within about one percent of this at the end of its range. **Full treatment:** Kersting's models of the Type A and Type B step-voltage regulator, with the series impedance and the exact ratio.
+- **Simplified:** The control acts at once on each interval's solution, stepping taps until each phase's compensated voltage is inside the band; there is no time delay, and it never hunts. **Full treatment:** The control's time delay (typically tens of seconds), each tap change's own duration, and how the regulator, the substation's tap changer and the capacitor bank take turns.
+- **Simplified:** The construction is schematic: a shell-form core, the series winding drawn with a tenth of the shunt winding's turns in eight tapped sections, the tap changer's contacts laid out face-on behind the cut. **Full treatment:** The manufacturer's design, in which the tap changer usually sits in its own compartment under the cover, driven by a motor.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

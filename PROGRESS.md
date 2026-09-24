@@ -219,3 +219,9 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - A tour stop, "Inside a capacitor"; glossary terms (capacitor, dielectric, electric field, discharge resistor, IEEE 18, shunt reactor); honesty sections.
   - **Fix: the 500 kV yards' shunt reactors had been drawn as capacitor banks.** They are now single-phase reactor tanks, switched in steps.
   - **Fixes: a raised anchor is placed correctly; only the child zoomed toward shows its part names; climbing out of a level no longer drops the sheet into a large neighbour (a span).**
+  - **A Regulator level for feeder 1105's step-voltage regulator** (opens from its symbol on the trunk).
+    - Three single-phase units on a platform beside the line, with jumpers to S and L, open bypass switches and the control cabinet. A dial on each cover shows the phase's solved tap.
+    - The nearest unit cut open: core, shunt winding, and the series winding in eight tapped sections. The tap changer stands face-on behind the cut: the selector's two fingers on the solved position (on a tap or bridging two), the preventive autotransformer, and the reversing switch at raise or lower. Tap changes step through.
+    - The inspector charts the voltage along the trunk on the control's base, with the step at the regulator, the band, and what the control sees; a second diagram draws the line-drop compensation.
+    - "Raise / Lower the set point" re-solves the feeder with the new set point (`regVset`).
+    - The math panel per phase: the ratio, |V_L| = a|V_S|, the PT voltage, the compensator's drop, |V_relay| and its distance from the set point. It is in the arithmetic test; `test/regulator.test.ts` checks the band, the ratio, and the set point's effect.

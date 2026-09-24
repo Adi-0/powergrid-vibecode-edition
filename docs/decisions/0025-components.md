@@ -240,6 +240,47 @@ the inside of a piece of equipment, working, driven by the solved state.
     - the waveforms (the quarter-turn lead, the three phases summing to zero, the peak
       of p equal to Q_1φ);
     - the can's arithmetic and the discharge rule.
+- *A Regulator level for feeder 1105's step-voltage regulator.* It opens from the
+  regulator's symbol on the trunk. Three single-phase units stand on a platform beside
+  the line:
+  - the line is carried down to each unit's source bushing (S) and back up from its load
+    bushing (L);
+  - bypass switches, open, sit on the crossarm;
+  - the control cabinet hangs on the pole;
+  - each cover carries a position dial whose hand shows that phase's solved tap.
+
+  The unit nearest the viewer is cut open on the plane through its axis. Below: the
+  core, the shunt winding, and the series winding with a tenth of its turns in eight
+  tapped sections. Above, face-on behind the cut, the tap changer:
+  - the selector's eight contacts and neutral on an arc;
+  - two fingers, on one tap or bridging two, at the position the feeder solve chose;
+  - the preventive autotransformer that gives the half steps;
+  - the reversing switch, turned to raise or lower.
+
+  A change of tap between intervals is made one step at a time, as the mechanism makes
+  it (the step's pace is a display choice).
+  - *The lesson is in the inspector's chart*: each phase's voltage along the trunk on the
+    control's base, falling with distance and stepping up at the regulator, with the band
+    the control holds and the point its line-drop compensation sees. A second small
+    diagram draws the compensation: the output through the PT, less the compensator's
+    drop (magnified), is the load centre's voltage.
+  - *Perturbation.* "Raise / Lower the set point" moves it a volt on the control's base.
+    The value travels with the solve request (`regVset`) into the feeder solve, the taps
+    follow, and the voltage beyond the regulator with them: a real re-solve.
+  - *The working (`regPanel`, per phase)*:
+    - the ratio a = 1 + (step/100)·tap;
+    - |V_L| = a|V_S|, exact in the model (the sweep applies it so);
+    - the PT voltage's real and imaginary parts;
+    - the compensator's drop, (R′ + jX′)·I / CT_P, in parts;
+    - |V_relay|, and its distance from the set point, which is inside half the bandwidth
+      when no tap change is due.
+
+    Every phase is in the arithmetic-consistency test. `test/regulator.test.ts` checks
+    that each phase ends inside its band, that the output is the ratio times the input,
+    and that raising the set point raises the taps and the voltage beyond.
+  - *Honesty:* a "regulator" section covers the ideal ratio (a real Type B regulator's is
+    1/(1 − 0.00625·tap), within about one percent), the control acting without its time
+    delay, and the schematic construction.
 - *A correction found on the way: shunt reactors were drawn as capacitor banks.* Every
   500 kV bus's switched reactors carried the yard's capacitor rack and its label. They
   are now three single-phase oil-filled units per step, labelled as reactors, switched

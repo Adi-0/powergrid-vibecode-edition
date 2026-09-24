@@ -72,6 +72,7 @@ export class FeederLevel implements Level {
   private homeSegs: Array<{ id: string; first: number; count: number }> = [];
   /** Where each protective device sits (for its open mark). */
   private devAt = new Map<string, Vec3>();
+  private devGlyphs = new Map<string, [number, number]>();
   private children = new Map<string, string[]>();
   private nodeAt = new Map<string, Vec3>();
   private last: Snapshot | null = null;
@@ -199,7 +200,7 @@ export class FeederLevel implements Level {
       sk.stagger = stag(node);
       const p = at(node, POLE);
       sk.anchor = p;
-      sk.symbol(p, sym, PEN.thin, 0, dy);
+      this.devGlyphs.set(id, sk.symbol(p, sym, PEN.thin, 0, dy));
       this.devAt.set(id, p);
       sk.target({ kind: 'dist', what: 'device', id }, [p]);
       this.labels.push({ id: `fd:${id}`, text, anchor: p, priority: 7, minZoom: 0, kind: 'equip' });
@@ -421,6 +422,11 @@ export class FeederLevel implements Level {
     const glyphs = (r: [number, number]) => {
       for (let i = r[0]; i < r[0] + r[1]; i++) sk.glyphs.setDim(i, hide ? 1 : 0);
     };
+    if (key === 'reg:REG-1') {
+      // the regulator's own level draws the bank where the symbol stood
+      glyphs(this.devGlyphs.get('REG-1')!);
+      return;
+    }
     if (key === 'substation') {
       lines(this.standIn.lines);
       lines(this.inLines);

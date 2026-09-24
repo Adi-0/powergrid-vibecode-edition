@@ -74,13 +74,14 @@ export interface FeederState {
  * radians, from the transmission solution). The bank's tap changer holds the 12 kV
  * bus in its band; the feeder regulator follows its line-drop compensation.
  */
-export function solveFeeder(f: Feeder, hour: number, vPu: number, angleRad: number, ltcStart = 0, open?: ReadonlySet<string>): FeederState {
+export function solveFeeder(f: Feeder, hour: number, vPu: number, angleRad: number, ltcStart = 0, open?: ReadonlySet<string>, regVset?: number): FeederState {
   const loads = feederLoads(f, hour);
   const net: DistNetwork = {
     ...f.base,
     loads,
     // a device opened by protection: everything beyond it is out
-    branches: f.base.branches.map((b) => (b.kind === 'switch' && open?.has(b.id) ? { ...b, closed: false } : { ...b })),
+    // (and the regulator's set point, if the reader has moved it)
+    branches: f.base.branches.map((b) => (b.kind === 'switch' && open?.has(b.id) ? { ...b, closed: false } : b.kind === 'regulator' && b.control && regVset !== undefined ? { ...b, control: { ...b.control, vset: regVset } } : { ...b })),
   };
   const src = balancedSource((vPu * 60000) / Math.sqrt(3), (angleRad * 180) / Math.PI);
   const bank = net.branches.find((b) => b.id === 'EV-BANK')!;

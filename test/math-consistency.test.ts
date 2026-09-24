@@ -7,8 +7,9 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel } from '../src/math/panels';
 import { capBankState } from '../src/model/capState';
+import { regState } from '../src/model/regState';
 import { spanState } from '../src/model/spanState';
 import { poletopState } from '../src/model/poletopState';
 import { breakerState } from '../src/model/breakerState';
@@ -171,6 +172,10 @@ describe('math panels', () => {
         if (p) (check(p, tr.id), n++);
       }
       expect(n).toBe(fd.layout.transformers.length);
+      // the feeder's regulator, each phase
+      const rs = regState(s, fd, null);
+      expect(rs).not.toBeNull();
+      for (const p of [0, 1, 2]) check(regPanel(rs, p)!, `regulator phase ${p}`);
     });
 
     it(`every transmission transformer, opened up, at interval ${t}`, () => {

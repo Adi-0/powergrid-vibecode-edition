@@ -221,6 +221,13 @@ function capunitRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(18, [{ pts: [[4, 9], [16, 3], [28, 15], [40, 3], [50, 9]], w: 1 }]), t));
 }
 
+/** The Regulator level: three single-phase regulators, one cut open. */
+function regulatorRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(20, [{ pts: [[27, 10], [27, 3]], w: 2.2 }, { pts: [[27, 10], [36, 5]], w: 2.2 }, { pts: [[14, 10], [16, 5], [20, 2], [27, 1], [34, 2], [38, 5], [40, 10]], w: 0.8 }]), 'The tap selector’s two fingers, on one tap or bridging two: the position the solution chose'));
+  g.appendChild(row(drawSample(18, [{ pts: [[8, 2], [20, 2], [20, 16], [8, 16], [8, 2]], w: 0.8 }, { pts: [[10, 4], [18, 4]], w: 0.8, color: INK_35 }, { pts: [[10, 7], [18, 7]], w: 0.8, color: INK_35 }, { pts: [[10, 10], [18, 10]], w: 0.8, color: INK_35 }, { pts: [[10, 13], [18, 13]], w: 0.8, color: INK_35 }, { pts: [[26, 2], [46, 2], [46, 8], [26, 8], [26, 2]], w: 0.8 }, { pts: [[26, 10], [46, 10], [46, 16], [26, 16], [26, 10]], w: 0.8 }]), 'The coil cut through: the shunt winding’s many fine [[turn|turns]], the series winding’s eight tapped sections'));
+  g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -364,6 +371,8 @@ export class Legend {
       capacitorRows(g2);
     } else if (s.level === 'capunit') {
       capunitRows(g2);
+    } else if (s.level === 'regulator') {
+      regulatorRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -396,6 +405,8 @@ export class Legend {
               ? `Chevrons: [[real-power|real power]] through the pole cut open, one phase of the three; size and speed ∝ ${fs.unit} (`
               : s.level === 'poletop'
                 ? `Chevrons: [[real-power|real power]] out along each leg to the homes; size and speed ∝ ${fs.unit} (`
+              : s.level === 'regulator'
+                ? `Chevrons: [[real-power|real power]] down to each phase’s regulator and back up to the line; size and speed ∝ ${fs.unit} (`
               : s.level === 'capacitor' || s.level === 'capunit'
                 ? `Chevrons: power into the ${s.level === 'capacitor' ? 'bank, phase by phase' : 'can'}, in and then out; on balance nothing; size and speed ∝ ${fs.unit} (`
               : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,

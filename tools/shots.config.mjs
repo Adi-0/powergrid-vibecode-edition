@@ -955,6 +955,57 @@ export default [
     probe: both(provenance, mathShown, mathArithmetic),
   },
   {
+    name: 'reg-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['feeder']));
+      await page.waitForFunction(() => window.__app.level === 'feeder' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        a.holdBand('reg:REG-1', 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'reg',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['regulator']));
+      await page.waitForFunction(() => window.__app.level === 'regulator' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'reg-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['regulator']));
+      await page.waitForFunction(() => window.__app.level === 'regulator' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

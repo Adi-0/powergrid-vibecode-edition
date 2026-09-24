@@ -29,6 +29,8 @@ export interface OperateOptions {
   plantOutages?: ReadonlySet<string>;
   /** Feeder 1105's switches, fuses or reclosers held open (after a fault), by branch id. */
   feederOpen?: ReadonlySet<string>;
+  /** Feeder 1105's regulator set point, changed by the reader (V on its 120 V base). */
+  regVset?: number;
   /** Voltage set-points changed from the schedule (excitation), per generator index, pu. */
   vset?: ReadonlyMap<number, number>;
   /** Start from this solution (speeds up a sequence of intervals). */

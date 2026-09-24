@@ -3,7 +3,7 @@
 Screenshots: `xfmr`, `xfmr-unfold`, `xfmr-math`, `xfmr-part`, `bank`, `bank-math`,
 `cb-unfold`, `cb`, `cb-opening`, `cb-math`, `cb60`, `poletop`, `poletop-math`,
 `span-unfold`, `span`, `span-math`, `cap-unfold`, `cap`, `cap-math`, `can-unfold`, `can`,
-`can-math`. Checked against the visual
+`can-math`, `reg-unfold`, `reg`, `reg-math`. Checked against the visual
 direction in CLAUDE.md, and against the author's ask: see how a thing works, visually,
 without a wall of words.
 
@@ -28,6 +28,9 @@ without a wall of words.
 | 17 | Zooming toward the can, the unfold view had it far above the centre. | The camera placed the can's anchor by its ground footprint, but the can stands five metres up. | The camera places a raised point by the ground point that projects to the same place on screen. |
 | 18 | While the bank unfolded, a nearby span's labels ("Clearance to the ground") appeared on the sheet with no span in sight. | A band's part names showed once it was nearly whole, whether or not the reader was zooming toward it. | Only the focus band's names show. |
 | 19 | The guided route's stop after the capacitor ended in a span at Tesla, not at the wall outlet. | Climbing out of the bank, the camera rested where the span toward Los Banos was whole and near the centre; the sheet went into it, and the route's climb stopped there. | After a climb nothing takes the sheet until the reader zooms; a hand-off needs the child near the focus. |
+| 20 | The regulator's tap changer was a small cluster of marks, its three labels piled on each other. | A panel 0.6 m wide at a fit taking in two units and their jumpers. | The panel, selector and preventive autotransformer enlarged within the tank; the fit taken on the cut unit alone. |
+| 21 | The voltage profile was a flat line squeezed against the top of its chart. | The scale always ran over ANSI Range A (114–126 V), while the primary sits within a volt or two of the set point. | The scale fits the voltages and the control's band; Range A is drawn only where it falls inside. |
+| 22 | The regulator's title failed the provenance probe. | "REG-1" is a figure from the data, shown as plain text. | The name carries its data key. |
 
 ## Still wrong or weak
 
@@ -40,3 +43,4 @@ without a wall of words.
 - **Only the first span of a corridor is modelled.** The rest of the line's spans would share the same temperature (same current, same weather at this level of model) but not the same terrain.
 - **The bank is dense.** Five tiers of four cans, three stacks per step, several steps, seen along a diagonal: the stacks overlap on the sheet. The steps were spaced wider; a real bank is as crowded.
 - **The discharge is not animated.** Switching a step out sends its cans to nothing at once; a real can keeps its charge and drains through the resistor over minutes. The time constant is in the inspector.
+- **At many hours the regulator sits at neutral.** The feeder's voltage stays inside the band without it; the taps are only seen working when the reader raises the set point or scrubs to a heavier hour.

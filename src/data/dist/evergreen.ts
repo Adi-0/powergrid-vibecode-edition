@@ -72,6 +72,8 @@ export const EVERGREEN = {
   bank: { kva: 30000, kvHighLL: 60, kvLowLL: 12.47, zpu: new Complex(0.004, 0.08), vectorGroup: 'Dyn1' },
   /** Tap changer: hold the 12 kV bus at 123 V on a 120 V base (1.025 pu), 2 V band. */
   ltc: { vset: 123, band: 2, stepPct: 0.625, maxSteps: 16 },
+  /** The feeder's step-voltage regulators: ±16 taps of 0.625 % (the standard 32-step range, ±10 %). */
+  regulator: { stepPct: 0.625, maxSteps: 16 },
   /** The three other feeders on this bank, lumped: peak MW and power factor. */
   otherFeedersPeakMW: 18,
   otherFeedersPF: 0.97,

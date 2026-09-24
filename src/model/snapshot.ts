@@ -32,6 +32,8 @@ export interface Snapshot {
   feederOpen: string[];
   /** Shunt banks switched by hand: [grid shunt index, steps held in service]. */
   shuntHold: Array<[number, number]>;
+  /** Feeder 1105's regulator set point, if the reader moved it (V, 120 V base). */
+  regVset: number | null;
   /** Solver status: the worst island's. */
   status: string;
   /**
@@ -89,7 +91,7 @@ export interface Snapshot {
   feeder?: FeederSnap;
 }
 
-export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[]; shuntHold?: Array<[number, number]> } = {}): Snapshot {
+export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[]; shuntHold?: Array<[number, number]>; regVset?: number | null } = {}): Snapshot {
   const nb = grid.branches.length;
   const pf = new Float64Array(nb);
   const qf = new Float64Array(nb);
@@ -146,6 +148,7 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
     vset: scenario.vset ?? [],
     feederOpen: scenario.feederOpen ?? [],
     shuntHold: scenario.shuntHold ?? [],
+    regVset: scenario.regVset ?? null,
     status: op.status,
     outcome,
     darkIslands,

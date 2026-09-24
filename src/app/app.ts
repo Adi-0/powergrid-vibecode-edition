@@ -25,6 +25,9 @@ import { PoleTopLevel } from '../levels/poletop';
 import { SpanLevel, spanGeom } from '../levels/span';
 import { CapBankLevel } from '../levels/capacitor';
 import { CanLevel } from '../levels/can';
+import { RegulatorLevel } from '../levels/regulator';
+import { regState } from '../model/regState';
+import { regPartView, regView } from './inspect-reg';
 import { capBankState, type CapBefore } from '../model/capState';
 import { poletopState } from '../model/poletopState';
 import { breakerState } from '../model/breakerState';
@@ -56,7 +59,7 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel } from '../math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel, regPanel } from '../math/panels';
 import { breakerLevelView, breakerPartView, canPartView, canView, capBankPartView, capBankView, poletopLevelView, poletopPartView, spanView, transformerLevelView, transformerPartView } from './inspect-parts';
 import type { Wind } from '../model/spanState';
 import { EVERGREEN } from '../data/dist/evergreen';
@@ -81,7 +84,7 @@ interface Portal {
 }
 
 /** Named places in the tree, for the guided route and the harness. */
-export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span' | 'capacitor' | 'capunit';
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span' | 'capacitor' | 'capunit' | 'regulator';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -194,6 +197,8 @@ export class App {
   readonly feederOpen = new Set<string>();
   /** Shunt banks the reader has switched by hand: grid shunt index → steps held in service. */
   readonly shuntHold = new Map<number, number>();
+  /** Feeder 1105's regulator set point, if the reader has moved it (V on its 120 V base). */
+  regVset: number | null = null;
   /** Each bank's state just before the reader last switched it (for the comparison). */
   private capBefore = new Map<number, CapBefore>();
   /** A fault on the feeder and its protection sequence (playing while `faultPlaying`). */
@@ -419,6 +424,7 @@ export class App {
       this.tripEvent = null;
       this.shuntHold.clear();
       this.capBefore.clear();
+      this.regVset = null;
       this.clearFeederFault(false);
     } else this.outages.delete(k);
     this.requestSolve();
@@ -426,7 +432,13 @@ export class App {
 
   /** Anything changed from the day as scheduled. */
   get scenarioActive(): boolean {
-    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0 || this.feederOpen.size > 0 || this.shuntHold.size > 0;
+    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0 || this.feederOpen.size > 0 || this.shuntHold.size > 0 || this.regVset !== null;
+  }
+
+  /** Move feeder 1105's regulator set point (null: as installed), and solve again. */
+  setRegVset(v: number | null): void {
+    this.regVset = v === null ? null : Math.round(v * 10) / 10;
+    this.requestSolve();
   }
 
   /**
@@ -610,6 +622,7 @@ export class App {
       feederOpen: [...this.feederOpen],
       vset: [...this.vset],
       shuntHold: [...this.shuntHold],
+      regVset: this.regVset,
       seq: ++this.seq,
       detail: this.needsDetail(),
     };
@@ -1317,6 +1330,8 @@ export class App {
       });
     } else if (l instanceof FeederLevel) {
       ps.push({ key: 'substation', anchor: l.substationAt, ratio: 1, sel: { kind: 'dist', what: 'bank', id: 'EV-BANK' }, label: 'fd:sub', make: () => new SubstationLevel(this.grid) });
+      // the regulator bank opens where its symbol stands on the trunk
+      ps.push({ key: 'reg:REG-1', anchor: RegulatorLevel.anchorIn(this.feederModel()), ratio: 1, sel: { kind: 'dist', what: 'device', id: 'REG-1' }, label: 'fd:REG-1', make: () => new RegulatorLevel(this.feederModel(), (s) => regState(s, this.feederModel(), this.regVset)) });
       for (const t of this.feederModel().layout.transformers)
         ps.push({ key: `service:${t.id}`, anchor: l.transformerAt(t.id), ratio: 1, sel: { kind: 'dist', what: 'transformer', id: t.id }, make: () => new ServiceLevel(this.feederModel(), t.id) });
     } else if (l instanceof ServiceLevel) {
@@ -1975,6 +1990,8 @@ export class App {
       }
       case 'poletop':
         return ['site:EVERGREEN', `service:${outletT}`, `pt:${outletT}`];
+      case 'regulator':
+        return ['site:EVERGREEN', 'reg:REG-1'];
       case 'capacitor':
       case 'capunit': {
         const k = this.grid.shunts.findIndex((x) => x.stepMVAr > 0 && x.bus.site.id === 'TESLA');
@@ -2291,6 +2308,19 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    if (top instanceof RegulatorLevel) {
+      const st = top.state;
+      const vset = st?.control.vset ?? 0;
+      const acts: Action[] = st
+        ? [
+            { label: 'Raise the set point', title: 'One volt higher on the control’s base: the feeder is solved again and the taps follow', run: () => this.setRegVset(vset + 1) },
+            { label: 'Lower the set point', title: 'One volt lower on the control’s base: the feeder is solved again and the taps follow', run: () => this.setRegVset(vset - 1) },
+            ...(this.regVset !== null ? [{ label: 'As installed', run: () => this.setRegVset(null) }] : []),
+          ]
+        : [];
+      if (sel?.kind === 'part') return show('Selected part', regPartView(st, sel.what), acts);
+      return show('Voltage regulator', regView(st), acts);
+    }
     if (top instanceof CapBankLevel || top instanceof CanLevel) {
       const bank = top instanceof CapBankLevel ? top : null;
       const k = bank ? bank.place.shunt : (top as CanLevel).shunt;
@@ -2420,7 +2450,8 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof CapBankLevel) out.push(capBankPanel(top.state, top.key));
+    if (top instanceof RegulatorLevel) out.push(regPanel(top.state, 0));
+    else if (top instanceof CapBankLevel) out.push(capBankPanel(top.state, top.key));
     else if (top instanceof CanLevel) out.push(canPanel(top.state, top.key, top.bankKey));
     else if (top instanceof SpanLevel) {
       const st = top.stateFor(s);

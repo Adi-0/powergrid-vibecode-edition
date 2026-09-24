@@ -3,7 +3,7 @@ import { S_BASE } from '../model/grid';
 import type { Snapshot } from '../model/snapshot';
 import type { Feeder } from '../model/feeder';
 import { nodeIndex } from '../model/feeder';
-import { WIRING_12AWG } from '../data/dist/evergreen';
+import { EVERGREEN, WIRING_12AWG } from '../data/dist/evergreen';
 import { COUPLING_BUS } from '../model/coupling';
 import { add, atan, cos, div, ln, mul, neg, num, par, pow, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
 import { CCGT, plantState } from '../model/ccgt';
@@ -17,6 +17,7 @@ import { interruption, type BreakerState } from '../model/breakerState';
 import { HALF_V, PRIMARY_LN_V, type PoleTopState } from '../model/poletopState';
 import type { SpanState } from '../model/spanState';
 import type { CapBankState } from '../model/capState';
+import type { RegState } from '../model/regState';
 import { COMPONENTS } from '../data/components';
 
 /**
@@ -1206,6 +1207,46 @@ export function canPanel(st: CapBankState | null, key: string, bankKey: string):
   return {
     title: 'One can',
     intro: on ? 'RMS values. The can is one of the phase’s series groups, so it takes its share of the phase voltage and the whole group’s current divided among its parallel cans.' : 'This can’s step is switched out: no voltage across it now. Its rating and its discharge resistor still follow.',
+    steps,
+  };
+}
+
+/**
+ * The regulator's working, one phase: the ratio its tap gives, the output voltage
+ * (exact in this model: the sweep applies V_L = a·V_S), then what its control sees —
+ * the output through the PT, less the line-drop compensator's R′ + jX′ times the line
+ * current over the CT's rating — and how far that is from the set point.
+ */
+export function regPanel(st: RegState | null, p = 0): Panel | null {
+  if (!st) return null;
+  const ph = st.phases[p]!;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.reg.${p}.${x}`;
+  const c = st.control;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const vLre = ph.vL * Math.cos(rad(ph.degL));
+  const vLim = ph.vL * Math.sin(rad(ph.degL));
+  const iRe = ph.amps * Math.cos(rad(ph.degI));
+  const iIm = ph.amps * Math.sin(rad(ph.degI));
+  const Npt = num(c.ptRatio, 0, '', 'data:evergreen.REG-1.control.ptRatio', 'N_{PT}');
+  const ctp = num(c.ctPrimary, 0, 'A', 'data:evergreen.REG-1.control.ctPrimary', 'CT_P');
+  const R = num(c.r, 1, 'V', 'data:evergreen.REG-1.control.r', 'R′');
+  const X = num(c.x, 1, 'V', 'data:evergreen.REG-1.control.x', 'X′');
+  const Ire = num(iRe, 3, 'A', st.prov.I, 'I_{re}');
+  const Iim = num(iIm, 3, 'A', st.prov.I, 'I_{im}');
+  const steps: Step[] = [
+    { label: 'The ratio its tap gives', general: 'a = 1 + (step/100) · tap', sym: 'a', expr: add(num(1, 0, '', 'data:notation.one'), mul(div(num(EVERGREEN.regulator.stepPct, 3, '%', 'data:evergreen.regulator.stepPct', 'step'), num(100, 0, '', 'data:notation.percent')), num(ph.tap, 0, '', `solver:t${t}.feeder.REG-1.tap.${p}`, 'tap'))), unit: '', digits: 5, prov: k('a'), solver: ph.ratio },
+    { label: 'Its output voltage, line-to-neutral (exact in this model)', general: '|V_L| = a |V_S|', sym: '|V_L|', expr: mul(ref(0), num(ph.vS, 2, 'V', st.prov.V, '|V_S|')), unit: 'V', digits: 2, prov: k('vL'), solver: ph.vL },
+    { label: 'The output as the potential transformer gives it: real part', general: 'V_{PT,re} = V_{L,re} / N_{PT}', sym: 'V_{PT,re}', expr: div(num(vLre, 2, 'V', st.prov.V, 'V_{L,re}'), Npt), unit: 'V', digits: 4, prov: k('ptRe'), solver: vLre / c.ptRatio },
+    { label: '…and imaginary part', general: 'V_{PT,im} = V_{L,im} / N_{PT}', sym: 'V_{PT,im}', expr: div(num(vLim, 2, 'V', st.prov.V, 'V_{L,im}'), Npt), unit: 'V', digits: 4, prov: k('ptIm'), solver: vLim / c.ptRatio },
+    { label: 'The compensator’s drop, real part: the line current through R′ + jX′, per CT rating', general: 'd_{re} = (R′ I_{re} − X′ I_{im}) / CT_P', sym: 'd_{re}', expr: div(par(sub(mul(R, Ire), mul(X, Iim))), ctp), unit: 'V', digits: 4, prov: k('dRe'), solver: ph.dropRe },
+    { label: '…and imaginary part', general: 'd_{im} = (R′ I_{im} + X′ I_{re}) / CT_P', sym: 'd_{im}', expr: div(par(add(mul(R, Iim), mul(X, Ire))), ctp), unit: 'V', digits: 4, prov: k('dIm'), solver: ph.dropIm },
+    { label: 'What the control sees: the load centre’s voltage', general: '|V_{relay}| = |V_{PT} − d|', sym: '|V_{relay}|', expr: sqrt(add(sq(sub(ref(2), ref(4))), sq(sub(ref(3), ref(5))))), unit: 'V', digits: 3, prov: k('relay'), solver: ph.vRelay },
+    { label: ph.inBand ? 'How far it is from the set point: inside half the bandwidth, so no tap change' : 'How far it is from the set point: outside half the bandwidth, so a tap change is due', general: 'ε = V_{set} − |V_{relay}|', sym: 'ε', expr: sub(num(c.vset, 1, 'V', st.vsetHeld !== null ? `derived:t${t}.reg.vsetHeld` : 'data:evergreen.REG-1.control.vset', 'V_{set}'), ref(6)), unit: 'V', digits: 3, prov: k('err'), solver: c.vset - ph.vRelay },
+  ];
+  return {
+    title: `The regulator, phase ${'abc'[p]}`,
+    intro: 'RMS phasors, line-to-neutral, in rectangular form. The model’s regulator is ideal: its output is its input times the ratio, and its current the other way, so power passes through unchanged. Line-drop compensation as in Kersting.',
     steps,
   };
 }

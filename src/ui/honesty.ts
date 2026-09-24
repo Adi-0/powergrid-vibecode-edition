@@ -53,6 +53,7 @@ export const LEVEL_SECTIONS: Record<LevelKind, string[]> = {
   span: ['span', 'transmission'],
   capacitor: ['capacitor', 'site', 'transmission'],
   capunit: ['capunit', 'capacitor'],
+  regulator: ['regulator', 'feeder', 'distribution'],
 };
 
 /** Sections that apply because of what the reader has done (tripped, faulted, opened the working). */
