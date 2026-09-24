@@ -231,3 +231,4 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - The switches conduct in pairs by PWM against the line voltage (drawn slowly, nine pulses a cycle). The panels' power comes down the conduit steadily; the power out pulses twice a cycle, which the DC link buffers.
     - The inspector gives the sun on the panels, DC and AC power, the currents, the modulation index, and a one-cycle chart of pulses, voltage and current. It ties the home to the meter and to California's rooftop total.
     - The math panel covers P_dc, loss, I_dc, |I|, V_peak, m and the pulsing power's peak; every solar home is in the arithmetic test; `test/inverter.test.ts` covers the physics. `homePV` is now the one source of rooftop output.
+  - **A way in from every inspector:** a selected line in a yard offers "Open its breaker here" and "Along its first span"; the feeder's regulator offers "Look inside"; a solar home offers "Open its solar inverter".

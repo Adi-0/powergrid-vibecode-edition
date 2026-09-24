@@ -2271,7 +2271,8 @@ export class App {
       if (sel.kind === 'dist') {
         if (sel.what === 'line' || sel.what === 'device') {
           const b = f.base.branches.find((x) => x.id === sel.id);
-          return show('Selected', feederElementView(s, f, sel.id, sel.what), b && sel.what === 'line' ? faultActs(b.to) : []);
+          const inside: Action[] = sel.id === 'REG-1' ? [{ label: 'Look inside', title: 'Open the regulator: its windings, its tap changer, how its control decides (Enter, or double-click)', run: () => void this.dive('reg:REG-1') }] : [];
+          return show('Selected', feederElementView(s, f, sel.id, sel.what), [...inside, ...(b && sel.what === 'line' ? faultActs(b.to) : [])]);
         }
         if (sel.what === 'transformer')
           return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Zoom into this service', title: 'Down the pole to the homes (Enter)', run: () => void this.dive(`service:${sel.id}`) }]);
@@ -2287,7 +2288,10 @@ export class App {
       if (!sel) return show('Service', serviceView(s, f, top.transformerId));
       if (sel.kind === 'dist') {
         if (sel.what === 'outlet') return show('Selected outlet', outletTraceView(this.grid, s, f));
-        if (sel.what === 'home') return show('Selected home', homeView(s, f, sel.id));
+        if (sel.what === 'home') {
+          const inv = top.inverters.some((x) => x.homeId === sel.id);
+          return show('Selected home', homeView(s, f, sel.id), inv ? [{ label: 'Open its solar inverter', title: 'On the wall: how the panels’ direct current becomes the grid’s alternating current (Enter, or double-click)', run: () => void this.dive(`inv:${sel.id}`) }] : []);
+        }
         if (sel.what === 'transformer') return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Look inside', title: 'Open the can: its core, its coil, the center tap (Enter, or double-click)', run: () => void this.dive(`pt:${sel.id}`) }]);
       }
     }
@@ -2454,6 +2458,15 @@ export class App {
       if (this.outages.size > (out ? 1 : 0)) actions.push({ label: 'Restore everything', run: () => this.restore('all') });
       const inside = isX ? this.portalsOf(this.top).find((x) => x.key === xfKey(this.grid.branches[k]!.id)) : undefined;
       if (inside) actions.unshift({ label: 'Look inside', title: 'Open the tank: core, windings, oil (Enter, or double-click)', run: () => void this.dive(inside.key) });
+      // a circuit seen from inside a yard: its breaker here, and its first span out
+      const top = this.top;
+      if (!isX && top instanceof SiteLevel) {
+        const br = this.grid.branches[k]!;
+        const cb = this.portalsOf(top).find((x) => x.key === cbKey(top.siteId, br.id));
+        const sp = this.portalsOf(top).find((x) => x.key.startsWith(`span:${top.siteId}:`) && top.spans.some((c) => c.key === x.key && c.circuits.some((cc) => cc.branch === k)));
+        if (sp) actions.unshift({ label: 'Along its first span', title: 'Out of the yard: how hot the wire runs and how low it hangs (Enter)', run: () => void this.dive(sp.key) });
+        if (cb) actions.unshift({ label: 'Open its breaker here', title: 'The breaker at this end, one pole cut open (Enter)', run: () => void this.dive(cb.key) });
+      }
       this.inspector.show({
         header: isX ? 'Selected transformer' : 'Selected circuit',
         name: dataText(v.name, data(`network.${isX ? 'xfmr' : 'line'}.${this.grid.branches[k]!.id}.name`)),
