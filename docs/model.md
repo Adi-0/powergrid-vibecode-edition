@@ -19,7 +19,8 @@ it is marked **estimate** in its data file and here.
 - **Standards** — ANSI C84.1 (service voltage ranges), IEEE C37.2 (device function
   numbers), IEEE C37.112 (inverse-time characteristic equations), IEEE 738 (conductor
   ampacity), IEEE 80 (substation grounding), IEEE 1366 (reliability indices),
-  IEEE C57.12.00 (transformer terminal markings and vector groups).
+  IEEE C57.12.00 (transformer terminal markings and vector groups), IEEE 18 (shunt
+  power capacitors: the discharge requirement).
 
 Every parameter of the synthetic network, conductor, construction, technology,
 plant and load is tabulated in **[model-tables.md](model-tables.md)**, generated

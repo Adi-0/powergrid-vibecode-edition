@@ -30,6 +30,8 @@ export interface Snapshot {
   vset: Array<[number, number]>;
   /** Feeder devices held open after a fault. */
   feederOpen: string[];
+  /** Shunt banks switched by hand: [grid shunt index, steps held in service]. */
+  shuntHold: Array<[number, number]>;
   /** Solver status: the worst island's. */
   status: string;
   /**
@@ -63,6 +65,8 @@ export interface Snapshot {
   pd: Float64Array;
   qd: Float64Array;
   shuntMVAr: Float64Array;
+  /** Steps in service, per grid shunt bank. */
+  shuntSteps: Int32Array;
   lossesMW: number;
   lossesMVAr: number;
   genMW: number;
@@ -85,7 +89,7 @@ export interface Snapshot {
   feeder?: FeederSnap;
 }
 
-export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[] } = {}): Snapshot {
+export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: number[] = [], scenario: { plantOutages?: string[]; vset?: Array<[number, number]>; feederOpen?: string[]; shuntHold?: Array<[number, number]> } = {}): Snapshot {
   const nb = grid.branches.length;
   const pf = new Float64Array(nb);
   const qf = new Float64Array(nb);
@@ -141,6 +145,7 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
     plantOutages: scenario.plantOutages ?? [],
     vset: scenario.vset ?? [],
     feederOpen: scenario.feederOpen ?? [],
+    shuntHold: scenario.shuntHold ?? [],
     status: op.status,
     outcome,
     darkIslands,
@@ -163,6 +168,7 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
     pd,
     qd,
     shuntMVAr: sh,
+    shuntSteps: op.shuntSteps.slice(),
     lossesMW: op.lossesMW,
     lossesMVAr: bal ? bal.losses.im * S_BASE : NaN,
     genMW: bal ? bal.gen.re * S_BASE : NaN,
@@ -186,7 +192,7 @@ export function snapshot(grid: Grid, op: OperatingPoint, seq = 0, outages: numbe
 
 /** Transferable buffers for postMessage. */
 export function transferables(s: Snapshot): ArrayBuffer[] {
-  const own = [s.vm, s.va, s.energized, s.pf, s.qf, s.pt, s.qt, s.loading, s.inService, s.pg, s.qg, s.genOnline, s.pd, s.qd, s.shuntMVAr, s.lmp].map(
+  const own = [s.vm, s.va, s.energized, s.pf, s.qf, s.pt, s.qt, s.loading, s.inService, s.pg, s.qg, s.genOnline, s.pd, s.qd, s.shuntMVAr, s.shuntSteps, s.lmp].map(
     (a) => a.buffer as ArrayBuffer,
   );
   return s.feeder ? [...own, ...feederTransferables(s.feeder)] : own;

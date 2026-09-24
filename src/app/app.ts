@@ -23,6 +23,9 @@ import { TransformerLevel } from '../levels/transformer';
 import { BreakerLevel } from '../levels/breaker';
 import { PoleTopLevel } from '../levels/poletop';
 import { SpanLevel, spanGeom } from '../levels/span';
+import { CapBankLevel } from '../levels/capacitor';
+import { CanLevel } from '../levels/can';
+import { capBankState, type CapBefore } from '../model/capState';
 import { poletopState } from '../model/poletopState';
 import { breakerState } from '../model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../model/xfmrState';
@@ -32,7 +35,7 @@ import { FeederLevel } from '../levels/feeder';
 import { ServiceLevel } from '../levels/service';
 import { PlantLevel } from '../levels/plant';
 import { MachineLevel } from '../levels/machine';
-import { SiteLevel, cbKey, xfKey, type BayBreaker } from '../levels/site';
+import { SiteLevel, capKey, cbKey, xfKey, type BayBreaker } from '../levels/site';
 import { smoothstep } from '../levels/exits';
 import { equipView, machineView, plantView } from './inspect-plant';
 import { tripResponse, type TripResponse } from '../model/frequency';
@@ -53,10 +56,11 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel } from '../math/panels';
-import { breakerLevelView, breakerPartView, poletopLevelView, poletopPartView, spanView, transformerLevelView, transformerPartView } from './inspect-parts';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel } from '../math/panels';
+import { breakerLevelView, breakerPartView, canPartView, canView, capBankPartView, capBankView, poletopLevelView, poletopPartView, spanView, transformerLevelView, transformerPartView } from './inspect-parts';
 import type { Wind } from '../model/spanState';
 import { EVERGREEN } from '../data/dist/evergreen';
+import { COMPONENTS } from '../data/components';
 
 /**
  * A place in a level that has a level of its own. Zoom toward it and that level
@@ -77,7 +81,7 @@ interface Portal {
 }
 
 /** Named places in the tree, for the guided route and the harness. */
-export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span';
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop' | 'span' | 'capacitor' | 'capunit';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -188,6 +192,10 @@ export class App {
   readonly vset = new Map<number, number>();
   /** Feeder devices left open by protection after a fault. */
   readonly feederOpen = new Set<string>();
+  /** Shunt banks the reader has switched by hand: grid shunt index → steps held in service. */
+  readonly shuntHold = new Map<number, number>();
+  /** Each bank's state just before the reader last switched it (for the comparison). */
+  private capBefore = new Map<number, CapBefore>();
   /** A fault on the feeder and its protection sequence (playing while `faultPlaying`). */
   feederEvent: FeederEvent | null = null;
   private faultStart = 0;
@@ -382,6 +390,18 @@ export class App {
     if (l instanceof BreakerLevel && p?.sel.kind === 'branch' && l.state?.closed) this.operateBreaker(l, p.sel.index, 'open');
   }
 
+  /** A capacitor's chart: its cursor follows the instant the drawing shows. */
+  private moveCapCursor(tau: number): void {
+    const c = this.inspector.root.querySelector<SVGLineElement>('[data-cap-cursor]');
+    if (!c) return;
+    const x0 = Number(c.dataset.x0 ?? c.getAttribute('data-x0'));
+    const w = Number(c.getAttribute('data-w'));
+    const period = Number(c.getAttribute('data-period'));
+    const x = x0 + (w * (((tau % period) + period) % period)) / period;
+    c.setAttribute('x1', x.toFixed(1));
+    c.setAttribute('x2', x.toFixed(1));
+  }
+
   /** A breaker's sequence is playing: the inspector's chart follows it. */
   private breakerTick = false;
   private breakerTickAt = 0;
@@ -397,6 +417,8 @@ export class App {
       this.plantOutages.clear();
       this.vset.clear();
       this.tripEvent = null;
+      this.shuntHold.clear();
+      this.capBefore.clear();
       this.clearFeederFault(false);
     } else this.outages.delete(k);
     this.requestSolve();
@@ -404,7 +426,22 @@ export class App {
 
   /** Anything changed from the day as scheduled. */
   get scenarioActive(): boolean {
-    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0 || this.feederOpen.size > 0;
+    return this.outages.size > 0 || this.plantOutages.size > 0 || this.vset.size > 0 || this.feederOpen.size > 0 || this.shuntHold.size > 0;
+  }
+
+  /**
+   * Switch a capacitor bank's steps by hand: hold `to` of them in service (null: back
+   * to the voltage controller), and solve the network again.
+   */
+  switchShunt(k: number, to: number | null): void {
+    const s = this.current;
+    const sh = this.grid.shunts[k];
+    if (!s || !sh) return;
+    const i = sh.bus.index;
+    this.capBefore.set(k, { t: s.t, seq: s.seq, steps: s.shuntSteps[k] ?? 0, vm: s.vm[i]!, q: s.shuntMVAr[i]!, losses: s.lossesMW });
+    if (to === null) this.shuntHold.delete(k);
+    else this.shuntHold.set(k, Math.max(0, Math.min(sh.steps, to)));
+    this.requestSolve();
   }
 
   /**
@@ -572,6 +609,7 @@ export class App {
       plantOutages: [...this.plantOutages],
       feederOpen: [...this.feederOpen],
       vset: [...this.vset],
+      shuntHold: [...this.shuntHold],
       seq: ++this.seq,
       detail: this.needsDetail(),
     };
@@ -906,6 +944,7 @@ export class App {
   private zoomAt(sx: number, sy: number, factor: number): void {
     // a move of the camera in progress (a dive, a fold) finishes first
     if (this.anim || this.flight) return;
+    this.settled = false;
     // zooming in near a node that has a level of its own draws the zoom toward it, so
     // the node stays put on the sheet while it unfolds
     let fx = sx;
@@ -1239,6 +1278,22 @@ export class App {
         const g = spanGeom(cs);
         ps.push({ key: cs.key, anchor: l.sk.plan(g.Me, 0, g.Mn), ratio: 1, sel: { kind: 'part', id: cs.key, what: 'conductor' }, make: () => new SpanLevel(this.grid, l.siteId, cs, l.sk.plan) });
       }
+      // each capacitor bank opens where it stands
+      for (const b of l.shuntBanks) {
+        if (!b.cap) continue;
+        const key = capKey(l.siteId, b.shunt);
+        const near = b.draw.steps[b.draw.order[0]!]!;
+        const siteId = l.siteId;
+        const site = this.grid.sites.find((x) => x.id === siteId)!;
+        const bus = this.grid.shunts[b.shunt]!.bus;
+        ps.push({
+          key,
+          anchor: l.sk.plan(near.e, 0, b.place.ns[1]!),
+          ratio: 1,
+          sel: { kind: 'part', id: key, what: 'stack' },
+          make: () => new CapBankLevel(b.place, l.sk.plan, `${site.name} capacitor bank`, (s) => capBankState(this.grid, s, b.shunt, this.shuntHold.has(b.shunt), this.capBefore.get(b.shunt) ?? null), [voltageClassFor(bus.kv)], key),
+        });
+      }
       for (const b of l.bankBodies) {
         const key = xfKey(this.grid.branches[b.branch]!.id);
         ps.push({
@@ -1276,6 +1331,20 @@ export class App {
         label: 'sv:can',
         make: () => new PoleTopLevel(id, tr.kva, l.secondaryAt, (s) => poletopState(s, this.feederModel(), id)),
       });
+    } else if (l instanceof CapBankLevel) {
+      // one can, cut open, where it stands in its tier
+      const c = l.draw.can;
+      if (c) {
+        const key = `can:${l.key.slice(4)}`;
+        const k = l.place.shunt;
+        ps.push({
+          key,
+          anchor: l.sk.plan(c.e, c.h + COMPONENTS.capacitor.can.h / 2, c.n),
+          ratio: 1,
+          sel: { kind: 'part', id: l.key, what: 'stack' },
+          make: () => new CanLevel(c, l.sk.plan, `${l.name}: one can`, (s) => capBankState(this.grid, s, k, this.shuntHold.has(k), this.capBefore.get(k) ?? null), l.classes, key, k, l.key),
+        });
+      }
     } else if (l instanceof PlantLevel) {
       for (const u of ['GT1', 'GT2', 'ST'])
         ps.push({ key: `machine:${u}`, anchor: l.generatorAt(u), ratio: 1, sel: { kind: 'equip', what: 'generator', id: `${l.plantId}-${u}` }, label: `eq:gen:${u}`, make: () => new MachineLevel(this.grid, `${l.plantId}-${u}`) });
@@ -1497,6 +1566,13 @@ export class App {
   }
 
   /** Is the camera to hand the sheet down (a child whole in view) or up (zoomed out past the hand-off)? */
+  /**
+   * Set when the camera has just climbed out of a level: it rests where the child it
+   * left is folded, but some larger neighbour may be whole there. Nothing takes the
+   * sheet until the reader zooms again.
+   */
+  private settled = false;
+
   private checkHandoff(): void {
     if (this.anim || this.flight || this.diving || this.lens) return;
     const z = this.cam.pxPerUnit;
@@ -1505,13 +1581,17 @@ export class App {
       this.handBack();
       return;
     }
+    if (this.settled) return;
     // the child the reader zooms toward keeps the sheet's attention while it unfolds: a
     // larger neighbour that is whole sooner does not take the sheet from under it
     const fb = this.focusBand ? this.bands.get(this.focusBand) : undefined;
     if (fb && z < fb.zOut) return;
     const f = this.focusPoint();
+    // only a child the reader is looking at takes the sheet: one far off the focus that
+    // happens to be whole at this zoom (a long span seen from inside a yard) does not
+    const near = 0.35 * Math.min(this.cam.width, this.cam.height);
     let best: Band | null = null;
-    let bd = Infinity;
+    let bd = near;
     for (const b of this.bands.values()) {
       if (z < b.zOut) continue;
       const c = this.candidates.find((x) => x.p === b.portal);
@@ -1682,6 +1762,7 @@ export class App {
       if (!p) return resolve();
       this.scrubber.setPlaying(false);
       this.diving = true;
+      this.settled = false;
       const zz = this.zooms(p);
       const free = this.freeRect(true);
       const z0 = this.cam.pxPerUnit;
@@ -1723,6 +1804,7 @@ export class App {
             () => {
               this.diving = false;
               this.focus = null;
+              this.settled = true;
               resolve();
             },
           );
@@ -1893,6 +1975,12 @@ export class App {
       }
       case 'poletop':
         return ['site:EVERGREEN', `service:${outletT}`, `pt:${outletT}`];
+      case 'capacitor':
+      case 'capunit': {
+        const k = this.grid.shunts.findIndex((x) => x.stepMVAr > 0 && x.bus.site.id === 'TESLA');
+        const keys = ['site:TESLA', capKey('TESLA', k)];
+        return place === 'capunit' ? [...keys, `can:TESLA:${k}`] : keys;
+      }
       case 'plant':
         return ['site:MOSS_LANDING', 'plant:ML1'];
       case 'machine':
@@ -2203,6 +2291,26 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    if (top instanceof CapBankLevel || top instanceof CanLevel) {
+      const bank = top instanceof CapBankLevel ? top : null;
+      const k = bank ? bank.place.shunt : (top as CanLevel).shunt;
+      const sh = this.grid.shunts[k];
+      const st = top.state;
+      const acts: Action[] = [];
+      if (sh && st && st.energized) {
+        if (st.inService > 0) acts.push({ label: 'Switch a step out', title: 'Open one step’s switch and hold it there: the network is solved again', run: () => this.switchShunt(k, st.inService - 1) });
+        if (st.inService < sh.steps) acts.push({ label: 'Switch a step in', title: 'Close one more step’s switch and hold it there: the network is solved again', run: () => this.switchShunt(k, st.inService + 1) });
+        if (this.shuntHold.has(k)) acts.push({ label: 'Back to the controller', title: 'Let the voltage controller choose the steps again', run: () => this.switchShunt(k, null) });
+      }
+      const bankKey = bank ? bank.key : (top as CanLevel).bankKey;
+      const head = { name: dataText(top.name, data(`network.site.${sh?.bus.site.id ?? ''}.name`)), kvProv: data(`network.bus.${sh?.bus.id ?? ''}.baseKV`), key: top.key };
+      if (bank) {
+        if (sel?.kind === 'part') return show('Selected part', capBankPartView(head, st, sel.what), acts);
+        return show('Capacitor bank', capBankView(head, st), acts);
+      }
+      if (sel?.kind === 'part') return show('Selected part', canPartView(head, st, bankKey, sel.what), acts);
+      return show('Capacitor can', canView(head, st, bankKey), acts);
+    }
     if (top instanceof SpanLevel) {
       const st = top.stateFor(s);
       const winds: Array<[Wind, string]> = [
@@ -2312,7 +2420,9 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof SpanLevel) {
+    if (top instanceof CapBankLevel) out.push(capBankPanel(top.state, top.key));
+    else if (top instanceof CanLevel) out.push(canPanel(top.state, top.key, top.bankKey));
+    else if (top instanceof SpanLevel) {
       const st = top.stateFor(s);
       const pick = sel?.kind === 'part' && sel.sub ? Number(sel.sub) : null;
       const ci = st ? Math.max(0, st.circuits.findIndex((c) => c.branch === pick)) : 0;
@@ -2396,9 +2506,10 @@ export class App {
         pinned: selected || (sel?.kind === 'branch' && kept) || l.kind === 'layer',
       });
     }
-    // the levels unfolding here, once nearly whole: their own names for their parts
+    // the level unfolding where the reader zooms, once nearly whole: its own names for its parts
+    // (a larger neighbour that is whole sooner keeps its names until the reader turns to it)
     for (const b of this.bands.values()) {
-      if (b.m < 0.7) continue;
+      if (b.m < 0.7 || b.portal.key !== this.focusBand) continue;
       for (const l of b.level.labels) items.push(this.contextLabel(l, `${b.portal.key}/${l.id}`, this.place(b.portal, b.level, l.anchor), l.minZoom * b.portal.ratio, -1));
     }
     // the level above, as the ground this one stands on (its name for this node is this level's)
@@ -2470,6 +2581,7 @@ export class App {
       this.breakerTickAt = performance.now();
       this.inspect();
     }
+    if (this.top instanceof CapBankLevel || this.top instanceof CanLevel) this.moveCapCursor(this.top.tau);
     this.cam.update();
     if (!this.lens) {
       // what unfolds, whether the sheet changes hands, and where every drawn level sits
@@ -2610,12 +2722,14 @@ export class App {
 
   /** Put ground point p at screen (sx, sy) with the camera at `zoom`. */
   private placeAt(p: Vec3, sx: number, sy: number, zoom: number): void {
+    // a point above the ground (a can up in its rack) sits where the ground point under it on screen does
+    const [px, pz] = p[1] ? this.groundUnder(p) : [p[0], p[2]];
     this.cam.pxPerUnit = zoom;
-    this.cam.target.set(p[0], 0, p[2]);
+    this.cam.target.set(px, 0, pz);
     this.cam.update();
     const g = this.cam.screenToGround(sx, sy);
-    this.cam.target.x += p[0] - g.x;
-    this.cam.target.z += p[2] - g.z;
+    this.cam.target.x += px - g.x;
+    this.cam.target.z += pz - g.z;
     this.cam.update();
   }
 

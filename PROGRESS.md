@@ -210,3 +210,12 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - The inspector adds a side elevation (heights exaggerated, stated), temperature against current with the ampacity marked, and sag against temperature.
     - Its math panel works the whole balance (film temperature, air properties, Reynolds number, the three convection correlations, radiation, sun, I²R, residual) and the sag. It is tested for every line span in all three winds.
   - **Fix: zooming toward one child no longer hands the sheet to a larger neighbour** that happens to be whole sooner.
+  - **A Capacitor bank level at every yard's switched capacitors, and a Can level inside it.**
+    - The yard draws the bank as built: steps along a short bus, each with its own switch; each step three stacks of cans in series groups on insulated tiers; a grounded neutral.
+    - Steps in service come from the solution; a step switched out is drawn light with its switch open. "Switch a step out / in" holds the bank in the solver (new `shuntHold`) and re-solves; the inspector compares voltage, Q and losses before and after.
+    - Energy chevrons show each phase's p(t) = v·i, in and out twice a cycle, the three summing to nothing; a chart shows v, i (a quarter cycle ahead) and p with the phasors, its cursor following the drawing.
+    - The can, cut open: elements in section, the discharge resistor, one element drawn out and unrolled into two plates with charge (+/−) swapping every half cycle and the field in the film between.
+    - Math panels for the bank (C from the rating, Q = n·Q_step·V², I, θ_I = θ_V + 90°, W, Q = ωW) and the can (C_can, V, I, kvar, and the IEEE 18 discharge resistor, R = t / (C ln(V_0/V_1))), in the arithmetic test for every bank; `test/capacitor.test.ts` for the physics.
+    - A tour stop, "Inside a capacitor"; glossary terms (capacitor, dielectric, electric field, discharge resistor, IEEE 18, shunt reactor); honesty sections.
+  - **Fix: the 500 kV yards' shunt reactors had been drawn as capacitor banks.** They are now single-phase reactor tanks, switched in steps.
+  - **Fixes: a raised anchor is placed correctly; only the child zoomed toward shows its part names; climbing out of a level no longer drops the sheet into a large neighbour (a span).**

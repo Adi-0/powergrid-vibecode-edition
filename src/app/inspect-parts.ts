@@ -4,6 +4,7 @@ import type { PoleTopState } from '../model/poletopState';
 import type { SpanCircuit, SpanState } from '../model/spanState';
 import { conductorTemperature, sagAt } from '../physics/ieee738';
 import type { SpanLevel } from '../levels/span';
+import { capWave, type CapBankState } from '../model/capState';
 import type { Grid } from '../model/grid';
 import { CONDUCTORS } from '../data/conductors';
 import type { CoreGeom, Winding } from '../levels/transformer';
@@ -686,4 +687,213 @@ function spanCurves(st: SpanState, c: SpanCircuit, key: string): SVGSVGElement {
   svgText(s, xb(c.maxTempC), Bx.y0 + Bx.h + 10, 'limit', 'notation:formula', { anchor: 'middle', size: 8 });
   svgText(s, Bx.x0 + Bx.w, Bx.y0 + Bx.h + 22, 'the wire’s temperature', 'notation:formula', { anchor: 'end', size: 8 });
   return s;
+}
+
+// ---------------------------------------------------------------------------- a capacitor bank
+
+/**
+ * Two cycles of one phase: its voltage and current (each scaled to its own peak, the
+ * current a quarter cycle ahead), and below, the power into each phase — in and out,
+ * the three together flat at nothing. A cursor (moved by the app as the drawing
+ * animates) marks the instant the drawing shows. At the right, the phasors.
+ */
+function capChart(st: CapBankState, key: string, one: boolean): SVGSVGElement {
+  const W = 330;
+  const H = one ? 112 : 176;
+  const L = 30;
+  const Rw = 78;
+  const s = svgEl('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, 'aria-label': 'Voltage, current and power over two cycles' }) as SVGSVGElement;
+  const x1 = W - Rw;
+  const T = 1 / COMPONENTS.fHz;
+  const X = (t: number) => L + (t / (2 * T)) * (x1 - L);
+  const top = { y0: 14, h: 72 };
+  const Yt = (u: number) => top.y0 + ((1 - u) / 2) * top.h;
+  const th = (st.vaDeg * Math.PI) / 180;
+  const line = (f: (t: number) => number, Y: (u: number) => number, w: number, dash = '', color = 'var(--ink)') => {
+    const pts: string[] = [];
+    for (let i = 0; i <= 120; i++) {
+      const t = (2 * T * i) / 120;
+      pts.push(`${X(t).toFixed(1)},${Y(f(t)).toFixed(1)}`);
+    }
+    const e = svgEl('polyline', { points: pts.join(' '), fill: 'none', stroke: color, 'stroke-width': w, 'stroke-linejoin': 'round' }, s);
+    if (dash) e.setAttribute('stroke-dasharray', dash);
+  };
+  svgEl('line', { x1: L, y1: Yt(0), x2: x1, y2: Yt(0), stroke: 'var(--ink-35)', 'stroke-width': 1 }, s);
+  line((t) => Math.cos(st.omega * t + th), Yt, 1.8);
+  line((t) => Math.cos(st.omega * t + th + Math.PI / 2), Yt, 1.2, '6 3');
+  svgText(s, L - 4, Yt(0.95) + 3, 'v', 'notation:formula', { anchor: 'end', size: 9, italic: true });
+  svgText(s, L - 4, Yt(0.55) + 3, 'i', 'notation:formula', { anchor: 'end', size: 9, italic: true });
+  svgText(s, L, top.y0 - 4, 'voltage (solid), current (dashed), each to its own peak', 'notation:formula', { size: 8 });
+  let yEnd = top.y0 + top.h;
+  if (!one) {
+    const bot = { y0: top.y0 + top.h + 18, h: 58 };
+    const Yb = (u: number) => bot.y0 + ((1 - u) / 2) * bot.h;
+    svgEl('line', { x1: L, y1: Yb(0), x2: x1, y2: Yb(0), stroke: 'var(--ink-35)', 'stroke-width': 1 }, s);
+    const pk = Math.max(1e-9, st.q1);
+    for (const p of [1, 2]) line((t) => capWave(st, t, p).p / pk, Yb, 0.9, PHASE_DASH[p], 'var(--ink-60)');
+    line((t) => capWave(st, t, 0).p / pk, Yb, 1.6);
+    line((t) => [0, 1, 2].reduce((a, p) => a + capWave(st, t, p).p, 0) / pk, Yb, 2.4);
+    svgText(s, L - 4, Yb(0.9) + 3, 'p', 'notation:formula', { anchor: 'end', size: 9, italic: true });
+    svgText(s, L, bot.y0 - 4, 'power into each phase: in, then out; the three together (heavy): none', 'notation:formula', { size: 8 });
+    yEnd = bot.y0 + bot.h;
+  }
+  for (const [t, label] of [
+    [T, 'one cycle'],
+    [2 * T, 'two'],
+  ] as const) {
+    svgEl('line', { x1: X(t), y1: yEnd, x2: X(t), y2: yEnd + 3, stroke: 'var(--ink-35)', 'stroke-width': 1 }, s);
+    svgText(s, X(t), yEnd + 12, label, 'notation:formula', { anchor: 'end', size: 8 });
+  }
+  // the cursor: the app moves it with the drawing
+  const c = svgEl('line', { x1: L, y1: top.y0 - 2, x2: L, y2: yEnd, stroke: 'var(--ink)', 'stroke-width': 1.4, 'data-cap-cursor': '1', 'data-x0': L, 'data-w': x1 - L, 'data-period': 2 * T }, s);
+  c.setAttribute('opacity', '0.7');
+  // the phasors: V at its angle, I a quarter turn ahead (counter-clockwise)
+  const cx = x1 + Rw / 2 + 4;
+  const cy = top.y0 + top.h / 2 + 4;
+  const r = 26;
+  svgEl('circle', { cx, cy, r, fill: 'none', stroke: 'var(--ink-15)', 'stroke-width': 1 }, s);
+  const arrow = (ang: number, dash: string) => {
+    const x = cx + r * Math.cos(ang);
+    const y = cy - r * Math.sin(ang);
+    const e = svgEl('line', { x1: cx, y1: cy, x2: x, y2: y, stroke: 'var(--ink)', 'stroke-width': 1.5 }, s);
+    if (dash) e.setAttribute('stroke-dasharray', dash);
+    const hx = Math.cos(ang);
+    const hy = -Math.sin(ang);
+    svgEl('polyline', { points: `${x - 6 * hx - 3 * hy},${y - 6 * hy + 3 * hx} ${x},${y} ${x - 6 * hx + 3 * hy},${y - 6 * hy - 3 * hx}`, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.3 }, s);
+    return [x, y] as const;
+  };
+  const [vx, vy] = arrow(th, '');
+  const [ix, iy] = arrow(th + Math.PI / 2, '4 2');
+  svgText(s, vx + 4, vy + 4, 'V', 'notation:formula', { size: 9, italic: true });
+  svgText(s, ix + 3, iy - 2, 'I', 'notation:formula', { size: 9, italic: true });
+  svgText(s, cx, cy + r + 14, '90° ahead', 'data:notation.quarterTurn', { anchor: 'middle', size: 8 });
+  void key;
+  return s;
+}
+
+export interface CapHead {
+  name: Node;
+  kvProv: Prov;
+  key: string;
+}
+
+/** A capacitor bank with nothing picked: what it supplies, how, and why here. */
+export function capBankView(head: CapHead, st: CapBankState | null): View {
+  const intro = span('Steps of three stacks of cans, one stack per phase, each step switched on its own. A capacitor stores energy as its voltage rises and gives it all back as it falls: on balance it takes in nothing. What it supplies is [[reactive-power|reactive power]], the to-and-fro current that motors’ and transformers’ magnetic fields need, here, so that it need not come over the lines.');
+  if (!st) return { name: head.name, kind: span('[[capacitor-bank|Capacitor bank]]'), intro, sections: [{ title: span('No operating point'), text: span('No solved state for this interval.'), rows: [] }] };
+  const t = st.t;
+  const d = (x: string, ...from: Prov[]) => derived(`t${t}.${head.key}.${x}`, ...from);
+  const stepQ = data(`model.shunt.${st.shunt}.stepMVAr`);
+  const kind = span('[[capacitor-bank|Capacitor bank]] · ', el(qty(st.steps, 'steps', data(`model.shunt.${st.shunt}.steps`), { digits: 0 })), ' of ', el(qty(st.stepMVAr, 'MVAr', stepQ, { digits: 0, phases: '3φ' })), ' · ', el(qty(st.kvNom, 'kV', head.kvProv, { digits: 0, basis: 'LL' })));
+  const pv = provOf(st.prov.vm);
+  const ps = provOf(st.prov.steps);
+  const sections: Section[] = [];
+  if (!st.energized) return { name: head.name, kind, intro, sections: [{ title: span('No supply'), text: span('The bus it stands on has no source in this solution: nothing flows.'), rows: [] }] };
+  sections.push({
+    title: span('What it supplies now'),
+    rows: [
+      { label: span('Steps in service'), value: span(el(qty(st.inService, '', ps, { digits: 0 })), ' of ', el(qty(st.steps, '', data(`model.shunt.${st.shunt}.steps`), { digits: 0 }))), note: span(st.held ? 'held where you switched it' : 'switched by the voltage controller') },
+      { label: span('[[voltage|Voltage]] $|V|$'), value: el(qty(st.vLL, 'kV', d('vLL', pv), { digits: 2, basis: 'LL' })), note: span(el(qty(st.vm, 'pu', pv, { digits: 4 }))) },
+      { label: span('[[reactive-power|Reactive power]] supplied $Q$'), value: el(qty(st.q, 'MVAr', d('Q', pv, ps, stepQ), { digits: 1, phases: '3φ' })), note: span('each step’s rating times the voltage squared') },
+      { label: span('[[current|Current]] in each phase $|I|$'), value: el(qty(st.amps, 'A', d('I', pv, ps, stepQ), { digits: 0 })), note: span('[[rms|RMS]]; a quarter cycle ahead of the voltage') },
+    ],
+  });
+  if (st.inService > 0)
+    sections.push({
+      title: span('A quarter cycle ahead'),
+      text: span('The current is greatest as the voltage passes through zero, and nothing when it peaks: the plates fill fastest as the voltage starts to climb. So energy flows in for a quarter cycle and back out for the next. The three phases take turns, and together take nothing at any instant.', chartDiv(capChart(st, head.key, false))),
+      rows: [],
+    });
+  const b = st.before && st.before.t === st.t ? st.before : null;
+  const whyRows: Section['rows'] = [{ label: span('The loads here draw'), value: el(qty(st.qLoad, 'MVAr', provOf(st.prov.qLoad), { digits: 1, phases: '3φ' })), note: span('for their magnetic fields') }];
+  if (b) {
+    const was = (k: string) => solver(`t${b.t}.seq${b.seq}.${k}`);
+    whyRows.push(
+      { label: span('Steps, before you switched'), value: el(qty(b.steps, '', was(`shunt.${st.shunt}.steps`), { digits: 0 })), note: span('now ', el(qty(st.inService, '', ps, { digits: 0 }))) },
+      { label: span('Voltage, before'), value: el(qty(b.vm, 'pu', was(`bus.${st.busId}.vm`), { digits: 4 })), note: span('now ', el(qty(st.vm, 'pu', pv, { digits: 4 }))) },
+      { label: span('Its reactive power, before'), value: el(qty(b.q, 'MVAr', was(`bus.${st.busId}.shunt`), { digits: 1, phases: '3φ' })), note: span('now ', el(qty(st.q, 'MVAr', d('Q', pv, ps, stepQ), { digits: 1, phases: '3φ' }))) },
+      { label: span('The whole system’s [[losses]], before'), value: el(qty(b.losses, 'MW', was('losses'), { digits: 1 })), note: span('now ', el(qty(st.losses, 'MW', provOf(st.prov.losses), { digits: 1 }))) },
+    );
+  }
+  sections.push({
+    title: span('Why here'),
+    text: span(b ? 'What changed when you switched, the network solved again:' : 'Switch a step out and the bus voltage sags: the reactive power must then come from generators farther away, and its current warms every line on the way. Try it below.'),
+    rows: whyRows,
+  });
+  return { name: head.name, kind, intro, sections };
+}
+
+/** A part of the bank, picked. */
+export function capBankPartView(head: CapHead, st: CapBankState | null, what: string): View {
+  const view = capBankView(head, st);
+  if (!st) return view;
+  const t = st.t;
+  const cls = st.kvNom >= 200 ? 230 : 115;
+  const S = qty(st.design.series, '', data(`components.capacitor.series.${cls}`), { digits: 0 });
+  const Pp = qty(st.design.parallel, '', data(`components.capacitor.parallel.${cls}`), { digits: 0 });
+  const vg = qty(st.vLN / st.design.series, 'kV', derived(`t${t}.${head.key}.vGroup`, provOf(st.prov.vm)), { digits: 2, basis: 'LN' });
+  const texts: Record<string, HTMLSpanElement> = {
+    stack: span('One phase of one step: ', el(S), ' groups in series up the stack, each group ', el(Pp), ' cans side by side. Each group takes its share of the phase voltage, ', el(vg), ' now; the tiers are insulated from each other because each sits at a higher voltage than the one below. The bottom joins the other two phases at the step’s grounded neutral.'),
+    switch: span('Each step has its own switch. Switched in, the step adds its capacitance to the bus; switched out, it is drawn light and its switch hangs open. A controller steps them in when the voltage sags and out when it rises: you can hold them yourself.'),
+    bus: span('The bank’s own short bus: rigid tubes on post insulators, one per phase, running over the steps. The bank’s breaker, back at the main bus, can take the whole bank off at once.'),
+  };
+  return { ...view, intro: texts[what] ?? view.intro };
+}
+
+/** The can with nothing picked: what a capacitor is, and what this one does now. */
+export function canView(head: CapHead, st: CapBankState | null, bankKey: string): View {
+  const intro = span('A capacitor is two sheets of aluminium foil, very large and very close together, kept apart by thin plastic film, wound up into flat rolls to fit the case. Put a voltage across it and charge gathers on the sheets, + on one and − on the other, with an electric field in the film between them.');
+  if (!st) return { name: head.name, kind: span('[[capacitor|Capacitor]] can'), intro, sections: [] };
+  const t = st.t;
+  const cls = st.kvNom >= 200 ? 230 : 115;
+  const cq = derived(`t${t}.${head.key}.Ccan`, data(`model.shunt.${st.shunt}.stepMVAr`), data(`components.capacitor.series.${cls}`), data(`components.capacitor.parallel.${cls}`));
+  const vRated = st.kvNom / Math.sqrt(3) / st.design.series;
+  const kind = span('[[capacitor|Capacitor]] can · ', el(qty(st.cCan * 1e6, 'µF', cq, { digits: 2 })), ' · rated ', el(qty(vRated, 'kV', derived(`t${t}.${head.key}.Vrated`, head.kvProv, data(`components.capacitor.series.${cls}`)), { digits: 2 })));
+  const sections: Section[] = [];
+  const pv = provOf(st.prov.vm);
+  if (st.vCan > 0) {
+    const dv = derived(`t${t}.${head.key}.Vcan`, pv);
+    sections.push({
+      title: span('Now'),
+      rows: [
+        { label: span('Voltage across it'), value: el(qty(st.vCan, 'kV', dv, { digits: 3 })), note: span('[[rms|RMS]]; its share of the phase voltage') },
+        { label: span('[[current|Current]] through it'), value: el(qty(st.iCan, 'A', derived(`t${t}.${head.key}.Ican`, dv, cq), { digits: 1 })) },
+        { label: span('[[reactive-power|Reactive power]]'), value: el(qty(st.qCan, 'kvar', derived(`t${t}.${head.key}.Qcan`, dv, cq), { digits: 0 })) },
+        { label: span('Energy held at the voltage’s peak'), value: el(qty(st.cCan * (st.vCan * 1e3) ** 2, 'J', derived(`t${t}.${head.key}.W`, dv, cq), { digits: 0 })), note: span('$W = ½ C V_{peak}^2$, all of it given back a quarter cycle later') },
+      ],
+    });
+    sections.push({
+      title: span('Every half cycle'),
+      text: span('The charge follows the voltage: + and − change places every half cycle. The current in the terminals is that charge coming and going, so it is greatest when the charge is changing fastest, as the voltage passes through zero.', chartDiv(capChart(st, head.key, true))),
+      rows: [],
+    });
+  } else sections.push({ title: span('Switched out'), text: span('Its step is switched out: no voltage across it, no charge, no field.'), rows: [] });
+  const D = COMPONENTS.discharge;
+  const v0 = Math.SQRT2 * vRated * 1000;
+  const R = D.s / (st.cCan * Math.log(v0 / D.v));
+  const dr = derived(`t${t}.${head.key}.R`, cq, data('components.discharge.v'), data('components.discharge.s'));
+  sections.push({
+    title: span('Switched off'),
+    text: span('Cut off from the bus, the plates keep their charge, at up to the peak of the voltage. The discharge resistor across the terminals drains it: [[ieee18|IEEE 18]] asks for ', el(qty(D.v, 'V', data('components.discharge.v'), { digits: 0 })), ' or less within ', el(qty(D.s / 60, 'min', data('components.discharge.s'), { digits: 0 })), '.'),
+    rows: [
+      { label: span('Largest resistor that does it'), value: el(qty(R / 1e6, 'MΩ', dr, { digits: 2 })) },
+      { label: span('Its time constant $τ = RC$'), value: el(qty(R * st.cCan, 's', derived(`t${t}.${head.key}.tau`, dr, cq), { digits: 1 })), note: span('the charge falls to about a third in each') },
+    ],
+  });
+  void bankKey;
+  return { name: head.name, kind, intro, sections };
+}
+
+/** A part of the can, picked. */
+export function canPartView(head: CapHead, st: CapBankState | null, bankKey: string, what: string): View {
+  const view = canView(head, st, bankKey);
+  const texts: Record<string, string> = {
+    case: 'A sealed stainless steel case, filled with an insulating fluid that soaks the film and leaves no air where a spark could start.',
+    element: 'An element: two long strips of aluminium foil with plastic film between and on top, wound into a roll and pressed flat. The elements are stacked and joined so the can has the capacitance and voltage it needs.',
+    plate: 'Aluminium foil, a few thousandths of a millimetre thick: one plate. The larger the plates and the closer together, the more charge they hold for a given voltage: that is the capacitance.',
+    film: 'Polypropylene film, the dielectric: it keeps the plates apart and holds the electric field. Drawn here thousands of times thicker than it is.',
+    resistor: 'The discharge resistor, across the terminals inside the case: always connected, it wastes a trickle while the can is in service and drains its charge once it is switched off.',
+    bushing: 'The terminals: porcelain bushings carrying the connections through the lid. This can’s two terminals join the next groups in its series string.',
+  };
+  return { ...view, intro: span(texts[what] ?? '') };
 }

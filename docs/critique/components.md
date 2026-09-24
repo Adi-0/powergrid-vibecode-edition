@@ -2,7 +2,8 @@
 
 Screenshots: `xfmr`, `xfmr-unfold`, `xfmr-math`, `xfmr-part`, `bank`, `bank-math`,
 `cb-unfold`, `cb`, `cb-opening`, `cb-math`, `cb60`, `poletop`, `poletop-math`,
-`span-unfold`, `span`, `span-math`. Checked against the visual
+`span-unfold`, `span`, `span-math`, `cap-unfold`, `cap`, `cap-math`, `can-unfold`, `can`,
+`can-math`. Checked against the visual
 direction in CLAUDE.md, and against the author's ask: see how a thing works, visually,
 without a wall of words.
 
@@ -21,6 +22,12 @@ without a wall of words.
 | 11 | The span's sag, the whole point of the level, could barely be seen: at Tesla the span toward Table Mountain runs almost straight up the sheet, so the sag is seen edge-on. | The isometric view is fixed; a corridor's bearing decides how the span faces the viewer. | The drawing keeps its place in the yard; the inspector adds a side elevation (heights exaggerated by a stated factor) with the limit's ghost and the clearance, and two small curves: temperature against current with the ampacity marked, sag against temperature with the limit. Each has a dot for now. |
 | 12 | Zooming toward one span handed the sheet to the span beside it. | The longer span next to it was whole at a lower zoom, and the hand-off took the nearest *whole* child. | The hand-off waits while the child nearest the focus is still unfolding. |
 | 13 | The span at Tesla is short (about a hundred and sixty metres). | The span is capped at 0.85 of the distance from the first tower to where the yard's drawing hands the corridor to the map's stroke, and at Tesla that point is near. | Kept: the length is stated, and the math and sag use it. Longer spans elsewhere show the usual few-hundred-metre sag. |
+| 14 | Every 500 kV yard showed a "Capacitor bank" where the model has shunt reactors. | One drawing for every switched shunt, whatever its sign. | Reactors drawn as single-phase oil-filled units, labelled as reactors; capacitors as racks of cans. Both show their steps in and out. |
+| 15 | The can's + marks read as ×. | The marks lay flat on the plates, and a + seen from 45° above is a ×. | The marks stand upright, square to the view, on the plates' facing sides between the field arrows. |
+| 16 | The field arrows were faint, the gap between the plates too narrow to show them. | A gap of 0.14 m at a fit of a few hundred px per metre. | Gap 0.2 m (the film is still stated as far thinner than drawn), arrows 2 px wide. |
+| 17 | Zooming toward the can, the unfold view had it far above the centre. | The camera placed the can's anchor by its ground footprint, but the can stands five metres up. | The camera places a raised point by the ground point that projects to the same place on screen. |
+| 18 | While the bank unfolded, a nearby span's labels ("Clearance to the ground") appeared on the sheet with no span in sight. | A band's part names showed once it was nearly whole, whether or not the reader was zooming toward it. | Only the focus band's names show. |
+| 19 | The guided route's stop after the capacitor ended in a span at Tesla, not at the wall outlet. | Climbing out of the bank, the camera rested where the span toward Los Banos was whole and near the centre; the sheet went into it, and the route's climb stopped there. | After a climb nothing takes the sheet until the reader zooms; a hand-off needs the child near the focus. |
 
 ## Still wrong or weak
 
@@ -31,3 +38,5 @@ without a wall of words.
 - **The GPU cost of the new levels was not measured.** The software rasteriser here runs at under one frame a second for any view at 1440 × 900.
 - **The span's sag is small on the sheet.** A few metres against a span of hundreds is true to scale; the inspector's elevation exaggerates it, the drawing does not.
 - **Only the first span of a corridor is modelled.** The rest of the line's spans would share the same temperature (same current, same weather at this level of model) but not the same terrain.
+- **The bank is dense.** Five tiers of four cans, three stacks per step, several steps, seen along a diagonal: the stacks overlap on the sheet. The steps were spaced wider; a real bank is as crowded.
+- **The discharge is not animated.** Switching a step out sends its cans to nothing at once; a real can keeps its charge and drains through the resistor over minutes. The time constant is in the inspector.

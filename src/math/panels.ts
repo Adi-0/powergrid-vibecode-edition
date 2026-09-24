@@ -5,7 +5,7 @@ import type { Feeder } from '../model/feeder';
 import { nodeIndex } from '../model/feeder';
 import { WIRING_12AWG } from '../data/dist/evergreen';
 import { COUPLING_BUS } from '../model/coupling';
-import { add, atan, cos, div, mul, neg, num, par, pow, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
+import { add, atan, cos, div, ln, mul, neg, num, par, pow, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
 import { CCGT, plantState } from '../model/ccgt';
 import { machineOf, phasors } from '../model/machine';
 import type { TripResponse } from '../model/frequency';
@@ -16,6 +16,7 @@ import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 import { interruption, type BreakerState } from '../model/breakerState';
 import { HALF_V, PRIMARY_LN_V, type PoleTopState } from '../model/poletopState';
 import type { SpanState } from '../model/spanState';
+import type { CapBankState } from '../model/capState';
 import { COMPONENTS } from '../data/components';
 
 /**
@@ -1092,6 +1093,119 @@ export function spanPanel(st: SpanState | null, ci: number, key: string): Panel 
   return {
     title: 'The wire’s temperature and sag',
     intro: 'The [[ieee738|IEEE 738]] steady-state heat balance, per metre of one conductor, at the temperature where heat in equals heat out. The air’s properties are at the film temperature; the wind is taken across the line.',
+    steps,
+  };
+}
+
+/**
+ * A capacitor bank's working: one step's capacitance per phase from its rating, the
+ * reactive power it supplies at the solved voltage (as the voltage squared), the
+ * current, which leads the voltage by 90°, and the energy each phase holds at the
+ * voltage's peak — Q per phase is that energy times ω.
+ */
+export function capBankPanel(st: CapBankState | null, key: string): Panel | null {
+  if (!st || !st.energized) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.${key}.${x}`;
+  const three = num(3, 0, '', 'data:notation.three');
+  const kilo = num(1000, 0, '', 'data:notation.kilo');
+  const cls = st.kvNom >= 200 ? 230 : 115;
+  const steps: Step[] = [
+    { label: 'Angular frequency', general: 'ω = 2πf', sym: 'ω', expr: mul(mul(num(2, 0, '', 'data:notation.two'), num(Math.PI, 5, '', 'data:notation.pi', 'π')), num(COMPONENTS.fHz, 0, 'Hz', 'data:components.fHz', 'f')), unit: 'rad/s', digits: 3, prov: k('omega'), solver: st.omega },
+    { label: 'The rated voltage, line-to-neutral', general: 'V_{LN,rated} = V_{LL,rated} / √3', sym: 'V_{LN,rated}', expr: div(num(st.kvNom, 0, 'kV', `data:network.bus.${st.busId}.baseKV`, 'V_{LL,rated}'), sqrt(three)), unit: 'kV', digits: 4, prov: k('vRatedLN'), solver: st.kvNom / Math.sqrt(3) },
+    {
+      label: 'One step’s capacitance per phase, from its rating',
+      general: 'C = Q_{step} / (3 ω V_{LN,rated}^2)',
+      sym: 'C',
+      expr: mul(div(num(st.stepMVAr, 0, 'MVAr', `data:model.shunt.${st.shunt}.stepMVAr`, 'Q_{step}'), par(mul(mul(three, ref(0)), sq(ref(1))))), num(1e6, 0, '', 'data:notation.mega')),
+      unit: 'µF',
+      digits: 5,
+      prov: k('C'),
+      solver: st.cStep * 1e6,
+    },
+    { label: 'Its voltage now, line-to-line', general: '|V_{LL}| = V_{pu} × V_{LL,rated}', sym: '|V_{LL}|', expr: mul(num(st.vm, 6, 'pu', st.prov.vm, 'V_{pu}'), num(st.kvNom, 0, 'kV', `data:network.bus.${st.busId}.baseKV`, 'V_{LL,rated}')), unit: 'kV', digits: 3, prov: k('vLL'), solver: st.vLL },
+    {
+      label: 'Reactive power supplied, three-phase: each step’s rating times the voltage squared',
+      general: 'Q = n · Q_{step} · V_{pu}^2',
+      sym: 'Q',
+      expr: mul(mul(num(st.inService, 0, '', st.prov.steps, 'n'), num(st.stepMVAr, 0, 'MVAr', `data:model.shunt.${st.shunt}.stepMVAr`, 'Q_{step}')), sq(num(st.vm, 6, 'pu', st.prov.vm, 'V_{pu}'))),
+      unit: 'MVAr',
+      digits: 3,
+      prov: k('Q'),
+      solver: st.q,
+    },
+    { label: 'Current in each phase (RMS)', general: '|I| = Q / (√3 |V_{LL}|)', sym: '|I|', expr: mul(div(ref(4), par(mul(sqrt(three), ref(3)))), kilo), unit: 'A', digits: 2, prov: k('I'), solver: st.amps },
+    { label: 'Phase a’s current angle: a quarter turn ahead of its voltage', general: 'θ_I = θ_V + 90°', sym: 'θ_I', expr: add(num(st.vaDeg, 4, '°', st.prov.va, 'θ_V'), num(90, 0, '°', 'data:notation.quarterTurn')), unit: '°', digits: 4, prov: k('thetaI'), solver: st.iDeg },
+    {
+      label: 'Energy one phase holds at the voltage’s peak, all steps in: half its capacitance times the peak voltage squared, the peak being the RMS times the square root of two',
+      general: 'W = n · C · (|V_{LL}| / √3)^2',
+      sym: 'W',
+      expr: div(mul(mul(num(st.inService, 0, '', st.prov.steps, 'n'), ref(2)), sq(par(div(ref(3), sqrt(three))))), kilo),
+      unit: 'kJ',
+      digits: 3,
+      prov: k('W'),
+      solver: st.wPeak / 1000,
+    },
+    { label: 'The check: reactive power per phase is that energy, taken in and given back, times ω', general: 'Q_{1φ} = ω W', sym: 'Q_{1φ}', expr: div(mul(ref(0), ref(7)), kilo), unit: 'MVAr', digits: 3, prov: k('Q1'), solver: st.q1 },
+  ];
+  void cls;
+  return {
+    title: 'What the bank supplies',
+    intro: 'Load convention, the bank as a load: S = V·I* (the current conjugated). Its current leads its voltage by a quarter turn, so S = −j|V||I|: it takes in negative reactive power, which is to say it supplies it. RMS values; voltages line-to-line (LL) or line-to-neutral (LN) as marked; Q three-phase unless marked per phase.',
+    steps,
+  };
+}
+
+/**
+ * One can's working: its capacitance from the step's (S groups in series of P cans in
+ * parallel), its voltage, current and reactive power now, and the discharge resistor
+ * IEEE 18 asks for — the largest that takes the can from the peak of its rated voltage
+ * to 50 V within 5 minutes — and the time constant it gives.
+ */
+export function canPanel(st: CapBankState | null, key: string, bankKey: string): Panel | null {
+  if (!st) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.${key}.${x}`;
+  const cls = st.kvNom >= 200 ? 230 : 115;
+  const S = num(st.design.series, 0, '', `data:components.capacitor.series.${cls}`, 'S');
+  const Pn = num(st.design.parallel, 0, '', `data:components.capacitor.parallel.${cls}`, 'P');
+  const three = num(3, 0, '', 'data:notation.three');
+  const kilo = num(1000, 0, '', 'data:notation.kilo');
+  const D = COMPONENTS.discharge;
+  const vRated = st.kvNom / Math.sqrt(3) / st.design.series;
+  const v0 = Math.SQRT2 * vRated * 1000;
+  const cCan = st.cCan * 1e6;
+  const rMax = D.s / (cCan * Math.log(v0 / D.v));
+  const on = st.vCan > 0;
+  const steps: Step[] = [
+    { label: 'One can’s capacitance: the phase’s S groups in series, P cans in parallel in each', general: 'C_{can} = C · S / P', sym: 'C_{can}', expr: div(mul(num(st.cStep * 1e6, 5, 'µF', `derived:t${t}.${bankKey}.C`, 'C'), S), Pn), unit: 'µF', digits: 4, prov: k('Ccan'), solver: cCan },
+  ];
+  if (on) {
+    steps.push(
+      { label: 'Its share of the phase voltage', general: '|V_{can}| = |V_{LL}| / (√3 S)', sym: '|V_{can}|', expr: div(num(st.vLL, 3, 'kV', `derived:t${t}.${bankKey}.vLL`, '|V_{LL}|'), par(mul(sqrt(three), S))), unit: 'kV', digits: 4, prov: k('Vcan'), solver: st.vCan },
+      { label: 'The current through it (RMS), a quarter turn ahead of its voltage', general: '|I_{can}| = ω C_{can} |V_{can}|', sym: '|I_{can}|', expr: div(mul(mul(num(st.omega, 3, 'rad/s', `derived:t${t}.${bankKey}.omega`, 'ω'), ref(0)), ref(1)), kilo), unit: 'A', digits: 3, prov: k('Ican'), solver: st.iCan },
+      { label: 'Its reactive power', general: 'Q_{can} = |V_{can}| |I_{can}|', sym: 'Q_{can}', expr: mul(ref(1), ref(2)), unit: 'kvar', digits: 1, prov: k('Qcan'), solver: st.qCan },
+    );
+  }
+  const r0 = steps.length;
+  steps.push(
+    { label: 'Its rated voltage: its share of the rated phase voltage', general: 'V_{can,rated} = V_{LL,rated} / (√3 S)', sym: 'V_{can,rated}', expr: div(num(st.kvNom, 0, 'kV', `data:network.bus.${st.busId}.baseKV`, 'V_{LL,rated}'), par(mul(sqrt(three), S))), unit: 'kV', digits: 4, prov: k('Vrated'), solver: vRated },
+    { label: 'The peak of that voltage, what it may hold when switched off', general: 'V_0 = √2 V_{can,rated}', sym: 'V_0', expr: mul(mul(sqrt(num(2, 0, '', 'data:notation.two')), ref(r0)), kilo), unit: 'V', digits: 0, prov: k('V0'), solver: v0 },
+    {
+      label: 'The largest discharge resistor that drains it in time, as the standard asks: the voltage falls as $e^{−t/RC}$',
+      general: 'R = t / (C_{can} ln(V_0 / V_1))',
+      sym: 'R',
+      expr: div(num(D.s, 0, 's', 'data:components.discharge.s', 't'), par(mul(ref(0), ln(div(ref(r0 + 1), num(D.v, 0, 'V', 'data:components.discharge.v', 'V_1')))))),
+      unit: 'MΩ',
+      digits: 3,
+      prov: k('R'),
+      solver: rMax,
+    },
+    { label: 'Its time constant: the charge falls to about a third in this time', general: 'τ = R C_{can}', sym: 'τ', expr: mul(ref(r0 + 2), ref(0)), unit: 's', digits: 2, prov: k('tau'), solver: rMax * cCan },
+  );
+  return {
+    title: 'One can',
+    intro: on ? 'RMS values. The can is one of the phase’s series groups, so it takes its share of the phase voltage and the whole group’s current divided among its parallel cans.' : 'This can’s step is switched out: no voltage across it now. Its rating and its discharge resistor still follow.',
     steps,
   };
 }

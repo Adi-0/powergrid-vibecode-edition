@@ -40,5 +40,27 @@ export const COMPONENTS = {
    * voltages (7200 V to each 120 V half), far fewer of each than a real one has.
    */
   poletop: { drawnPrimary: 60, drawnHalf: 1 },
+  /**
+   * A switched shunt capacitor bank's construction (estimates for a plausible design,
+   * not one utility's): per phase of a step, `series` groups of `parallel` cans, on
+   * `tiers` insulated tiers of a stack; the cans' case (thickness along the row, width,
+   * height), terminals and spacing, m; a tier's height and the pedestal, m. Each can's
+   * rating follows from the step's: its share of the phase voltage and of the kvar.
+   */
+  capacitor: {
+    series: { 230: 10, 115: 5 },
+    parallel: { 230: 2, 115: 4 },
+    tiers: { 230: 5, 115: 5 },
+    can: { t: 0.17, w: 0.45, h: 0.9, bush: 0.3, pitch: 0.3 },
+    tierH: 1.5,
+    pedH: 1.0,
+    /** Elements drawn in a can's section (a real one has more, thinner). */
+    elements: 12,
+  },
+  /**
+   * IEEE 18: a capacitor unit above 600 V carries a discharge device that takes it from
+   * the peak of its rated voltage to 50 V or less within 5 minutes of being switched off.
+   */
+  discharge: { v: 50, s: 300, src: 'ieee18' as SourceId },
   src: 'estimate' as SourceId,
 };

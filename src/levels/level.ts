@@ -9,7 +9,7 @@ import type { Snapshot } from '../model/snapshot';
  * (kilometres for System and Region, metres below), and the app hands the camera from
  * one frame to the next during a transition.
  */
-export type LevelKind = 'system' | 'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine' | 'transformer' | 'breaker' | 'poletop' | 'span';
+export type LevelKind = 'system' | 'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine' | 'transformer' | 'breaker' | 'poletop' | 'span' | 'capacitor' | 'capunit';
 
 export type Selection =
   | { kind: 'site'; id: string }
@@ -26,7 +26,7 @@ export type Selection =
   /** A part of a component opened up (a transformer's core, a winding…): by the component's key. */
   | { kind: 'part'; id: string; what: PartWhat; sub?: string };
 
-export type PartWhat = 'core' | 'winding' | 'bushing' | 'tapchanger' | 'radiator' | 'conservator' | 'tank' | 'fixed' | 'moving' | 'rod' | 'ct' | 'mechanism' | 'conductor' | 'tower';
+export type PartWhat = 'core' | 'winding' | 'bushing' | 'tapchanger' | 'radiator' | 'conservator' | 'tank' | 'fixed' | 'moving' | 'rod' | 'ct' | 'mechanism' | 'conductor' | 'tower' | 'stack' | 'switch' | 'bus' | 'case' | 'element' | 'resistor' | 'plate' | 'film';
 
 export type EquipWhat = 'bus' | 'gsu' | 'generator' | 'turbine' | 'hrsg' | 'stack' | 'condenser' | 'fuel' | 'stator' | 'rotor' | 'exciter' | 'neutral' | 'terminals';
 
@@ -122,6 +122,10 @@ export const FLOW_SCALES: Record<LevelKind, FlowScale> = {
   poletop: { unit: 'kW', perPx: 2.5, perSpeed: 0.8, samples: [5, 25] },
   // the System's own scale: a circuit's chevrons keep their size out of the yard and along its span
   span: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
+  // energy into and out of one phase of a capacitor bank (instantaneous power, slowed)
+  capacitor: { unit: 'MW', perPx: 2, perSpeed: 0.8, samples: [10, 40] },
+  // …and of one can
+  capunit: { unit: 'kW', perPx: 60, perSpeed: 25, samples: [200, 800] },
 };
 
 export const FLOW_MIN_PX = 5;

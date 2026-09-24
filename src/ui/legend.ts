@@ -201,6 +201,26 @@ function spanRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(20, [{ pts: [[27, 2], [27, 18]], w: 0.8 }, { pts: [[23, 2], [31, 2]], w: 0.8 }, { pts: [[23, 18], [31, 18]], w: 0.8 }]), '[[clearance|Clearance]] from the lowest conductor to the ground'));
 }
 
+/** The Capacitor bank level: steps of stacked cans. */
+function capacitorRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(20, [{ pts: [[20, 19], [34, 19], [34, 7], [20, 7], [20, 19]], w: 1 }, { pts: [[24, 7], [24, 2]], w: 0.8 }, { pts: [[30, 7], [30, 2]], w: 0.8 }]), 'A [[capacitor]] can, its two terminals on top'));
+  g.appendChild(row(drawSample(20, [{ pts: [[27, 1], [27, 8]], w: 1.4 }, { pts: [[27, 8], [40, 3]], w: 1.4 }, { pts: [[20, 19], [34, 19], [34, 12], [20, 12], [20, 19]], w: 1, color: INK_35 }]), 'A step switched out: its switch hanging open, the step drawn light'));
+  const t = document.createElement('span');
+  t.append(rich('Energy into and out of each phase: the chevrons turn round twice a cycle, shown '), el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })), document.createTextNode(' times slower'));
+  g.appendChild(row(drawSample(14, [{ pts: [[8, 7], [46, 7]], w: 1.4 }, { pts: [[14, 3], [8, 7], [14, 11]], w: 1.4 }, { pts: [[40, 3], [46, 7], [40, 11]], w: 1.4 }]), t));
+}
+
+/** The Capacitor can level: a can cut open, one element unrolled. */
+function capunitRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(18, [{ pts: [[10, 5], [18, 5]], w: 1.6 }, { pts: [[14, 1], [14, 9]], w: 1.6 }, { pts: [[34, 13], [42, 13]], w: 1.6 }]), 'Charge on the plates, + on one and − on the other: they change places every half cycle'));
+  g.appendChild(row(drawSample(18, [{ pts: [[27, 2], [27, 16]], w: 1.4 }, { pts: [[23, 11], [27, 16], [31, 11]], w: 1.4 }]), 'The [[electric-field|electric field]] in the film, from + to −, as strong as the voltage'));
+  g.appendChild(row(drawSample(18, [{ pts: [[8, 3], [46, 3], [46, 8], [8, 8], [8, 3]], w: 0.8 }, { pts: [[8, 10], [46, 10], [46, 15], [8, 15], [8, 10]], w: 0.8 }, { pts: [[10, 5.5], [44, 5.5]], w: 0.6, color: INK_60 }, { pts: [[10, 12.5], [44, 12.5]], w: 0.6, color: INK_60 }]), 'Elements cut through: foil and film wound flat and stacked'));
+  g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
+  const t = document.createElement('span');
+  t.append(rich('All of it follows the voltage, shown '), el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })), document.createTextNode(' times slower'));
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 9], [16, 3], [28, 15], [40, 3], [50, 9]], w: 1 }]), t));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -340,6 +360,10 @@ export class Legend {
       poletopRows(g2);
     } else if (s.level === 'span') {
       spanRows(g2);
+    } else if (s.level === 'capacitor') {
+      capacitorRows(g2);
+    } else if (s.level === 'capunit') {
+      capunitRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -372,6 +396,8 @@ export class Legend {
               ? `Chevrons: [[real-power|real power]] through the pole cut open, one phase of the three; size and speed ∝ ${fs.unit} (`
               : s.level === 'poletop'
                 ? `Chevrons: [[real-power|real power]] out along each leg to the homes; size and speed ∝ ${fs.unit} (`
+              : s.level === 'capacitor' || s.level === 'capunit'
+                ? `Chevrons: power into the ${s.level === 'capacitor' ? 'bank, phase by phase' : 'can'}, in and then out; on balance nothing; size and speed ∝ ${fs.unit} (`
               : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
       ),
     );

@@ -15,7 +15,7 @@ export type Expr =
   | { k: 'num'; value: number; digits: number; unit: string; prov: string; sym?: string }
   | { k: 'ref'; step: number }
   | { k: 'op'; op: '+' | '−' | '×' | '÷'; a: Expr; b: Expr }
-  | { k: 'fn'; fn: 'cos' | 'sin' | 'sqrt' | 'atan'; a: Expr }
+  | { k: 'fn'; fn: 'cos' | 'sin' | 'sqrt' | 'atan' | 'ln'; a: Expr }
   | { k: 'sq'; a: Expr }
   /** A power other than two (an exponent from a correlation: 0.52, 1.25, 4). */
   | { k: 'pow'; a: Expr; p: number }
@@ -79,7 +79,7 @@ export function evaluate(e: Expr, results: number[]): number {
     case 'fn': {
       const v = evaluate(e.a, results);
       // cos and sin take degrees; atan returns degrees
-      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : Math.sqrt(v);
+      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : e.fn === 'ln' ? Math.log(v) : Math.sqrt(v);
     }
     case 'op': {
       const a = evaluate(e.a, results);
@@ -107,6 +107,8 @@ export const cos = (a: Expr): Expr => ({ k: 'fn', fn: 'cos', a });
 export const sin = (a: Expr): Expr => ({ k: 'fn', fn: 'sin', a });
 export const sqrt = (a: Expr): Expr => ({ k: 'fn', fn: 'sqrt', a });
 export const atan = (a: Expr): Expr => ({ k: 'fn', fn: 'atan', a });
+/** The natural logarithm. */
+export const ln = (a: Expr): Expr => ({ k: 'fn', fn: 'ln', a });
 export const sq = (a: Expr): Expr => ({ k: 'sq', a });
 export const pow = (a: Expr, p: number): Expr => ({ k: 'pow', a, p });
 export const neg = (a: Expr): Expr => ({ k: 'neg', a });

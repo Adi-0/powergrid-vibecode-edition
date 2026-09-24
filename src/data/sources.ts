@@ -40,6 +40,7 @@ export const SOURCES = {
   c372: { id: 'c372', family: 'IEEE C37.2', note: 'Device function numbers.' },
   c37112: { id: 'c37112', family: 'IEEE C37.112', note: 'Inverse-time overcurrent characteristic equations.' },
   ieee738: { id: 'ieee738', family: 'IEEE 738', note: 'Conductor temperature and ampacity.' },
+  ieee18: { id: 'ieee18', family: 'IEEE 18', note: 'Shunt power capacitors: ratings, tolerances, discharge devices.' },
   ieee80: { id: 'ieee80', family: 'IEEE 80', note: 'Substation grounding, step and touch potential.' },
   ieee1366: { id: 'ieee1366', family: 'IEEE 1366', note: 'Distribution reliability indices (SAIFI, SAIDI, CAIDI, MAIFI).' },
   c57: { id: 'c57', family: 'IEEE C57.12.00', note: 'Transformer terminal markings, angular displacement, impedance.' },

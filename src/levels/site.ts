@@ -10,11 +10,26 @@ import { NORTH_MAP, Sketch, enIso as P } from './sketch';
 import { siteExits, type SiteExit } from './exits';
 import { UNIT1, unit1Shell } from './plant';
 import { breaker, disconnect, gantry, insulator, kvClass, post, tower, transformer, vcyl, wire, type KvClass, type XfBody } from './kit';
+import { capGeom, reactorGeom, setShuntSteps, shuntBank, type ShuntBankDraw } from './capkit';
+import type { CapBankPlace } from './capacitor';
 
 /** The portal key of a transformer bank's own level (by its branch id). */
 export const xfKey = (branchId: string): string => `xf:${branchId}`;
 /** The portal key of a circuit's breaker at a site (by the site and the branch id). */
 export const cbKey = (siteId: string, branchId: string): string => `cb:${siteId}:${branchId}`;
+/** The portal key of a capacitor bank's own level (by the site and the grid shunt index). */
+export const capKey = (siteId: string, shunt: number): string => `cap:${siteId}:${shunt}`;
+
+/** How far a shunt bank's bay reaches from the bus centre line, m. */
+function shuntReach(k: KvClass, sh: GridShunt): number {
+  const d = bayStations(k);
+  const cap = sh.stepMVAr > 0;
+  const g = cap ? capGeom(k) : null;
+  const r = cap ? null : reactorGeom(k);
+  const pitch = g ? g.pitchE : r!.pitchE;
+  const half = g ? g.rackE / 2 : r!.se / 2 + 1.3;
+  return d.b1 + 1.8 * k.f + 1.2 + 2 * half + (sh.steps - 1) * pitch + 1.4;
+}
 
 /**
  * The Site level: the inside of any substation or plant switchyard on the System
@@ -138,6 +153,8 @@ export class SiteLevel implements Level {
   readonly bayBreakers: Array<BayBreaker & { branch: number }> = [];
   /** The transformer banks as drawn: where each tank stands, and its strokes (hidden while its own level is open). */
   readonly bankBodies: Array<{ branch: number; body: XfBody; lines: [number, number]; faces: [number, number]; hvKV: number; lvKV: number }> = [];
+  /** The switched shunt banks as drawn: capacitor banks open into a level of their own. */
+  readonly shuntBanks: Array<{ shunt: number; cap: boolean; place: CapBankPlace; draw: ShuntBankDraw }> = [];
   /** Moss Landing Unit 1's footprint here: hidden while its own level is open. */
   private unit1Lines: [number, number] = [0, 0];
   private unit1Faces: [number, number] = [0, 0];
@@ -212,7 +229,8 @@ export class SiteLevel implements Level {
     // ---- how far the drawing reaches, and so the exit radius
     for (const sec of sections) {
       const bayEnd = this.bayLength(sec.k, true);
-      const far = (items: Item[]) => items.reduce((a, it) => (it.kind === 'plant' ? Math.max(a, bayEnd + 16 + blockSize(it)) : it.kind === 'load' || it.kind === 'hvdc' ? Math.max(a, bayEnd + 40) : a), bayEnd + 8);
+      const far = (items: Item[]) =>
+        items.reduce((a, it) => (it.kind === 'plant' ? Math.max(a, bayEnd + 16 + blockSize(it)) : it.kind === 'load' || it.kind === 'hvdc' ? Math.max(a, bayEnd + 40) : it.kind === 'shunt' ? Math.max(a, shuntReach(sec.k, it.shunt) + 8) : a), bayEnd + 8);
       this.reachE = Math.max(this.reachE, far(sec.east));
       this.reachW = Math.max(this.reachW, far(sec.west));
     }
@@ -221,7 +239,7 @@ export class SiteLevel implements Level {
 
     // ---- the fence with its gate and the road in, the control house: first to unfold
     sk.stagger = 0;
-    const fenceE = Math.max(...sections.map((s) => this.bayLength(s.k, true))) + 5;
+    const fenceE = Math.max(...sections.map((s) => Math.max(this.bayLength(s.k, true), ...[...s.east, ...s.west].map((it) => (it.kind === 'shunt' ? shuntReach(s.k, it.shunt) : 0))))) + 5;
     const fn0 = bot - 26;
     const fn1 = top + 10;
     const gate = 8;
@@ -447,28 +465,21 @@ export class SiteLevel implements Level {
       return;
     }
     if (it.kind === 'shunt') {
+      // the bank's breaker, then its steps in a row along a short bus, each switched on its own
       const core = this.bayCore(sec, s, n, { gantry: false, second: false });
       const d = bayStations(k);
-      // the capacitor rack: a steel frame, three phases of cans on insulators
+      const cap = it.shunt.stepMVAr > 0;
+      const shunt = this.grid.shunts.indexOf(it.shunt);
       sk.stagger = 0.24;
-      const re = s * (d.b1 + 3 + 3 * k.f);
-      const rw = 5 * k.f;
-      sk.box(re, 0, n, rw, 1.2, 3 * k.sp + 2, { width: PEN.fine, color: INK_60 });
-      const tops: P3[] = [];
-      for (let p = 0; p < 3; p++) {
-        const pn = n + (p - 1) * k.sp;
-        for (let t = 0; t < 2; t++) {
-          const h0 = 1.2 + t * 1.6 * k.f;
-          insulator(sk, [re, h0, pn], [re, h0 + 0.5 * k.f, pn], 0.2 * k.f);
-          for (let c = -1; c <= 1; c++) sk.box(re + c * rw * 0.3, h0 + 0.5 * k.f, pn, 0.5 * k.f, 0.9 * k.f, 0.35 * k.f, { width: PEN.hairline, color: INK });
-        }
-        tops.push([re, 1.2 + 3.2 * k.f + 0.2, pn]);
-      }
-      const segs = [...core.segs];
-      const ends = [...core.ends].sort((a, c) => a[2] - c[2]);
-      for (let p = 0; p < 3; p++) segs.push(wire(sk, ends[p]!, tops[p]!, phaseWidth(cls)));
+      const ns = [-1, 0, 1].map((p) => n + p * k.sp);
+      const from = [...core.ends].sort((a, c) => a[2] - c[2]);
+      const place: CapBankPlace = { shunt, e0: s * (d.b1 + 1.8 * k.f), s, ns, k, steps: it.shunt.steps, from, widths: { bus: busWidth(cls), phase: phaseWidth(cls) } };
+      const draw = shuntBank(sk, cap ? 'cap' : 'reactor', place.e0, s, ns, k, place.steps, from, place.widths);
+      this.shuntBanks.push({ shunt, cap, place, draw });
       sk.target({ kind: 'site', id: this.siteId }, core.path.map((q) => P(...q)));
-      this.labels.push({ id: `st:shunt:${sec.bus.id}`, text: 'Capacitor bank', anchor: P(re, 3.6 * k.f, n + 1.5 * k.sp), priority: 4, minZoom: 0.6, kind: 'equip' });
+      const [a, b] = draw.stub[2]!;
+      const mid: P3 = [(a[0] + b[0]) / 2, a[1], a[2]];
+      this.labels.push({ id: `st:shunt:${sec.bus.id}`, text: cap ? 'Capacitor bank' : 'Shunt reactors', anchor: P(...mid), priority: 4, minZoom: 0.6, kind: 'equip' });
       return;
     }
     // a DC converter: its transformer and valve hall, and the line or cable away
@@ -662,6 +673,13 @@ export class SiteLevel implements Level {
       this.sk.faces.setHidden(cb.faces[0], cb.faces[1], m > 0, 0.12);
       return;
     }
+    const sb = this.shuntBanks.find((b) => b.cap && key === capKey(this.siteId, b.shunt));
+    if (sb) {
+      // the bank's own level draws it all, in the same place
+      for (let i = sb.draw.lines[0]; i < sb.draw.lines[0] + sb.draw.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      this.sk.faces.setHidden(sb.draw.faces[0], sb.draw.faces[1], m > 0, 0.24);
+      return;
+    }
     const bank = this.bankBodies.find((b) => key === xfKey(this.grid.branches[b.branch]!.id));
     if (bank) {
       // the bank's own level draws it, cut open
@@ -683,6 +701,7 @@ export class SiteLevel implements Level {
     const set = (flow: number, mw: number, color = INK, on = true) =>
       sk.flow.set(flow, { sizePx: chevronSizeFor(mw, sc), speed: chevronSpeedFor(mw, sc) * Math.sign(mw), color, alpha: !none && on && Math.abs(mw) > 0.5 ? 1 : 0 });
     sk.marks.clear();
+    for (const b of this.shuntBanks) setShuntSteps(sk, b.draw, s.energized[this.grid.shunts[b.shunt]!.bus.index] ? (s.shuntSteps[b.shunt] ?? 0) : 0);
     for (const l of this.lines) {
       const k = l.k;
       const br = this.grid.branches[k]!;

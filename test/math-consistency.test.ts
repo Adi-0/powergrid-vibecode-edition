@@ -7,7 +7,8 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel, capBankPanel, canPanel } from '../src/math/panels';
+import { capBankState } from '../src/model/capState';
 import { spanState } from '../src/model/spanState';
 import { poletopState } from '../src/model/poletopState';
 import { breakerState } from '../src/model/breakerState';
@@ -45,7 +46,7 @@ function redo(e: Expr, printed: string[]): number {
       return redo(e.a, printed) ** e.p;
     case 'fn': {
       const v = redo(e.a, printed);
-      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : Math.sqrt(v);
+      return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : e.fn === 'ln' ? Math.log(v) : Math.sqrt(v);
     }
     case 'op': {
       const a = redo(e.a, printed);
@@ -209,6 +210,21 @@ describe('math panels', () => {
         }
       });
       expect(n).toBeGreaterThan(150);
+    });
+
+    it(`every capacitor bank and one of its cans, at interval ${t}`, () => {
+      const s = snapshot(g, day.points[t]!);
+      let n = 0;
+      g.shunts.forEach((sh, k) => {
+        if (sh.stepMVAr <= 0) return;
+        const st = capBankState(g, s, k, false, null);
+        const key = `cap:${sh.bus.site.id}:${k}`;
+        const p = capBankPanel(st, key);
+        if (p) (check(p, `${sh.bus.id} bank`), n++);
+        const c = canPanel(st, `can:${sh.bus.site.id}:${k}`, key);
+        if (c) (check(c, `${sh.bus.id} can`), n++);
+      });
+      expect(n).toBeGreaterThan(80);
     });
   }
 });

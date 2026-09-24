@@ -124,6 +124,15 @@ export const STOPS: Stop[] = [
     },
   },
   {
+    title: 'Inside a capacitor',
+    text: 'A [[capacitor-bank|capacitor bank]] at Tesla, and one of its cans opened. Inside: two long sheets of foil, wound up with plastic film between. Charge gathers on them, + on one and − on the other, and they swap every half cycle; energy flows in and back out twice a cycle, and on balance none is kept. What the bank supplies is [[reactive-power|reactive power]], the to-and-fro current motors need. Zoom out to the bank and switch a step out: the network is solved again, and the bus voltage falls.',
+    go: async (app) => {
+      await reset(app);
+      await app.navigate(['capunit']);
+      await app.solved();
+    },
+  },
+  {
     title: 'To the wall outlet',
     text: 'One pole-top transformer, its homes, and one wall [[outlet]] with a hair dryer plugged in. The inspector traces its voltage all the way back to the transmission bus; the working shows the last few volts by Ohm’s law.',
     go: async (app) => {

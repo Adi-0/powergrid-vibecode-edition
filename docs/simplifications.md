@@ -39,6 +39,7 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** A plant is a block sized by its capacity beside the yard, with one step-up transformer; a solar or wind plant is really spread over square kilometres and collected at medium voltage. **Full treatment:** Each unit behind its own step-up, and collector systems for inverter-based plants.
 - **Simplified:** The demand served from a station leaves as three lines "to the distribution substations"; it is one lumped load in the model. **Full treatment:** The subtransmission network and every distribution substation it feeds (drawn for one station only: Evergreen).
 - **Simplified:** Each circuit leaves on the straight bearing to the station at its far end, as the state sheet draws it. **Full treatment:** Surveyed routes.
+- **Simplified:** Shunt reactors at the 500 kV buses are drawn as three single-phase oil-filled units per step, switched in steps like the capacitor banks; their inside is not drawn. **Full treatment:** Each reactor's rating and design, often a fixed reactor on a long line's end rather than switched on the bus.
 
 ## transformer — Inside a transformer
 
@@ -68,6 +69,18 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** The sag comes from an everyday reference (15 °C, a fifth of breaking strength) by a linear-elastic change of state on a level span: no creep over the years, no ice or wind load, no bundled-conductor spacers. The conductors' mechanical constants are typical of their designation. **Full treatment:** A ruling-span sag-tension program with the conductor's stress-strain and creep curves, from the utility's design criteria.
 - **Simplified:** The towers are drawn to a schematic height and the ground is flat, so the clearance shown is illustrative. **Full treatment:** The line's surveyed profile and the clearance required over each crossing.
 - **Simplified:** The power flow uses each circuit's fixed rating; the temperature, sag and limit here are worked out from its flow and do not feed back into it. **Full treatment:** Dynamic ratings in operations, and conductor resistance that rises with temperature in the power flow.
+
+## capacitor — A capacitor bank
+
+- **Simplified:** Each step is a fixed susceptance in the power flow, so its reactive power goes exactly as the voltage squared, with no losses and no harmonics. **Full treatment:** The cans' small losses, harmonic currents, and the bank's resonance with the network's inductance.
+- **Simplified:** Steps switch between solves, under a voltage-band controller or as the reader holds them, and switching is instantaneous. **Full treatment:** The switching transient: the inrush current and the bus voltage's dip and overshoot as a step is energised, which is why banks use pre-insertion resistors or switch at a chosen point on the wave.
+- **Simplified:** The construction (series groups of cans in parallel, on insulated tiers) is a plausible design for the voltage class, not this bank's; each can's rating follows from the step's. Fuses and the unbalance protection that finds a failed can are not drawn. **Full treatment:** The bank's own design (externally fused, internally fused or fuseless cans) and its unbalance relay's settings.
+- **Simplified:** The chevrons and the chart show each phase's instantaneous power from the solved phasors as pure sine waves, slowed 120 times; the steps nearest the viewer are drawn switching in first. **Full treatment:** Measured waveforms, with the network's harmonics; the operator's rotation of which steps are used.
+
+## capunit — Inside a capacitor can
+
+- **Simplified:** The inside is schematic: a dozen elements drawn where a real can has more, one drawn pulled out with the end of its winding unrolled, and the plastic film between the foils (a few hundredths of a millimetre) drawn thousands of times thicker. The field is drawn uniform between flat plates. **Full treatment:** The manufacturer's design: the number and connection of elements, internal fuses, film and foil thickness, the impregnating fluid, and the field's fringing at the foils' edges.
+- **Simplified:** The discharge resistor is the largest that meets the IEEE 18 requirement (the peak of rated voltage down to 50 V within 5 minutes); the charge left when a step is switched off is not shown draining. **Full treatment:** The unit's actual resistor, and the trapped charge's decay, which is why a step must wait before it is switched back in.
 
 ## substation — The Evergreen substation
 

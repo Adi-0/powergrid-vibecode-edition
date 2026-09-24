@@ -35,6 +35,8 @@ export interface OperateOptions {
   warm?: PFResult;
   /** Shunt steps in service at start (per grid shunt). */
   shuntSteps?: Int32Array;
+  /** Banks the reader has switched by hand: grid shunt index → steps held in service (the controller leaves them). */
+  shuntHold?: ReadonlyMap<number, number>;
   record?: boolean;
 }
 
@@ -101,6 +103,8 @@ function operateOnce(grid: Grid, step: IntervalDispatch, base: PFCase, opts: Ope
   // Without a previous position, start the banks where an operator would have them
   // for this much load: capacitors in with demand, reactors in when demand is low.
   const steps = opts.shuntSteps ? opts.shuntSteps.slice() : initialShuntSteps(grid, step);
+  const held = opts.shuntHold ?? new Map<number, number>();
+  for (const [k, n] of held) if (grid.shunts[k]) steps[k] = Math.max(0, Math.min(grid.shunts[k]!.steps, n));
   const applyShunts = () => {
     for (const b of pf.buses) b.bs = 0;
     grid.shunts.forEach((s, k) => {
@@ -141,7 +145,7 @@ function operateOnce(grid: Grid, step: IntervalDispatch, base: PFCase, opts: Ope
       }
     grid.shunts.forEach((s, k) => {
       const v = res!.vm[s.bus.index]!;
-      if (!res!.energized[s.bus.index]) return;
+      if (!res!.energized[s.bus.index] || held.has(k)) return;
       const cap = s.stepMVAr > 0;
       if (cap && starved.has(s.bus.site.region) && v < s.vHigh - 0.01 && steps[k]! < s.steps) {
         steps[k] = steps[k]! + 1;

@@ -110,7 +110,8 @@ const mathArithmetic = async (page) => {
         .replace(/÷/g, '/')
         .replace(/√\(/g, 'Math.sqrt(')
         .replace(/(cos|sin) \(([^()]*?)°\)/g, (_, f, a) => `Math.${f}((${a})*Math.PI/180)`)
-        .replace(/atan \(/g, '(180/Math.PI)*Math.atan(');
+        .replace(/atan \(/g, '(180/Math.PI)*Math.atan(')
+        .replace(/\bln \(/g, 'Math.log(');
       const shownText = text(res.cloneNode(true)).replace(/^\s*=\s*/, '');
       const m = shownText.replace(/[\u2009\u202f\u00a0 ]/g, '').replace('−', '-').match(/^-?[0-9.]+/);
       if (!m) {
@@ -845,6 +846,110 @@ export default [
       await waitSnap(page);
       await page.evaluate(() => window.__app.navigate(['span']));
       await page.waitForFunction(() => window.__app.level === 'span' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'cap-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        const keys = a.keysFor('capacitor');
+        a.holdBand(keys[keys.length - 1], 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'cap',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['capacitor']));
+      await page.waitForFunction(() => window.__app.level === 'capacitor' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'cap-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['capacitor']));
+      await page.waitForFunction(() => window.__app.level === 'capacitor' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'can-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['capacitor']));
+      await page.waitForFunction(() => window.__app.level === 'capacitor' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        const keys = a.keysFor('capunit');
+        a.holdBand(keys[keys.length - 1], 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'can',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['capunit']));
+      await page.waitForFunction(() => window.__app.level === 'capunit' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'can-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['capunit']));
+      await page.waitForFunction(() => window.__app.level === 'capunit' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
       await page.evaluate(() => window.__app.inspector.toggleWorking(true));
     },
     probe: both(provenance, mathShown, mathArithmetic),

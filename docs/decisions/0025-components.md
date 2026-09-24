@@ -187,6 +187,73 @@ the inside of a piece of equipment, working, driven by the solved state.
   sheet, even though the reader was zooming toward a shorter one. The hand-off now waits
   while the band nearest the focus is still unfolding.
 
+- *A Capacitor bank level, and inside it a Can level.* Reactive power is the idea
+  readers find hardest, and switching a capacitor is one of the brief's named
+  perturbations. So a capacitor bank opens in two steps, both in place.
+  - *The bank (every yard's switched shunt capacitors).* The yard now draws the bank as
+    it is built:
+    - a row of steps along a short bus on post insulators, each step with its own switch;
+    - each step three stacks of cans, one per phase, on insulated tiers: series groups
+      of parallel cans, the tiers wired in series up the stack;
+    - each step's stack bottoms joined at a grounded neutral.
+
+    The construction is a plausible design for the voltage class (an estimate). Each
+    can's rating follows from the step's: its share of the phase voltage and of the kvar.
+  - *Steps in and out come from the solution.* The snapshot now carries every bank's
+    steps in service. A step switched out is drawn light, its switch blade hanging open.
+    The reader can switch steps from the inspector ("Switch a step out / in", "Back to
+    the controller"). This holds that bank's steps in the solver (a new
+    `shuntHold` option, which the voltage controller then leaves alone), and the network
+    is solved again. The inspector then compares the voltage, the bank's Q and the
+    system's losses before and after, each value from its own solve.
+  - *What moves is energy.* A capacitor takes no net power. Each phase's instantaneous
+    power, p(t) = v(t)·i(t) from the solved phasors, runs as chevrons on that phase's bus,
+    slowed 120 times. They reverse twice a cycle, and the three phases together sum to
+    nothing at every instant. A chart shows v, i (a quarter cycle ahead) and p per phase
+    with their heavy, flat sum, plus the phasors, with a cursor that follows the drawing.
+  - *The can.* Zooming into the nearest can cuts it open on the plane through its
+    terminals. Inside:
+    - the pack of flattened elements in section, and the discharge resistor across the
+      terminals;
+    - one element drawn out of the pack, the end of its winding unrolled into two foil
+      plates with film between (the gap drawn thousands of times wider).
+
+    Moving with the solved voltage across that can: + and − marks on the plates' facing
+    sides, which swap every half cycle; field arrows in the film, from + to −, as long as
+    the field is strong; energy chevrons along the terminals, in and then out. This is
+    the classic parallel-plate picture, reached from the real construction rather than
+    drawn beside it.
+  - *The working.* `capBankPanel` runs:
+    - ω = 2πf;
+    - the step's capacitance per phase, C = Q_step / (3ωV_LN²);
+    - Q = n·Q_step·V_pu² (exactly the power flow's shunt);
+    - |I| = Q/(√3|V_LL|), with θ_I = θ_V + 90°;
+    - the energy per phase at the peak, W = n·C·V_LN²;
+    - the check Q_1φ = ωW.
+
+    `canPanel` runs C_can = C·S/P, the can's voltage, current and kvar, then the
+    largest discharge resistor meeting IEEE 18 (to 50 V within 5 minutes from the rated
+    peak): R = t / (C ln(V_0/V_1)), and τ = RC. The math gained `ln`. Every bank and its
+    can are in the arithmetic-consistency test; `test/capacitor.test.ts` checks:
+    - Q against the power flow's shunt;
+    - the hold, and the voltage following it;
+    - the waveforms (the quarter-turn lead, the three phases summing to zero, the peak
+      of p equal to Q_1φ);
+    - the can's arithmetic and the discharge rule.
+- *A correction found on the way: shunt reactors were drawn as capacitor banks.* Every
+  500 kV bus's switched reactors carried the yard's capacitor rack and its label. They
+  are now three single-phase oil-filled units per step, labelled as reactors, switched
+  like the capacitors (and at the evening peak, correctly, all out).
+- *Two zoom fixes.*
+  - A level's anchor can now stand above the ground (a can up in its rack): the camera
+    places it by the ground point that projects to the same spot on screen.
+  - Only the child being zoomed toward shows its part names while it unfolds. A larger
+    neighbour that is nearly whole sooner no longer scatters its labels over the sheet.
+  - Climbing out of a small level (a can, a bank) left the camera at a yard zoom where a
+    long span nearby was already whole, and the sheet went straight into the span. Now
+    nothing takes the sheet after a climb until the reader zooms again, and only a child
+    near where the reader is looking can take it at all.
+
 **Rejected.**
 - *A lid that folds away as the zoom proceeds.* The renderer unfolds shapes out of a
   point; it cannot fold a panel about an edge. A wall that shrinks to a point reads as a
@@ -203,6 +270,11 @@ the inside of a piece of equipment, working, driven by the solved state.
   parabola's by about 4D²/(3S²) of itself. With the sag a few percent of the span, that
   is a fraction of a percent. The parabola keeps the hand arithmetic to one line,
   D = wS²/(8H).
+- *Showing a capacitor's charge as current arrows alone.* The current is the charge
+  coming and going; the plates, the charge on them and the field between them are what
+  a capacitor is, so they are drawn, and the current is in the chart.
+- *Drawing every can of every step cut open.* One can carries the inside; the bank
+  carries the arrangement.
 - *Feeding the conductor's temperature back into the power flow* (resistance rising with
   temperature, dynamic ratings). It would couple every interval's solve to the weather
   model; it is named in the honesty panel as the full treatment instead.
