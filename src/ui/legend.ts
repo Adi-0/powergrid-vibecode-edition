@@ -159,6 +159,13 @@ function transformerRows(g: HTMLElement): void {
     el(qty(COMPONENTS.fHz, 'Hz', data('components.fHz'), { digits: 0 })),
   );
   g.appendChild(row(arrow, fx));
+  const ring = (cx: number): Array<[number, number]> => Array.from({ length: 15 }, (_, k) => [cx + 6 * Math.cos((2 * Math.PI * k) / 14), 9 + 6 * Math.sin((2 * Math.PI * k) / 14)] as [number, number]);
+  g.appendChild(
+    row(
+      drawSample(18, [{ pts: ring(18), w: 1 }, { pts: [[17, 9], [18, 8], [19, 9], [18, 10], [17, 9]], w: 1.6 }, { pts: ring(38), w: 1 }, { pts: [[34, 5], [42, 13]], w: 1 }, { pts: [[34, 13], [42, 5]], w: 1 }]),
+      'Current in a winding: ⊙ coming out of the cut, ⊗ going in. The high and low sides always run opposite: their ampere-turns balance',
+    ),
+  );
   g.appendChild(
     row(
       drawSample(18, [

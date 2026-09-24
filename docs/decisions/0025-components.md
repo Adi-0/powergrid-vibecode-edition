@@ -299,8 +299,13 @@ the inside of a piece of equipment, working, driven by the solved state.
 - *A lid that folds away as the zoom proceeds.* The renderer unfolds shapes out of a
   point; it cannot fold a panel about an edge. A wall that shrinks to a point reads as a
   glitch. The cut appears as the band starts, while the tank is still small.
-- *Showing the currents as ⊙/⊗ marks in the section.* It is standard notation, but it is
-  one more layer on a busy section; the inspector says it in words for now.
+- *Showing the currents only in words.* (First rejected the other way: the ⊙/⊗ marks
+  seemed one layer too many on a busy section.) The critique kept finding that the
+  sentence "current flows the other way" did not land, so the marks were added. Each
+  main winding's section carries a few ⊙/⊗ marks on both sides of each limb, following
+  that limb's current in time: a quarter cycle ahead of the flux, less the solved
+  power-factor angle. The high side and the low side are always opposite, and the two
+  sides of a limb are opposite. The tertiary carries none.
 - *A separate "exploded" diagram beside the drawing.* The picture teaches first, in
   place.
 - *Animating the breaker's opening at real speed.* Fifty milliseconds is invisible;

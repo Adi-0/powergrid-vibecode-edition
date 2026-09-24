@@ -31,11 +31,12 @@ without a wall of words.
 | 20 | The regulator's tap changer was a small cluster of marks, its three labels piled on each other. | A panel 0.6 m wide at a fit taking in two units and their jumpers. | The panel, selector and preventive autotransformer enlarged within the tank; the fit taken on the cut unit alone. |
 | 21 | The voltage profile was a flat line squeezed against the top of its chart. | The scale always ran over ANSI Range A (114–126 V), while the primary sits within a volt or two of the set point. | The scale fits the voltages and the control's band; Range A is drawn only where it falls inside. |
 | 22 | The regulator's title failed the provenance probe. | "REG-1" is a figure from the data, shown as plain text. | The name carries its data key. |
+| 23 | The transformer's currents were only told, not shown (a standing weakness since the level was built). | No mark for a winding's current in the section. | ⊙/⊗ marks on each main winding, both sides of each limb, alternating with the limb's current (a quarter cycle ahead of the flux, less the power-factor angle); high and low sides always opposite. |
+| 24 | The new current marks did not appear at all. | Their line batch's opacity was copied from the flux batch's, but opacity is a setter only: the copy was undefined. | Both set from the same computed value. |
 
 ## Still wrong or weak
 
 - **The transformer at its fitted zoom is small in a busy frame.** With the key and the inspector open, the free area is some 740 × 700 px. The tank and its bushings take about half of it, and the yard's leads cross in front at half ink.
-- **Currents are only told, not shown.** The section could carry the standard ⊙/⊗ marks for each winding's current: the two sides' currents opposed, alternating with the flux. The inspector says it in words for now.
 - **The breaker's contacts are schematic.** Their proportions and stroke are exaggerated so the gap reads at the fitted zoom; the honesty panel says so.
 - **The other two poles do not move.** The chart shows all three phases clearing, but only the pole cut open is drawn opening.
 - **The GPU cost of the new levels was not measured.** The software rasteriser here runs at under one frame a second for any view at 1440 × 900.

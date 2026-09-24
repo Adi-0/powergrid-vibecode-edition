@@ -141,6 +141,10 @@ export class TransformerLevel implements Level {
   readonly core: CoreGeom;
   private morphValue = 1;
   private flux = new LineBatch('xf-flux');
+  /** Each winding's current in the section: ⊙ out of the cut, ⊗ into it (a circle, a dot, a cross). */
+  private current = new LineBatch('xf-current');
+  private currentMarks: Array<{ limb: number; sign: number; circle: number[]; dot: number[]; cross: number[] }> = [];
+  private phi = 0;
   private arrows: FluxArrow[] = [];
   private fluxAmp = 0;
   private oil: Array<{ flow: number; share: number }> = [];
@@ -284,6 +288,48 @@ export class TransformerLevel implements Level {
       this.labels.push({ id: `xf:w:${w.role}`, text: w.name, anchor: Pt(lu, a1, v0), priority: 8 - wi * 0.5, minZoom: 0, kind: 'equip' });
     });
 
+    // ---- the current in each winding, marked on its section: ⊙ coming out of the cut toward
+    // the viewer, ⊗ going in. Current round a limb comes out on one side and goes in on the
+    // other; the high side's and the low side's are always opposite (their ampere-turns
+    // balance). The tertiary carries none.
+    this.current.mesh.renderOrder = 32;
+    sk.group.add(this.current.mesh);
+    const cst = { width: 1.3, color: INK, collapse: sk.anchor, stagger: 0.4 };
+    const vm = v0 - 0.03;
+    G.windings.forEach((w) => {
+      if (w.role === 'tertiary') return;
+      const wsign = w.role === 'hv' || w.role === 'series' ? 1 : -1;
+      const a0 = w.role === 'tap' ? h0 + (h1 - h0) * 0.2 : h0;
+      const a1 = w.role === 'tap' ? h1 - (h1 - h0) * 0.2 : h1;
+      uk.forEach((u, limb) => {
+        for (const s of [-1, 1]) {
+          const x0 = s < 0 ? u - w.ro : u + w.ri;
+          const x1 = s < 0 ? u - w.ri : u + w.ro;
+          const cu = (x0 + x1) / 2;
+          const rm = Math.min(0.32 * (x1 - x0), 0.06 * (a1 - a0));
+          const marks = w.role === 'tap' ? [0.5] : [0.22, 0.5, 0.78];
+          for (const f of marks) {
+            const ch = a0 + (a1 - a0) * f;
+            const P = (du: number, dh: number): Vec3 => Pt(cu + du, ch + dh, vm);
+            const circle: number[] = [];
+            for (let i = 0; i < 14; i++) {
+              const t0 = (2 * Math.PI * i) / 14;
+              const t1 = (2 * Math.PI * (i + 1)) / 14;
+              circle.push(this.current.segment(P(rm * Math.cos(t0), rm * Math.sin(t0)), P(rm * Math.cos(t1), rm * Math.sin(t1)), cst));
+            }
+            const d = rm * 0.22;
+            const dot = [this.current.segment(P(-d, 0), P(0, d), { ...cst, width: 2 }), this.current.segment(P(0, d), P(d, 0), { ...cst, width: 2 }), this.current.segment(P(d, 0), P(0, -d), { ...cst, width: 2 }), this.current.segment(P(0, -d), P(-d, 0), { ...cst, width: 2 })];
+            const x = rm * 0.62;
+            const cross = [this.current.segment(P(-x, -x), P(x, x), cst), this.current.segment(P(-x, x), P(x, -x), cst)];
+            // positive current (the high side's, into its terminal) comes out of the cut on the limb's −u side
+            this.currentMarks.push({ limb, sign: wsign * -s, circle, dot, cross });
+          }
+        }
+      });
+    });
+    this.current.commit();
+    this.labels.push({ id: 'xf:current', text: 'Currents: ⊙ out of the cut, ⊗ into it', anchor: Pt(uk[2]! + G.windings[G.windings.length - 1]!.ro, h0, v0), priority: 7, minZoom: 0, kind: 'equip' });
+
     // ---- leads from the bushings down to the windings
     sk.stagger = 0.34;
     const outer = G.windings.filter((w) => w.role !== 'tap' && w.role !== 'tertiary');
@@ -424,6 +470,8 @@ export class TransformerLevel implements Level {
     const on = !!st?.on;
     // flux ∝ V/f: its size follows the high-side voltage
     this.fluxAmp = on ? st!.vH : 0;
+    // the load current lags the voltage by the power-factor angle seen at the high side
+    this.phi = on ? Math.atan2(st!.qH, st!.pH) : 0;
     // heat carried by the oil, kW, shared along its paths
     const kw = on ? Math.max(0, st!.loss * 1000) : 0;
     const sc = this.flowScale;
@@ -445,6 +493,7 @@ export class TransformerLevel implements Level {
   frame(o: FrameInfo): void {
     this.sk.frame(o);
     this.flux.frame(o);
+    this.current.frame(o);
     // one 60 Hz cycle shown over `slowdown / 60` seconds; phase A leads, B and C 120° behind
     const w = (2 * Math.PI * COMPONENTS.fHz) / COMPONENTS.slowdown;
     const phi = [0, 1, 2].map((k) => this.fluxAmp * Math.cos(w * o.time - (k * 2 * Math.PI) / 3));
@@ -472,13 +521,28 @@ export class TransformerLevel implements Level {
       const vis = len > 0.04 ? 1 : 0;
       for (const sg of a.segs) this.flux.setAlpha(sg, vis);
     }
+    // each limb's winding current: a quarter cycle ahead of its flux, less the power-factor
+    // angle (flux lags the voltage by 90°, the current lags it by φ)
+    const st = this.state;
+    const carrying = !!st?.on && Math.hypot(st.pH, st.qH) > 1e-3;
+    const i = [0, 1, 2].map((k) => Math.cos(w * o.time + Math.PI / 2 - this.phi - (k * 2 * Math.PI) / 3));
+    for (const m of this.currentMarks) {
+      const val = m.sign * i[m.limb]!;
+      const a = carrying ? Math.min(1, 0.2 + Math.abs(val)) : 0;
+      for (const s of m.circle) this.current.setAlpha(s, a);
+      for (const s of m.dot) this.current.setAlpha(s, val > 0.05 ? a : 0);
+      for (const s of m.cross) this.current.setAlpha(s, val < -0.05 ? a : 0);
+    }
   }
 
   set morph(m: number) {
     this.morphValue = m;
     this.sk.morph = m;
+    const shown = Math.max(0, Math.min(1, (m - 0.85) / 0.15));
     this.flux.morph = m;
-    this.flux.opacity = Math.max(0, Math.min(1, (m - 0.85) / 0.15));
+    this.flux.opacity = shown;
+    this.current.morph = m;
+    this.current.opacity = shown;
   }
 
   get morph(): number {

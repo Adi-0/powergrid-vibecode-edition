@@ -225,3 +225,4 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - The inspector charts the voltage along the trunk on the control's base, with the step at the regulator, the band, and what the control sees; a second diagram draws the line-drop compensation.
     - "Raise / Lower the set point" re-solves the feeder with the new set point (`regVset`).
     - The math panel per phase: the ratio, |V_L| = a|V_S|, the PT voltage, the compensator's drop, |V_relay| and its distance from the set point. It is in the arithmetic test; `test/regulator.test.ts` checks the band, the ratio, and the set point's effect.
+  - **Transformer currents shown:** ⊙/⊗ marks on each winding's section, alternating with each limb's solved current, the high and low sides always opposite.

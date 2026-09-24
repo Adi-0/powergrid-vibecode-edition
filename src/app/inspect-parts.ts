@@ -149,7 +149,7 @@ export function transformerLevelView(p: XfmrPlate, core: CoreGeom, st: XfmrState
     rows3.push({ label: span('Common winding: the difference $I_L − I_H$'), value: el(qty(st.iL - st.iH, 'A', d('iCommon', iHq, iLq), { digits: 0 })), note: span('the series winding carries $I_H$; the rest of the power passes straight through the shared turns') });
   sections.push({
     title: span('Current flows the other way'),
-    text: span('Current drawn from the low-voltage winding pushes against the flux; the high side draws just enough more current to cancel that push. So the currents are in the inverse of the turns ratio, and the power passes through.'),
+    text: span('Current drawn from the low-voltage winding pushes against the flux; the high side draws just enough more current to cancel that push. The marks on the section show it: where one winding’s current comes out of the cut (⊙) the other’s goes in (⊗), and they turn over together, about a quarter cycle apart from the flux. So the currents are in the inverse of the turns ratio, and the power passes through.'),
     rows: rows3,
   });
 
