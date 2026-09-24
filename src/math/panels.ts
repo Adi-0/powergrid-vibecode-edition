@@ -14,6 +14,7 @@ import { C37_112, PROTECTION } from '../data/dist/protection';
 import type { FeederEvent } from '../app/inspect-fault';
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 import { interruption, type BreakerState } from '../model/breakerState';
+import { HALF_V, PRIMARY_LN_V, type PoleTopState } from '../model/poletopState';
 import { COMPONENTS } from '../data/components';
 
 /**
@@ -854,6 +855,91 @@ export function breakerPanel(st: BreakerState | null, key: string, kvBase: numbe
   return {
     title: 'Opening the circuit',
     intro: 'Complex power S = V·I* (the current conjugated), three-phase. Times from the trip command; the trip is drawn arriving as the reference voltage crosses zero, rising, and the contacts part at a typical time for the breaker’s class.',
+    steps,
+  };
+}
+
+/**
+ * A pole-top transformer's working, in phasors as the sweep has them (rectangular,
+ * RMS): the leg-to-leg voltage, the neutral current, the primary current from the
+ * legs' (exact for this model: ampere-turns balance, no magnetizing current), each
+ * leg's power, and the loss by conservation.
+ */
+export function poletopPanel(st: PoleTopState | null, id: string): Panel | null {
+  if (!st || !st.on) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.pt.${id}.${x}`;
+  const re = (c: [number, number], prov: string, sym: string, digits = 3) => num(c[0], digits, 'V', prov, `${sym}_{re}`);
+  const im = (c: [number, number], prov: string, sym: string, digits = 3) => num(c[1], digits, 'V', prov, `${sym}_{im}`);
+  const ire = (c: [number, number], sym: string) => num(c[0], 4, 'A', st.prov.I, `${sym}_{re}`);
+  const iim = (c: [number, number], sym: string) => num(c[1], 4, 'A', st.prov.I, `${sym}_{im}`);
+  const steps: Step[] = [
+    { label: 'Turns, primary to each half of the secondary', general: 'n = V_{p,rated} / V_{half,rated}', sym: 'n', expr: div(num(PRIMARY_LN_V, 0, 'V', 'data:evergreen.layout.transformers.kvPrimaryLN', 'V_{p,rated}'), num(HALF_V, 0, 'V', 'data:ansi.C84.1.base120', 'V_{half,rated}')), unit: '', digits: 1, prov: k('n'), solver: PRIMARY_LN_V / HALF_V },
+    {
+      label: 'Leg to leg: both halves in series (the second leg’s voltage is the other way round)',
+      general: '|V_{12}| = |V_1 − V_2|',
+      sym: '|V_{12}|',
+      expr: sqrt(add(sq(par(sub(re(st.v1c, st.prov.vS, 'V_1'), re(st.v2c, st.prov.vS, 'V_2')))), sq(par(sub(im(st.v1c, st.prov.vS, 'V_1'), im(st.v2c, st.prov.vS, 'V_2')))))),
+      unit: 'V',
+      digits: 2,
+      prov: k('v12'),
+      solver: st.v12,
+    },
+    {
+      label: 'The neutral carries what the legs do not share',
+      general: '|I_N| = |I_1 + I_2|',
+      sym: '|I_N|',
+      expr: sqrt(add(sq(par(add(ire(st.i1c, 'I_1'), ire(st.i2c, 'I_2')))), sq(par(add(iim(st.i1c, 'I_1'), iim(st.i2c, 'I_2')))))),
+      unit: 'A',
+      digits: 3,
+      prov: k('iN'),
+      solver: st.iN,
+    },
+    {
+      label: 'The primary carries the legs’ current divided by the turns ratio (ampere-turns balance; no magnetizing current in the model)',
+      general: '|I_p| = |I_1 − I_2| / n',
+      sym: '|I_p|',
+      expr: div(sqrt(add(sq(par(sub(ire(st.i1c, 'I_1'), ire(st.i2c, 'I_2')))), sq(par(sub(iim(st.i1c, 'I_1'), iim(st.i2c, 'I_2')))))), ref(0)),
+      unit: 'A',
+      digits: 4,
+      prov: k('ip'),
+      solver: st.ip,
+    },
+    {
+      label: 'Power out of the first leg: the real part of V·I* (the current conjugated)',
+      general: 'P_1 = V_{1,re} I_{1,re} + V_{1,im} I_{1,im}',
+      sym: 'P_1',
+      expr: add(mul(re(st.v1c, st.prov.vS, 'V_1'), ire(st.i1c, 'I_1')), mul(im(st.v1c, st.prov.vS, 'V_1'), iim(st.i1c, 'I_1'))),
+      unit: 'W',
+      digits: 1,
+      prov: k('p1'),
+      solver: st.p1,
+    },
+    {
+      label: 'Power out of the second leg',
+      general: 'P_2 = V_{2,re} I_{2,re} + V_{2,im} I_{2,im}',
+      sym: 'P_2',
+      expr: add(mul(re(st.v2c, st.prov.vS, 'V_2'), ire(st.i2c, 'I_2')), mul(im(st.v2c, st.prov.vS, 'V_2'), iim(st.i2c, 'I_2'))),
+      unit: 'W',
+      digits: 1,
+      prov: k('p2'),
+      solver: st.p2,
+    },
+    {
+      label: 'Lost in the transformer: what comes in less what goes out',
+      general: 'P_{loss} = P_{in} − (P_1 + P_2)',
+      sym: 'P_{loss}',
+      expr: sub(num(st.p, 1, 'W', st.prov.pf, 'P_{in}'), par(add(ref(4), ref(5)))),
+      unit: 'W',
+      digits: 1,
+      prov: k('loss'),
+      solver: st.loss,
+      approx: { note: 'Each leg’s power is recomputed here from the displayed phasors.', tol: 0.3 },
+    },
+  ];
+  return {
+    title: 'Through the pole-top transformer',
+    intro: 'Phasors in rectangular form (real and imaginary parts), RMS, as the phase-by-phase solution has them. Complex power S = V·I*: the current conjugated.',
     steps,
   };
 }

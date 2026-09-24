@@ -121,6 +121,24 @@ the inside of a piece of equipment, working, driven by the solved state.
   big as the state. From a frame a thousand times finer, its clipped depth could land in
   front of everything and blank the view. It is no longer drawn once the map has receded.
 
+- *A Pole-top level in every service.* The last transformer before the home, opened
+  the same way (the can cut on its axis):
+  - a shell-form core of two wound loops;
+  - the coil in section, with the turns in their real ratio (7200 V to each 120 V half:
+    sixty to one), so the secondary's turn is sixty times the primary's in
+    cross-section;
+  - the terminals by their standard names: H1 in from the lateral, H2 to the tank, X1
+    and X3 the legs, X2 the grounded centre tap that becomes the neutral.
+
+  The feeder snapshot now carries each branch's per-phase currents, so the legs' and
+  the neutral's currents are the solve's own. The math panel shows the centre-tap
+  arithmetic in rectangular phasors:
+  - |V₁₂| = |V₁ − V₂|;
+  - |I_N| = |I₁ + I₂|;
+  - |I_p| = |I₁ − I₂| / n, which is exact in this model;
+  - P = Re(V·I*) per leg;
+  - the loss by conservation.
+
 **Rejected.**
 - *A lid that folds away as the zoom proceeds.* The renderer unfolds shapes out of a
   point; it cannot fold a panel about an edge. A wall that shrinks to a point reads as a

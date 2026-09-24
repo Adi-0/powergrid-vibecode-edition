@@ -184,6 +184,16 @@ function breakerRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(18, [{ pts: [[4, 9], [16, 3], [28, 15], [40, 3], [50, 9]], w: 1 }]), t));
 }
 
+/** The Pole-top level: the service transformer opened. */
+function poletopRows(g: HTMLElement): void {
+  const arrow = drawSample(14, [{ pts: [[8, 7], [46, 7]], w: 1.4 }, { pts: [[39, 3], [46, 7], [39, 11]], w: 1.4 }]);
+  const fx = document.createElement('span');
+  fx.append(rich('[[flux|Magnetic flux]] in the core, alternating: up the middle leg, back down the outer two. Shown '), el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })), document.createTextNode(' times slower'));
+  g.appendChild(row(arrow, fx));
+  g.appendChild(row(drawSample(18, [{ pts: [[8, 2], [20, 2], [20, 16], [8, 16], [8, 2]], w: 0.8 }, { pts: [[11, 5], [17, 5]], w: 5, color: INK_35 }, { pts: [[11, 13], [17, 13]], w: 5, color: INK_35 }, { pts: [[26, 2], [46, 2], [46, 16], [26, 16], [26, 2]], w: 0.8 }, { pts: [[29, 4], [43, 4]], w: 0.8, color: INK_35 }, { pts: [[29, 7], [43, 7]], w: 0.8, color: INK_35 }, { pts: [[29, 10], [43, 10]], w: 0.8, color: INK_35 }, { pts: [[29, 13], [43, 13]], w: 0.8, color: INK_35 }]), 'The coil cut through: the secondary’s two thick halves, the primary’s many fine [[turn|turns]]'));
+  g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -319,6 +329,8 @@ export class Legend {
       transformerRows(g2);
     } else if (s.level === 'breaker') {
       breakerRows(g2);
+    } else if (s.level === 'poletop') {
+      poletopRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -349,6 +361,8 @@ export class Legend {
             ? `Chevrons carry heat: the windings’ [[losses]], taken by the oil to the radiators; size and speed ∝ ${fs.unit} (`
             : s.level === 'breaker'
               ? `Chevrons: [[real-power|real power]] through the pole cut open, one phase of the three; size and speed ∝ ${fs.unit} (`
+              : s.level === 'poletop'
+                ? `Chevrons: [[real-power|real power]] out along each leg to the homes; size and speed ∝ ${fs.unit} (`
               : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
       ),
     );

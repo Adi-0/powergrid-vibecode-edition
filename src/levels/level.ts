@@ -9,7 +9,7 @@ import type { Snapshot } from '../model/snapshot';
  * (kilometres for System and Region, metres below), and the app hands the camera from
  * one frame to the next during a transition.
  */
-export type LevelKind = 'system' | 'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine' | 'transformer' | 'breaker';
+export type LevelKind = 'system' | 'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine' | 'transformer' | 'breaker' | 'poletop';
 
 export type Selection =
   | { kind: 'site'; id: string }
@@ -118,6 +118,8 @@ export const FLOW_SCALES: Record<LevelKind, FlowScale> = {
   transformer: { unit: 'kW', perPx: 40, perSpeed: 12, samples: [100, 500] },
   // real power through one pole (one phase of three)
   breaker: { unit: 'MW', perPx: 12, perSpeed: 4, samples: [30, 150] },
+  // a service's scale: each leg's power out of a pole-top transformer
+  poletop: { unit: 'kW', perPx: 2.5, perSpeed: 0.8, samples: [5, 25] },
 };
 
 export const FLOW_MIN_PX = 5;

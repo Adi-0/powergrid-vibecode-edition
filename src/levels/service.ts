@@ -113,13 +113,18 @@ export class ServiceLevel implements Level {
     // the can: a box standing on a bracket, and its drop from the primary
     sk.stagger = 0.08;
     // the can: a round tank hung on the pole, its primary bushing on the lid
+    const l0 = sk.lines.count;
+    const f0 = sk.faces.vertexCount;
     vcyl(sk, 0.9, 0, 0.42, CAN + 0.8, CAN - 0.8);
     insulator(sk, [0.9, CAN + 0.8, 0], [0.9, CAN + 1.25, 0], 0.12);
+    this.canDraw = { lines: [l0, sk.lines.count - l0], faces: [f0, sk.faces.vertexCount - f0] };
     const can: Vec3[] = [enIso(0.5, CAN - 0.8, -0.4), enIso(1.3, CAN + 0.8, 0.4)];
     const ctK = bidx.get(transformerId)!;
     const tap = sk.seg(here, enIso(0.9, CAN + 1.25, 0), { width: PEN.thin, color: INK });
     this.flows.push({ k: ctK, flow: sk.flowSeg(here, enIso(0.9, CAN + 1.25, 0)), seg: tap, sign: 1 });
+    const g0 = sk.glyphs.count;
     sk.symbol(enIso(0.9, CAN, 0), transformerSymbol(3.5), PEN.thin, 16, 0);
+    this.canGlyphs = [g0, sk.glyphs.count - g0];
     sk.target({ kind: 'dist', what: 'transformer', id: transformerId }, can, true);
     this.labels.push({ id: 'sv:can', text: `${tr.kva} kVA`, anchor: enIso(0.9, CAN + 1, 0), priority: 8, minZoom: 0, kind: 'equip', prov: `data:evergreen.layout.transformers.${transformerId}.kva` });
 
@@ -127,6 +132,12 @@ export class ServiceLevel implements Level {
     sk.stagger = 0.16;
     const secNodes = [tr.secondary, `${tr.secondary}N`, `${tr.secondary}S`];
     const secAt = (id: string) => P(id, SEC);
+    this.secondaryAt = secAt(tr.secondary);
+    // the can's three secondary leads to the triplex (its own level draws them the same way, from its bushings)
+    for (const i of [0, 1, 2]) {
+      const t = ((125 + 20 * i) * Math.PI) / 180;
+      sk.seg(enIso(0.9 + 0.55 * Math.cos(t), CAN - 0.42, 0.55 * Math.sin(t)), [this.secondaryAt[0], this.secondaryAt[1] + (i - 1) * 0.05, this.secondaryAt[2]], { width: i === 1 ? lv.weight : lv.weight + 0.4, color: INK });
+    }
     for (const sid of secNodes.slice(1)) {
       const bk = bidx.get(`${tr.secondary}-${sid}`);
       const seg = sk.seg(secAt(tr.secondary), secAt(sid), { width: lv.weight + 0.4, color: INK, dash: lv.dash });
@@ -217,6 +228,20 @@ export class ServiceLevel implements Level {
     void segs;
   }
   private outletFlow2 = -1;
+  /** The can as drawn here: hidden while its own level (the transformer opened) is open. */
+  private canDraw = { lines: [0, 0] as [number, number], faces: [0, 0] as [number, number] };
+  private canGlyphs: [number, number] = [0, 0];
+  /** Where the secondary's three wires meet the triplex. */
+  secondaryAt: Vec3 = [0, 0, 0];
+
+  yieldTo(key: string, m: number): void {
+    if (key !== `pt:${this.transformerId}`) return;
+    const hide = m > 0;
+    const d = this.canDraw;
+    for (let i = d.lines[0]; i < d.lines[0] + d.lines[1]; i++) this.sk.lines.setDim(i, hide ? 1 : 0);
+    for (let i = this.canGlyphs[0]; i < this.canGlyphs[0] + this.canGlyphs[1]; i++) this.sk.glyphs.setDim(i, hide ? 1 : 0);
+    this.sk.faces.setHidden(d.faces[0], d.faces[1], hide, 0.08);
+  }
 
   get group(): THREE.Group {
     return this.sk.group;

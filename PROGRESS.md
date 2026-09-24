@@ -197,3 +197,10 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
   - **Fix: the state map's land surface could blank a deep view.** It is no longer drawn once the map has receded.
   - **Guided route:** two new stops, "Inside a transformer" and "A breaker opens".
   - Critique: `docs/critique/components.md`.
+  - **A Pole-top level inside every service transformer:** the can cut open on its axis, a shell-form core, the coil in section.
+    - Turns are drawn in their real ratio: sixty primary turns to one in each half of the secondary, so a secondary turn is sixty times as thick.
+    - H1 comes in from the lateral and H2 is bonded to the tank. X1 and X3 are the legs; X2, the centre tap, is grounded and becomes the neutral.
+    - Flux circulates round the two loops.
+    - The inspector shows the legs' voltages (120 V each, 240 V across), their currents, the neutral's (|I₁ + I₂|) and the primary's.
+    - Its math panel works in rectangular phasors: |V₁₂| = |V₁ − V₂|, |I_N| = |I₁ + I₂|, |I_p| = |I₁ − I₂| / n (exact here), and each leg's power as Re(V·I*). It is tested for every service transformer.
+    - Per-phase branch currents now travel in the feeder snapshot.

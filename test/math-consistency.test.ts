@@ -7,7 +7,8 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel } from '../src/math/panels';
+import { poletopState } from '../src/model/poletopState';
 import { breakerState } from '../src/model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../src/model/xfmrState';
 import { S_BASE } from '../src/model/grid';
@@ -159,6 +160,13 @@ describe('math panels', () => {
       const ev = transformerPanel(evergreenPlate('xf:EV-BANK'), evergreenXfmrState(g, s, fd), { r: B.zpu.re, rProv: 'data:evergreen.bank.zpu.re', vBase: B.kvLowLL, vProv: 'data:evergreen.bank.kvLowLL', sBase: B.kva / 1000, sProv: 'data:evergreen.bank.kva', side: 'L' });
       expect(ev).not.toBeNull();
       check(ev!, 'Evergreen bank');
+      // every pole-top transformer, opened up
+      let n = 0;
+      for (const tr of fd.layout.transformers) {
+        const p = poletopPanel(poletopState(s, fd, tr.id), tr.id);
+        if (p) (check(p, tr.id), n++);
+      }
+      expect(n).toBe(fd.layout.transformers.length);
     });
 
     it(`every transmission transformer, opened up, at interval ${t}`, () => {

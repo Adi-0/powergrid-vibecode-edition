@@ -57,6 +57,11 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Opening this breaker takes the whole circuit out of service: the model has no state in which a line is open at one end and energized from the other. **Full treatment:** A node–breaker model, in which one end can open while the line stays charged from the far end.
 - **Simplified:** The chart's trip is drawn arriving as the reference voltage crosses zero, rising; a real trip can arrive at any point on the wave, which moves every clearing time by up to half a cycle. **Full treatment:** The instant the relay's decision arrives, from the protection's own timing.
 
+## poletop — Inside a pole-top transformer
+
+- **Simplified:** Turns are drawn in their real ratio, sixty primary turns to one in each half of the secondary; a real one has many more of both. The core and coil are a typical shell-form design, not this unit's. **Full treatment:** The manufacturer's design, with the secondary's halves often interleaved either side of the primary to lower the leakage between them.
+- **Simplified:** No magnetizing current or core loss, so the primary's current is exactly the legs' current over the turns ratio; the transformer's impedance is split between the primary and the two halves by a standard rule of thumb. **Full treatment:** The core's shunt branch, and the impedances from the unit's own short-circuit tests.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

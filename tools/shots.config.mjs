@@ -769,6 +769,37 @@ export default [
     probe: provenance,
   },
   {
+    name: 'poletop',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['poletop']));
+      await page.waitForFunction(() => window.__app.level === 'poletop' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'poletop-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['poletop']));
+      await page.waitForFunction(() => window.__app.level === 'poletop' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

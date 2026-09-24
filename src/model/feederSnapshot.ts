@@ -28,6 +28,12 @@ export interface FeederSnap {
   V: Float64Array;
   /** Per branch: P and Q entering at the from end, P and Q leaving at the to end (W, var). */
   flows: Float64Array;
+  /**
+   * Per branch: the current in each phase (re, im, A) at the from end, then at the to
+   * end — 12 numbers. A center-tapped service's to end carries its two legs as phases
+   * a and b.
+   */
+  I: Float64Array;
   /** Per load (feederLoads order): P and Q actually drawn (W, var; negative: rooftop solar). */
   loadP: Float64Array;
   loadQ: Float64Array;
@@ -53,9 +59,16 @@ export function feederSnap(cp: CoupledPoint): FeederSnap {
     }
   });
   const flows = new Float64Array(fs.net.branches.length * 4);
+  const I = new Float64Array(fs.net.branches.length * 12);
   fs.net.branches.forEach((b, k) => {
     const br = r.branch.get(b.id);
     if (!br) return;
+    for (let p = 0; p < 3; p++) {
+      I[k * 12 + 2 * p] = br.If[p]!.re;
+      I[k * 12 + 2 * p + 1] = br.If[p]!.im;
+      I[k * 12 + 6 + 2 * p] = br.It[p]!.re;
+      I[k * 12 + 6 + 2 * p + 1] = br.It[p]!.im;
+    }
     flows[k * 4] = br.Sf.re;
     flows[k * 4 + 1] = br.Sf.im;
     flows[k * 4 + 2] = br.St.re;
@@ -80,6 +93,7 @@ export function feederSnap(cp: CoupledPoint): FeederSnap {
     headQ: fs.feederHeadS.im,
     V,
     flows,
+    I,
     loadP,
     loadQ,
     loadIds,
@@ -91,5 +105,5 @@ export function feederSnap(cp: CoupledPoint): FeederSnap {
 }
 
 export function feederTransferables(f: FeederSnap): ArrayBuffer[] {
-  return [f.V, f.flows, f.loadP, f.loadQ].map((a) => a.buffer as ArrayBuffer);
+  return [f.V, f.flows, f.I, f.loadP, f.loadQ].map((a) => a.buffer as ArrayBuffer);
 }

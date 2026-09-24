@@ -35,5 +35,10 @@ export const COMPONENTS = {
     /** Rated interrupting time, cycles. */
     ratedCycles: 3,
   },
+  /**
+   * A pole-top transformer's turns as drawn: in the real ratio of its windings'
+   * voltages (7200 V to each 120 V half), far fewer of each than a real one has.
+   */
+  poletop: { drawnPrimary: 60, drawnHalf: 1 },
   src: 'estimate' as SourceId,
 };

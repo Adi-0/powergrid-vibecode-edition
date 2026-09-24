@@ -1,5 +1,6 @@
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 import { interruption, type BreakerState, type Interruption } from '../model/breakerState';
+import type { PoleTopState } from '../model/poletopState';
 import type { CoreGeom, Winding } from '../levels/transformer';
 import { COMPONENTS } from '../data/components';
 import { data, dataText, derived, el, qty, solver, type Prov } from '../ui/quantity';
@@ -412,5 +413,89 @@ export function breakerPartView(head: BreakerHead, st: BreakerState | null, key:
         intro: span('A steel tank at earth potential, filled with [[sf6|sulfur hexafluoride]] under pressure: a gas that insulates several times better than air and recovers from an arc very fast, which is what lets a gap of a few centimetres hold off hundreds of kilovolts moments after the current has stopped.'),
         sections: amps,
       };
+  }
+}
+
+// ---------------------------------------------------------------------------- the pole-top transformer
+
+/** A service leg's number, and a transformer terminal's standard name (H1, X2…): notation. */
+const leg = (n: 1 | 2) => dataText(String(n), data('notation.serviceLeg'));
+const terminal = (t: string) => dataText(t, data('notation.C57.12.terminals'));
+
+/** The pole-top transformer with nothing picked: how one wire becomes two legs and a neutral. */
+export function poletopLevelView(id: string, st: PoleTopState | null, turns: { primary: number; secondaryHalf: number }): View {
+  const name = dataText(`Transformer ${id.slice(2)}`, data(`evergreen.layout.transformers.${id}`));
+  const kva = st?.kva;
+  const kind = span('Pole-top [[transformer]] · ', kva !== undefined ? el(qty(kva, 'kVA', data(`evergreen.layout.transformers.${id}.kva`), { digits: 0 })) : '', ' · single-phase, [[center-tap|center-tapped]]');
+  const intro = span('Opened on the plane through its axis. How one wire of the lateral becomes a home’s two legs and a neutral:');
+  if (!st) return { name, kind, intro, sections: [{ title: span('No operating point'), text: span('No solved state for this interval.'), rows: [] }] };
+  if (!st.on) return { name, kind, intro, sections: [{ title: span('No supply'), text: span('No voltage on its primary: no flux, no current, nothing on the legs.'), rows: [] }] };
+  const t = st.t;
+  const pvP = provOf(st.prov.vP);
+  const pvS = provOf(st.prov.vS);
+  const pI = provOf(st.prov.I);
+  const d = (k: string, ...from: Prov[]) => derived(`t${t}.pt.${id}.${k}`, ...from);
+  const nq = derived('evergreen.poletop.ratio', data('evergreen.layout.transformers.kvPrimaryLN'), data('ansi.C84.1.base120'));
+  return {
+    name,
+    kind,
+    intro,
+    sections: [
+      {
+        title: span('One winding in, two halves out'),
+        text: span('The primary, many turns of fine wire, takes the voltage between the lateral’s phase and the neutral. The secondary’s turns are in two halves in series, each with a fraction of the primary’s turns, so each gives that fraction of its voltage. Where the halves meet, the center tap, is bonded to the tank and grounded: it becomes the neutral.'),
+        rows: [
+          { label: span('Primary, line to neutral'), value: el(qty(st.vP, 'V', pvP, { digits: 0, basis: 'LN' })), note: span('of a rated ', el(qty(7200, 'V', data('evergreen.layout.transformers.kvPrimaryLN'), { digits: 0, basis: 'LN' }))) },
+          { label: span('Turns, primary to each half'), value: el(qty(7200 / 120, '', nq, { digits: 0 })), note: span('drawn ', el(qty(turns.primary, 'turns', data('components.poletop.drawnPrimary'), { digits: 0 })), ' to ', el(qty(turns.secondaryHalf, 'turn', data('components.poletop.drawnHalf'), { digits: 0 })), ' in each half') },
+          { label: span('Leg ', leg(1), ' to neutral'), value: el(qty(st.v1, 'V', pvS, { digits: 1, basis: 'LN' })) },
+          { label: span('Leg ', leg(2), ' to neutral'), value: el(qty(st.v2, 'V', pvS, { digits: 1, basis: 'LN' })), note: span('the other half, the opposite way round') },
+          { label: span('Leg to leg'), value: el(qty(st.v12, 'V', d('v12', pvS), { digits: 1, basis: 'LL' })), note: span('both halves in series: what an air conditioner or an oven uses') },
+        ],
+      },
+      {
+        title: span('Two legs, and the neutral between'),
+        text: span('A home’s lights and outlets hang between one leg and the neutral, its big appliances across both legs. The neutral carries only what the two legs do not share: when they carry the same, it carries nothing. The primary carries the legs’ current divided by the turns ratio.'),
+        rows: [
+          { label: span('Leg ', leg(1), ' current $I_1$'), value: el(qty(st.i1, 'A', pI, { digits: 1 })), note: span(el(qty(st.p1 / 1000, 'kW', d('p1', pvS, pI), { digits: 2, phases: '1φ' })), ' out') },
+          { label: span('Leg ', leg(2), ' current $I_2$'), value: el(qty(st.i2, 'A', pI, { digits: 1 })), note: span(el(qty(st.p2 / 1000, 'kW', d('p2', pvS, pI), { digits: 2, phases: '1φ' })), ' out') },
+          { label: span('Neutral $|I_1 + I_2|$'), value: el(qty(st.iN, 'A', d('iN', pI), { digits: 1 })) },
+          { label: span('Primary $I_p$'), value: el(qty(st.ip, 'A', pI, { digits: 2 })) },
+        ],
+      },
+      {
+        title: span('What passes through'),
+        rows: [
+          { label: span('In from the lateral'), value: el(qty(st.p / 1000, 'kW', provOf(st.prov.pf), { digits: 2, phases: '1φ' })), note: span(el(qty(st.q / 1000, 'kvar', provOf(st.prov.qf), { digits: 2 }))) },
+          { label: span('[[losses|Lost]] as heat'), value: el(qty(st.loss, 'W', d('loss', provOf(st.prov.pf), provOf(st.prov.pt)), { digits: 0 })), note: span('taken to the air by the oil and the can') },
+          { label: span('[[loading|Loading]]'), value: el(qty((100 * Math.hypot(st.p, st.q)) / (st.kva * 1000), '%', d('loading', provOf(st.prov.pf), data(`evergreen.layout.transformers.${id}.kva`)), { digits: 0 })) },
+        ],
+      },
+    ],
+  };
+}
+
+/** A part picked inside the pole-top transformer. */
+export function poletopPartView(id: string, st: PoleTopState | null, what: string, sub?: string): View {
+  const kind = span('Part of ', dataText(`transformer ${id.slice(2)}`, data(`evergreen.layout.transformers.${id}`)));
+  const on = !!st?.on;
+  const pI = st ? provOf(st.prov.I) : null;
+  switch (what) {
+    case 'core':
+      return { name: 'Core', kind, intro: span('Two loops of thin steel strip, wound and cut, set side by side: their shared middle leg passes through the coil, and the flux goes up it and back down the two outer legs, half each way.'), sections: [] };
+    case 'winding':
+      return sub === 'primary'
+        ? { name: 'Primary winding', kind, intro: span('Many turns of fine insulated wire, outside the secondary. One end comes in on the bushing on the lid (', terminal('H1'), '), from the lateral; the other (', terminal('H2'), ') is bonded to the tank and the system neutral.'), sections: on && st && pI ? [{ title: span('Now'), rows: [{ label: span('Current'), value: el(qty(st.ip, 'A', pI, { digits: 2 })) }] }] : [] }
+        : {
+            name: 'Secondary winding',
+            kind,
+            intro: span('A few turns of wide conductor, in two halves, innermost. Its ends come out as ', terminal('X1'), ' and ', terminal('X3'), ', its middle as ', terminal('X2'), ', the center tap. It carries the primary’s current many times over, so its turns are that much thicker.'),
+            sections: on && st && pI ? [{ title: span('Now'), rows: [{ label: span('Leg ', leg(1)), value: el(qty(st.i1, 'A', pI, { digits: 1 })) }, { label: span('Leg ', leg(2)), value: el(qty(st.i2, 'A', pI, { digits: 1 })) }] }] : [],
+          };
+    case 'bushing':
+      return sub === 'X'
+        ? { name: 'Secondary bushings', kind, intro: span(terminal('X1'), ' and ', terminal('X3'), ' carry the two legs out to the street; ', terminal('X2'), ', the center tap, is strapped to the tank and to the ground wire down the pole, and becomes the neutral that every home shares. Grounding it holds each leg near its voltage above the earth a person stands on.'), sections: [] }
+        : { name: 'Primary bushing', kind, intro: span('Carries the lateral’s phase, through a fuse and a short lead, into the tank to the primary winding.'), sections: [] };
+    default:
+      return { name: 'Tank and oil', kind, intro: span('A steel can full of mineral oil, which insulates the windings and carries their heat to the can’s walls; a transformer this small needs no radiators. Its losses are a few hundred watts at most.'), sections: [] };
   }
 }

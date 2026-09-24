@@ -21,6 +21,8 @@ import { RegionLevel } from '../levels/region';
 import { BANK, BANK_DRIVE, SubstationLevel, XF_BANK_KEY } from '../levels/substation';
 import { TransformerLevel } from '../levels/transformer';
 import { BreakerLevel } from '../levels/breaker';
+import { PoleTopLevel } from '../levels/poletop';
+import { poletopState } from '../model/poletopState';
 import { breakerState } from '../model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../model/xfmrState';
 import { enIso } from '../levels/sketch';
@@ -50,8 +52,8 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel } from '../math/panels';
-import { breakerLevelView, breakerPartView, transformerLevelView, transformerPartView } from './inspect-parts';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel } from '../math/panels';
+import { breakerLevelView, breakerPartView, poletopLevelView, poletopPartView, transformerLevelView, transformerPartView } from './inspect-parts';
 import { EVERGREEN } from '../data/dist/evergreen';
 
 /**
@@ -73,7 +75,7 @@ interface Portal {
 }
 
 /** Named places in the tree, for the guided route and the harness. */
-export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60';
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60' | 'poletop';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -1255,6 +1257,18 @@ export class App {
       ps.push({ key: 'substation', anchor: l.substationAt, ratio: 1, sel: { kind: 'dist', what: 'bank', id: 'EV-BANK' }, label: 'fd:sub', make: () => new SubstationLevel(this.grid) });
       for (const t of this.feederModel().layout.transformers)
         ps.push({ key: `service:${t.id}`, anchor: l.transformerAt(t.id), ratio: 1, sel: { kind: 'dist', what: 'transformer', id: t.id }, make: () => new ServiceLevel(this.feederModel(), t.id) });
+    } else if (l instanceof ServiceLevel) {
+      // the pole-top transformer opens where it hangs
+      const id = l.transformerId;
+      const tr = this.feederModel().layout.transformers.find((x) => x.id === id)!;
+      ps.push({
+        key: `pt:${id}`,
+        anchor: enIso(0.9, 0, 0),
+        ratio: 1,
+        sel: { kind: 'dist', what: 'transformer', id },
+        label: 'sv:can',
+        make: () => new PoleTopLevel(id, tr.kva, l.secondaryAt, (s) => poletopState(s, this.feederModel(), id)),
+      });
     } else if (l instanceof PlantLevel) {
       for (const u of ['GT1', 'GT2', 'ST'])
         ps.push({ key: `machine:${u}`, anchor: l.generatorAt(u), ratio: 1, sel: { kind: 'equip', what: 'generator', id: `${l.plantId}-${u}` }, label: `eq:gen:${u}`, make: () => new MachineLevel(this.grid, `${l.plantId}-${u}`) });
@@ -1361,7 +1375,7 @@ export class App {
     if (l === this.system) return 5;
     if (l instanceof FeederLevel) return this.fitZoom(l) * 1.4;
     // a yard's transformers are worth building only once the yard is zoomed past its fit
-    if (l instanceof SiteLevel || l instanceof SubstationLevel) return this.fitZoom(l) * 1.3;
+    if (l instanceof SiteLevel || l instanceof SubstationLevel || l instanceof ServiceLevel) return this.fitZoom(l) * 1.3;
     return 0;
   }
 
@@ -1545,6 +1559,7 @@ export class App {
     if (l instanceof PlantLevel || l instanceof MachineLevel) return sel.kind === 'equip';
     if (l instanceof TransformerLevel) return sel.kind === 'part' && sel.id === l.plate.key;
     if (l instanceof BreakerLevel) return sel.kind === 'part' && sel.id === l.key;
+    if (l instanceof PoleTopLevel) return sel.kind === 'part' && sel.id === `pt:${l.transformerId}`;
     return false;
   }
 
@@ -1859,6 +1874,8 @@ export class App {
         return ['site:EVERGREEN', 'substation'];
       case 'service':
         return ['site:EVERGREEN', `service:${outletT}`];
+      case 'poletop':
+        return ['site:EVERGREEN', `service:${outletT}`, `pt:${outletT}`];
       case 'plant':
         return ['site:MOSS_LANDING', 'plant:ML1'];
       case 'machine':
@@ -2132,7 +2149,7 @@ export class App {
       if (sel.kind === 'dist') {
         if (sel.what === 'outlet') return show('Selected outlet', outletTraceView(this.grid, s, f));
         if (sel.what === 'home') return show('Selected home', homeView(s, f, sel.id));
-        if (sel.what === 'transformer') return show('Selected transformer', distTransformerView(s, f, sel.id));
+        if (sel.what === 'transformer') return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Look inside', title: 'Open the can: its core, its coil, the center tap (Enter, or double-click)', run: () => void this.dive(`pt:${sel.id}`) }]);
       }
     }
     if (top instanceof PlantLevel) {
@@ -2168,6 +2185,11 @@ export class App {
         }
         return show('Generator', v, act);
       }
+    }
+    if (top instanceof PoleTopLevel) {
+      const st = top.stateFor(s);
+      if (sel?.kind === 'part') return show('Selected part', poletopPartView(top.transformerId, st, sel.what, sel.sub));
+      return show('Pole-top transformer', poletopLevelView(top.transformerId, st, top.turns));
     }
     if (top instanceof BreakerLevel) {
       const st = top.stateFor(s);
@@ -2262,7 +2284,8 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof BreakerLevel) {
+    if (top instanceof PoleTopLevel) out.push(poletopPanel(top.stateFor(s), top.transformerId));
+    else if (top instanceof BreakerLevel) {
       const up = this.levelPortal.get(top)!;
       if (up.sel.kind === 'branch') {
         const br = this.grid.branches[up.sel.index]!;
