@@ -1,6 +1,11 @@
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 import { interruption, type BreakerState, type Interruption } from '../model/breakerState';
 import type { PoleTopState } from '../model/poletopState';
+import type { SpanCircuit, SpanState } from '../model/spanState';
+import { conductorTemperature, sagAt } from '../physics/ieee738';
+import type { SpanLevel } from '../levels/span';
+import type { Grid } from '../model/grid';
+import { CONDUCTORS } from '../data/conductors';
 import type { CoreGeom, Winding } from '../levels/transformer';
 import { COMPONENTS } from '../data/components';
 import { data, dataText, derived, el, qty, solver, type Prov } from '../ui/quantity';
@@ -498,4 +503,187 @@ export function poletopPartView(id: string, st: PoleTopState | null, what: strin
     default:
       return { name: 'Tank and oil', kind, intro: span('A steel can full of mineral oil, which insulates the windings and carries their heat to the can’s walls; a transformer this small needs no radiators. Its losses are a few hundred watts at most.'), sections: [] };
   }
+}
+
+// ---------------------------------------------------------------------------- a span
+
+const chartDiv = (n: Node) => {
+  const d = document.createElement('div');
+  d.className = 'chart';
+  d.appendChild(n);
+  return d;
+};
+
+/** A span with nothing (or one circuit) picked: the weather, the wire's temperature, its sag, its limit today. */
+export function spanView(grid: Grid, level: SpanLevel, st: SpanState | null, pick: number | null): View {
+  const cs = level.cs;
+  const g = level.geom;
+  const here = grid.sites.find((x) => x.id === level.siteId)!;
+  const far = grid.sites.find((x) => x.id === cs.far)!;
+  const name = span('Span from ', dataText(here.name, data(`network.site.${here.id}.name`)), ' toward ', dataText(far.name, data(`network.site.${far.id}.name`)));
+  const c = st ? (st.circuits.find((x) => x.branch === pick) ?? st.circuits[0]!) : null;
+  const cond = c ? CONDUCTORS[c.conductor] : null;
+  const kind = span(
+    'Overhead [[line]] · a span of ',
+    el(qty(g.S, 'm', derived(`${cs.key}.S`, data('conductors.SPAN_WEATHER.spanM')), { digits: 0 })),
+    cond && c ? span(' · ', dataText(`${cond.name} ACSR`, data(`conductors.${c.conductor}.name`)), c.bundle > 1 ? span(', ', el(qty(c.bundle, 'per phase', data(`towers.bundle.${c.conductor}`), { digits: 0 }))) : '') : '',
+  );
+  const intro = span('One span, from the tower outside the yard to the next. How hot the wire runs, and so how low it hangs, is set by the current it carries and the weather it hangs in:');
+  if (!st || !c) return { name, kind, intro, sections: [{ title: span('No operating point'), text: span('No solved state for this interval.'), rows: [] }] };
+  const t = st.t;
+  const key = `t${t}.${cs.key}.${c.branch}`;
+  const d = (k: string, ...from: Prov[]) => derived(`${key}.${k}`, ...from);
+  const iq = provOf(st.prov.amps[st.circuits.indexOf(c)]!);
+  const wq = data(`conductors.SPAN_WEATHER.windMs.${st.wind}`);
+  const tq = d('Ts', iq, data(st.prov.air.slice(5)), wq);
+  const b = c.balance;
+  const clearance = cs.H - c.sag;
+  const clearanceMax = cs.H - c.sagMax;
+  const lim = c.ampacity > 0 ? (100 * c.amps) / c.ampacity : 0;
+  const sections: Section[] = [
+    {
+      title: span('The weather it hangs in'),
+      rows: [
+        { label: span('Air'), value: el(qty(st.weather.Ta, '°C', data(st.prov.air.slice(5)), { digits: 1 })), note: span('this hour, in this region') },
+        { label: span('Sun, above the horizon'), value: el(qty(Math.max(0, st.weather.sunAltDeg), '°', derived(st.prov.sun.slice(8)), { digits: 1 })) },
+        { label: span('Wind, across the line'), value: el(qty(st.weather.windMs, 'm/s', wq, { digits: 2 })), note: span(st.wind === 'rating' ? 'the light wind line ratings assume; try another below' : st.wind === 'still' ? 'still air: only the wire’s own warmth moves the air' : 'a steady breeze') },
+      ],
+    },
+    {
+      title: span('How hot the wire runs'),
+      text: span('The current heats the wire through its [[resistance]], and the sun warms it. The air carries heat away, and the wire radiates it. It settles where the two balance.'),
+      rows: [
+        { label: span('[[current|Current]] per phase'), value: el(qty(c.amps, 'A', iq, { digits: 0 })), note: c.bundle > 1 ? span(el(qty(c.perSub, 'A', d('perSub', iq), { digits: 0 })), ' in each of its conductors') : undefined },
+        { label: span('Heat in: the current $I^2R$'), value: el(qty(b.qj, 'W/m', d('qj', tq), { digits: 2 })) },
+        { label: span('Heat in: the sun'), value: el(qty(b.qs, 'W/m', d('qs', tq), { digits: 2 })) },
+        { label: span('Heat out: carried by the air'), value: el(qty(b.qc, 'W/m', d('qc', tq), { digits: 2 })) },
+        { label: span('Heat out: radiated'), value: el(qty(b.qr, 'W/m', d('qr', tq), { digits: 2 })) },
+        { label: span('The wire’s temperature'), value: el(qty(c.Ts, '°C', tq, { digits: 1 })), note: span('where heat in equals heat out') },
+      ].map((r) => (r.note ? r : { label: r.label, value: r.value })),
+    },
+    {
+      title: span('How low it hangs'),
+      text: span(
+        'Warmer, the aluminium grows longer. A longer wire between the same two towers hangs lower, closer to whatever is beneath it; and as it sags its tension eases, which pulls it back up a little. Seen from the side:',
+        chartDiv(spanProfile(c, g.S, cs.H, cs.towerH, key)),
+      ),
+      rows: [
+        { label: span('Sag at mid-span'), value: el(qty(c.sag, 'm', d('sag', tq), { digits: 2 })), note: span('tension ', el(qty(c.tension / 1000, 'kN', d('H', tq), { digits: 1 })), ' in each conductor') },
+        { label: span('Clearance to the ground'), value: el(qty(clearance, 'm', d('clearance', tq), { digits: 2 })), note: span('schematic towers, flat ground') },
+        { label: span('At its limit of ', el(qty(c.maxTempC, '°C', data(`conductors.CONDUCTOR_MECH.${c.conductor}.maxTempC`), { digits: 0 }))), value: el(qty(c.sagMax, 'm', d('sagMax', data(`conductors.CONDUCTOR_MECH.${c.conductor}.maxTempC`)), { digits: 2 })), note: span('sag; clearance ', el(qty(clearanceMax, 'm', d('clearanceMax'), { digits: 2 }))) },
+      ],
+    },
+    {
+      title: span('Its limit, today'),
+      text: span('A line’s [[rating]] is, at bottom, how hot it may run: how far it may sag. In today’s weather, this is the current that would take it there. The dot is now:', chartDiv(spanCurves(st, c, key))),
+      rows: [
+        { label: span('Current at its limit, per phase'), value: el(qty(c.ampacity, 'A', d('ampacity', wq, data(st.prov.air.slice(5))), { digits: 0 })) },
+        { label: span('Carrying now, of that'), value: el(qty(lim, '%', d('ofLimit', iq), { digits: 1 })) },
+        { label: span('The fixed rating the power flow uses'), value: el(qty(c.ratingAmps, 'A', derived(`network.line.${grid.branches[c.branch]!.id}.ratingAmps`, data(`network.line.${grid.branches[c.branch]!.id}.rateMVA`)), { digits: 0 })), note: span('per phase: a planning value, for all weather') },
+      ],
+    },
+  ];
+  return { name, kind, intro, sections };
+}
+
+/**
+ * The span in profile, as a line designer draws it: seen from the side, heights drawn
+ * at a larger scale than lengths (said so), the conductor now, where it would hang at
+ * its limit, the ground, and the clearance at mid-span.
+ */
+function spanProfile(c: SpanCircuit, S: number, H: number, towerH: number, key: string): SVGSVGElement {
+  const W = 330;
+  const Hh = 150;
+  const L = 16;
+  const R = 16;
+  const T = 12;
+  const B = 22;
+  const s = svgEl('svg', { width: W, height: Hh, viewBox: `0 0 ${W} ${Hh}`, 'aria-label': 'The span seen from the side' }) as SVGSVGElement;
+  const kx = (W - L - R) / S;
+  const ky = (Hh - T - B) / (towerH * 1.05);
+  const X = (x: number) => L + x * kx;
+  const Y = (y: number) => Hh - B - y * ky;
+  // ground
+  svgEl('line', { x1: 4, y1: Y(0), x2: W - 4, y2: Y(0), stroke: 'var(--ink-60)', 'stroke-width': 1 }, s);
+  for (let x = 0; x <= S; x += S / 16) svgEl('line', { x1: X(x) - 3, y1: Y(0) + 4, x2: X(x) + 1, y2: Y(0), stroke: 'var(--ink-35)', 'stroke-width': 0.8 }, s);
+  // towers
+  for (const x0 of [0, S]) {
+    svgEl('polyline', { points: `${X(x0) - 5},${Y(0)} ${X(x0) - 1.5},${Y(towerH)} ${X(x0) + 1.5},${Y(towerH)} ${X(x0) + 5},${Y(0)}`, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1 }, s);
+    svgEl('line', { x1: X(x0) - 8, y1: Y(H + 1.5), x2: X(x0) + 8, y2: Y(H + 1.5), stroke: 'var(--ink)', 'stroke-width': 1 }, s);
+  }
+  const curve = (D: number) => {
+    const pts: string[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      pts.push(`${X(u * S).toFixed(1)},${Y(H - 4 * D * u * (1 - u)).toFixed(1)}`);
+    }
+    return pts.join(' ');
+  };
+  svgEl('polyline', { points: curve(c.sagMax), fill: 'none', stroke: 'var(--ink-35)', 'stroke-width': 1, 'stroke-dasharray': '5 3' }, s);
+  svgEl('polyline', { points: curve(c.sag), fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.8 }, s);
+  // the clearance at mid-span
+  const xm = X(S / 2);
+  const yLow = Y(H - c.sag);
+  svgEl('line', { x1: xm, y1: yLow, x2: xm, y2: Y(0), stroke: 'var(--ink)', 'stroke-width': 1 }, s);
+  for (const y of [yLow, Y(0)]) svgEl('line', { x1: xm - 4, y1: y, x2: xm + 4, y2: y, stroke: 'var(--ink)', 'stroke-width': 1 }, s);
+  svgText(s, xm + 6, (yLow + Y(0)) / 2 + 3, `${(H - c.sag).toFixed(1)} m`, `derived:${key}.clearance`, { size: 9 });
+  svgText(s, X(S * 0.72), Y(H - 4 * c.sagMax * 0.72 * 0.28) + 12, 'at its limit', 'notation:formula', { size: 8.5 });
+  svgText(s, W - 4, Hh - 4, `heights drawn ${(ky / kx).toFixed(1)} times the lengths`, `derived:${key}.profileScale`, { size: 8, anchor: 'end' });
+  return s;
+}
+
+/**
+ * Two small graphs worked from the same physics: the conductor's temperature against
+ * the current it carries, in today's weather (where it crosses its limit is its
+ * ampacity), and its sag against its temperature. The point now is marked on each.
+ */
+function spanCurves(st: SpanState, c: SpanCircuit, key: string): SVGSVGElement {
+  const W = 330;
+  const Hh = 132;
+  const s = svgEl('svg', { width: W, height: Hh, viewBox: `0 0 ${W} ${Hh}`, 'aria-label': 'Temperature against current, and sag against temperature' }) as SVGSVGElement;
+  const box = (x0: number, w: number) => ({ x0, w, y0: 14, h: Hh - 38 });
+  const A = box(34, 125);
+  const Bx = box(196, 125);
+  // left: temperature against current per phase
+  const iMax = Math.max(c.ampacity * 1.25, c.amps * 1.1, 1);
+  const tMin = Math.floor(st.weather.Ta / 10) * 10;
+  const tMax = Math.max(130, c.maxTempC + 20);
+  const xa = (i: number) => A.x0 + (i / iMax) * A.w;
+  const ya = (T: number) => A.y0 + A.h - ((T - tMin) / (tMax - tMin)) * A.h;
+  const pts: string[] = [];
+  for (let k = 0; k <= 36; k++) {
+    const I = (iMax * k) / 36;
+    const Ts = conductorTemperature(st.conductor, st.weather, I / c.bundle).Ts;
+    pts.push(`${xa(I).toFixed(1)},${Math.max(A.y0 - 4, ya(Ts)).toFixed(1)}`);
+  }
+  svgEl('polyline', { points: `${A.x0},${A.y0} ${A.x0},${A.y0 + A.h} ${A.x0 + A.w},${A.y0 + A.h}`, fill: 'none', stroke: 'var(--ink-60)', 'stroke-width': 1 }, s);
+  svgEl('line', { x1: A.x0, y1: ya(c.maxTempC), x2: A.x0 + A.w, y2: ya(c.maxTempC), stroke: 'var(--ink-35)', 'stroke-width': 1, 'stroke-dasharray': '5 3' }, s);
+  svgEl('polyline', { points: pts.join(' '), fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5 }, s);
+  svgEl('line', { x1: xa(c.ampacity), y1: ya(c.maxTempC), x2: xa(c.ampacity), y2: A.y0 + A.h, stroke: 'var(--ink)', 'stroke-width': 0.8, 'stroke-dasharray': '2 2' }, s);
+  svgEl('circle', { cx: xa(c.amps), cy: ya(c.Ts), r: 3, fill: 'var(--ink)' }, s);
+  svgText(s, A.x0 - 3, ya(c.maxTempC) + 3, `${c.maxTempC}`, `data:conductors.CONDUCTOR_MECH.${c.conductor}.maxTempC`, { anchor: 'end', size: 8 });
+  svgText(s, A.x0 - 3, ya(tMin) + 3, `${tMin}`, `derived:${key}.axisT`, { anchor: 'end', size: 8 });
+  svgText(s, xa(c.ampacity), A.y0 + A.h + 10, `${Math.round(c.ampacity)} A`, `derived:${key}.ampacity`, { anchor: 'middle', size: 8 });
+  svgText(s, A.x0, A.y0 - 4, '°C, the wire', 'notation:formula', { size: 8 });
+  svgText(s, A.x0 + A.w, A.y0 + A.h + 22, 'current, per phase', 'notation:formula', { anchor: 'end', size: 8 });
+  // right: sag against temperature
+  const TT = [st.weather.Ta - 10, c.maxTempC + 20];
+  const sags = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((j) => {
+    const T = TT[0]! + ((TT[1]! - TT[0]!) * j) / 8;
+    return { T, D: sagAt(st.mech, T).D };
+  });
+  const dMin = Math.floor(sags[0]!.D);
+  const dMax = Math.ceil(sags[sags.length - 1]!.D + 0.5);
+  const xb = (T: number) => Bx.x0 + ((T - TT[0]!) / (TT[1]! - TT[0]!)) * Bx.w;
+  const yb = (D: number) => Bx.y0 + ((D - dMin) / (dMax - dMin)) * Bx.h;
+  svgEl('polyline', { points: `${Bx.x0},${Bx.y0} ${Bx.x0},${Bx.y0 + Bx.h} ${Bx.x0 + Bx.w},${Bx.y0 + Bx.h}`, fill: 'none', stroke: 'var(--ink-60)', 'stroke-width': 1 }, s);
+  svgEl('polyline', { points: sags.map((p) => `${xb(p.T).toFixed(1)},${yb(p.D).toFixed(1)}`).join(' '), fill: 'none', stroke: 'var(--ink)', 'stroke-width': 1.5 }, s);
+  svgEl('line', { x1: xb(c.maxTempC), y1: Bx.y0, x2: xb(c.maxTempC), y2: Bx.y0 + Bx.h, stroke: 'var(--ink-35)', 'stroke-width': 1, 'stroke-dasharray': '5 3' }, s);
+  svgEl('circle', { cx: xb(c.Ts), cy: yb(c.sag), r: 3, fill: 'var(--ink)' }, s);
+  svgText(s, Bx.x0 - 3, yb(dMin) + 3, `${dMin}`, `derived:${key}.axisD`, { anchor: 'end', size: 8 });
+  svgText(s, Bx.x0 - 3, yb(dMax) + 3, `${dMax}`, `derived:${key}.axisD`, { anchor: 'end', size: 8 });
+  svgText(s, Bx.x0, Bx.y0 - 4, 'sag, m (down)', 'notation:formula', { size: 8 });
+  svgText(s, xb(c.maxTempC), Bx.y0 + Bx.h + 10, 'limit', 'notation:formula', { anchor: 'middle', size: 8 });
+  svgText(s, Bx.x0 + Bx.w, Bx.y0 + Bx.h + 22, 'the wire’s temperature', 'notation:formula', { anchor: 'end', size: 8 });
+  return s;
 }

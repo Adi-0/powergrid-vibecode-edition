@@ -62,6 +62,13 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Turns are drawn in their real ratio, sixty primary turns to one in each half of the secondary; a real one has many more of both. The core and coil are a typical shell-form design, not this unit's. **Full treatment:** The manufacturer's design, with the secondary's halves often interleaved either side of the primary to lower the leakage between them.
 - **Simplified:** No magnetizing current or core loss, so the primary's current is exactly the legs' current over the turns ratio; the transformer's impedance is split between the primary and the two halves by a standard rule of thumb. **Full treatment:** The core's shunt branch, and the impedances from the unit's own short-circuit tests.
 
+## span — A span of a line
+
+- **Simplified:** The conductor's temperature is IEEE 738's steady state for the interval: the hour's air temperature and clear-sky sun at the station, a wind the reader chooses (the light wind line ratings assume, by default), at sea level. A real conductor lags a change of current by ten minutes or more. **Full treatment:** IEEE 738's transient calculation, with measured weather along the line (dynamic line rating).
+- **Simplified:** The sag comes from an everyday reference (15 °C, a fifth of breaking strength) by a linear-elastic change of state on a level span: no creep over the years, no ice or wind load, no bundled-conductor spacers. The conductors' mechanical constants are typical of their designation. **Full treatment:** A ruling-span sag-tension program with the conductor's stress-strain and creep curves, from the utility's design criteria.
+- **Simplified:** The towers are drawn to a schematic height and the ground is flat, so the clearance shown is illustrative. **Full treatment:** The line's surveyed profile and the clearance required over each crossing.
+- **Simplified:** The power flow uses each circuit's fixed rating; the temperature, sag and limit here are worked out from its flow and do not feed back into it. **Full treatment:** Dynamic ratings in operations, and conductor resistance that rises with temperature in the power flow.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

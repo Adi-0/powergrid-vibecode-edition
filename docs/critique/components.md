@@ -1,7 +1,8 @@
 # Critique — components opened up (decision 0025)
 
 Screenshots: `xfmr`, `xfmr-unfold`, `xfmr-math`, `xfmr-part`, `bank`, `bank-math`,
-`cb-unfold`, `cb`, `cb-opening`, `cb-math`, `cb60`. Checked against the visual
+`cb-unfold`, `cb`, `cb-opening`, `cb-math`, `cb60`, `poletop`, `poletop-math`,
+`span-unfold`, `span`, `span-math`. Checked against the visual
 direction in CLAUDE.md, and against the author's ask: see how a thing works, visually,
 without a wall of words.
 
@@ -17,6 +18,9 @@ without a wall of words.
 | 8 | The power chevrons ran through the middle of the cut tank, over the contacts. | One path from bushing to bushing through the tank. | Chevrons down one bushing and up the other; inside, the contacts and the arc tell the story. |
 | 9 | At Evergreen, the breaker level rendered blank: the view kept its labels and nothing else. | The state map's land surface is one rectangle as big as California. Seen from a frame a thousand times finer, clipped at that size, its depth landed in front of the drawing and covered it in the ground colour. This could happen deep in any level. | Once the map has receded (zoomed into a yard or closer), the land surface is not drawn at all. |
 | 10 | Labels for the moving parts pointed at empty gas once the contacts had moved. | Labels do not travel with a moving group. | Each moving part is named where it passes, not where it starts. |
+| 11 | The span's sag, the whole point of the level, could barely be seen: at Tesla the span toward Table Mountain runs almost straight up the sheet, so the sag is seen edge-on. | The isometric view is fixed; a corridor's bearing decides how the span faces the viewer. | The drawing keeps its place in the yard; the inspector adds a side elevation (heights exaggerated by a stated factor) with the limit's ghost and the clearance, and two small curves: temperature against current with the ampacity marked, sag against temperature with the limit. Each has a dot for now. |
+| 12 | Zooming toward one span handed the sheet to the span beside it. | The longer span next to it was whole at a lower zoom, and the hand-off took the nearest *whole* child. | The hand-off waits while the child nearest the focus is still unfolding. |
+| 13 | The span at Tesla is short (about a hundred and sixty metres). | The span is capped at 0.85 of the distance from the first tower to where the yard's drawing hands the corridor to the map's stroke, and at Tesla that point is near. | Kept: the length is stated, and the math and sag use it. Longer spans elsewhere show the usual few-hundred-metre sag. |
 
 ## Still wrong or weak
 
@@ -25,3 +29,5 @@ without a wall of words.
 - **The breaker's contacts are schematic.** Their proportions and stroke are exaggerated so the gap reads at the fitted zoom; the honesty panel says so.
 - **The other two poles do not move.** The chart shows all three phases clearing, but only the pole cut open is drawn opening.
 - **The GPU cost of the new levels was not measured.** The software rasteriser here runs at under one frame a second for any view at 1440 × 900.
+- **The span's sag is small on the sheet.** A few metres against a span of hundreds is true to scale; the inspector's elevation exaggerates it, the drawing does not.
+- **Only the first span of a corridor is modelled.** The rest of the line's spans would share the same temperature (same current, same weather at this level of model) but not the same terrain.

@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import type { Vec3 } from '../render/lines';
-import { INK, INK_35, INK_60, PEN, SIGNAL, voltageClassFor, type VoltageClass } from '../render/style';
+import { INK, INK_35, INK_60, PEN, SIGNAL, voltageClassFor, type DashName, type VoltageClass } from '../render/style';
 import { warningSymbol } from '../render/symbols';
 import type { IsoCamera } from '../render/iso';
 import type { Grid, GridBranch, GridBus, GridGen, GridHvdc, GridShunt } from '../model/grid';
@@ -64,6 +64,34 @@ interface BayDraw {
   cb: BayBreaker;
 }
 
+/**
+ * A corridor's first span as the yard draws it: the tower outside the fence (where it
+ * stands, which way its arm faces, its size), the exit point where the System's stroke
+ * takes the circuits up, and each circuit's conductors — which arm position each phase
+ * hangs from, and the sideways offset its stroke carries on the map.
+ */
+export interface CorridorSpan {
+  key: string;
+  far: string;
+  kv: number;
+  te: number;
+  tn: number;
+  ue: number;
+  un: number;
+  towerH: number;
+  m: number;
+  spacing: number;
+  f: number;
+  X: Vec3;
+  H: number;
+  circuits: Array<{ branch: number; sidePx: [number, number]; slots: number[] }>;
+  /** The strokes and chevrons from the tower to the exit (hidden while the span's level is open). */
+  segs: number[];
+  flows: number[];
+  dash: DashName;
+  width: number;
+}
+
 /** A bay's breaker: its place (for the level that opens it) and its strokes here (hidden while that level is open). */
 export interface BayBreaker {
   e0: number;
@@ -104,6 +132,8 @@ export class SiteLevel implements Level {
   private banks: Array<{ k: number; segs: number[]; flows: number[] }> = [];
   private busSegs: Array<{ bus: GridBus; segs: number[]; at: Vec3 }> = [];
   private corridors = new Map<string, Corridor>();
+  /** Each corridor's first span, from its tower out toward the far station (each opens into a level of its own). */
+  readonly spans: CorridorSpan[] = [];
   /** The circuits' bay breakers as drawn (each opens into a level of its own). */
   readonly bayBreakers: Array<BayBreaker & { branch: number }> = [];
   /** The transformer banks as drawn: where each tank stands, and its strokes (hidden while its own level is open). */
@@ -488,27 +518,36 @@ export class SiteLevel implements Level {
     const across = (q: P3) => (q[0] - te) * ve + (q[2] - tn) * vn;
     const order = all.map((q, i) => ({ q, i })).sort((a, b) => across(a.q) - across(b.q));
     const slot = new Map<number, P3>(order.map((o, j) => [o.i, att[j]!]));
+    const slotIdx = new Map<number, number>(order.map((o, j) => [o.i, j]));
     const w = phaseWidth(cls);
     let idx = 0;
     const H = att[0]![1];
+    const span: CorridorSpan = { key: `span:${this.siteId}:${cor.far}|${k.kv}`, far: cor.far, kv: k.kv, te, tn, ue, un, towerH: k.towerH, m, spacing: k.sp * 1.1, f: k.f, X: [cor.X[0], H, cor.X[2]], H, circuits: [], segs: [], flows: [], dash: cls.dash, width: w };
     for (const c of cor.circuits) {
       const X: Vec3 = [cor.X[0], H, cor.X[2]];
       const sp = c.exit.sidePx;
+      const slots: number[] = [];
       c.ends.forEach((q, p) => {
+        slots.push(slotIdx.get(idx)!);
         const a = slot.get(idx++)!;
         const s1 = sk.seg(P(...q), P(...a), { width: w, color: INK, dash: cls.dash });
         // the three conductors of the circuit converge on the exit point: on the map one stroke stands for them
         const s2 = sk.seg(P(...a), X, { width: w, color: INK, dash: cls.dash, px: [0, 0, sp[0], sp[1]], collapsePx: [0, 0, sp[0], sp[1]] });
         c.line.segs.push(s1, s2);
+        span.segs.push(s2);
         const line = this.lines.find((l) => l.segs === c.line.segs)!;
         line.outer.add(s1).add(s2);
         if (p === 1) {
-          c.line.flows.push(sk.flowSeg(P(...q), P(...a)), sk.flowSeg(P(...a), X));
+          const f2 = sk.flowSeg(P(...a), X);
+          c.line.flows.push(sk.flowSeg(P(...q), P(...a)), f2);
+          span.flows.push(f2);
           sk.target({ kind: 'branch', index: c.exit.branch }, [P(...q), P(...a), X]);
         }
       });
+      span.circuits.push({ branch: c.exit.branch, sidePx: [sp[0], sp[1]], slots });
       this.exitPts.push({ branch: c.exit.branch, at: X, stagger: 0 });
     }
+    this.spans.push(span);
     const far = this.grid.sites.find((q) => q.id === cor.far)!;
     this.labels.push({ id: `st:to:${cor.far}:${k.kv}`, text: `to ${far.name}`, anchor: P(te, k.towerH, tn), priority: 6, minZoom: 0.25, kind: 'exit' });
   }
@@ -610,6 +649,13 @@ export class SiteLevel implements Level {
   }
 
   yieldTo(key: string, m: number): void {
+    const span = this.spans.find((x) => x.key === key);
+    if (span) {
+      // the span's own level draws the conductors out of the tower, sagging, to the next one
+      for (const i of span.segs) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      for (const i of span.flows) this.sk.flow.setDim(i, m > 0 ? 1 : 0);
+      return;
+    }
     const cb = this.bayBreakers.find((b) => key === cbKey(this.siteId, this.grid.branches[b.branch]!.id));
     if (cb) {
       for (let i = cb.lines[0]; i < cb.lines[0] + cb.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);

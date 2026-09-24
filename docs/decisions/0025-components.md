@@ -139,6 +139,54 @@ the inside of a piece of equipment, working, driven by the solved state.
   - P = Re(V·I*) per leg;
   - the loss by conservation.
 
+- *A Span level at every corridor out of a yard.* A line's rating is the one number in
+  the power flow that a reader cannot see: it stands for how hot the conductor may run,
+  and so how far it may sag. Zooming into the first span of any corridor unfolds it in
+  place, from the tower outside the yard to the next one along the corridor's bearing.
+  - *The physics is IEEE 738's steady-state heat balance*, q_c + q_r = q_s + I²R(T_s)
+    (`src/physics/ieee738.ts`). Its inputs are:
+    - the solved current per phase (from the circuit's end at this yard), split across
+      the bundle's sub-conductors;
+    - the hour's air temperature for the station's region;
+    - the sun's position at the station for the interval;
+    - the line's azimuth for the angle of incidence;
+    - a wind the reader chooses: still air, the light 0.61 m/s crosswind that line
+      ratings assume, or a breeze.
+
+    The temperature is found by bisection, a converged iteration and not a closed form,
+    so the residual is shown. The implementation reproduces the standard's worked
+    example (Drake ACSR at 100 °C, about 1025 A), term by term, in
+    `test/ieee738.test.ts`.
+  - *Sag follows from that temperature*: a change of state from an everyday reference
+    (15 °C, a fifth of breaking strength). The model is linear elastic on a level span,
+    with the parabola's length and tension. The drawing draws it:
+    - each phase's conductor is a parabola whose sag is the solved one;
+    - a dashed ghost hangs where the conductor would be at its temperature limit;
+    - a dimension gives the clearance to the ground.
+  - *In the isometric view a span can run nearly toward the viewer*, with its sag seen
+    edge-on. The inspector therefore carries a side elevation (heights exaggerated by a
+    stated factor), a temperature–current curve with the ampacity marked, and a
+    sag–temperature curve, each with a dot for now.
+  - *The working (`spanPanel`)* covers every term of the balance:
+    - the film temperature and the air's density, viscosity and conductivity;
+    - the Reynolds number;
+    - both forced-convection correlations and natural convection, taking the largest;
+    - radiation and solar gain;
+    - I²R at the conductor's temperature;
+    - the residual;
+    - the sag D = wS²/(8H).
+
+    Every line span in all three winds is in the arithmetic-consistency test.
+  - *Honesty:* a "span" section covers:
+    - steady state for the interval, not IEEE 738's transient;
+    - the change of state without creep, ice or wind load;
+    - schematic towers on flat ground;
+    - the fixed rating in the power flow, which the temperature does not feed back into.
+- *A fix found on the way: the child zoomed toward keeps the sheet.* With spans of
+  different lengths unfolding side by side, a longer one became whole first and took the
+  sheet, even though the reader was zooming toward a shorter one. The hand-off now waits
+  while the band nearest the focus is still unfolding.
+
 **Rejected.**
 - *A lid that folds away as the zoom proceeds.* The renderer unfolds shapes out of a
   point; it cannot fold a panel about an edge. A wall that shrinks to a point reads as a
@@ -151,3 +199,10 @@ the inside of a piece of equipment, working, driven by the solved state.
   slowed, with the factor stated, the order of events is the lesson.
 - *All three poles cut open.* One pole shows the mechanism; the chart carries the three
   phases, which is where they differ.
+- *A catenary instead of the parabola for sag.* The catenary's sag exceeds the
+  parabola's by about 4D²/(3S²) of itself. With the sag a few percent of the span, that
+  is a fraction of a percent. The parabola keeps the hand arithmetic to one line,
+  D = wS²/(8H).
+- *Feeding the conductor's temperature back into the power flow* (resistance rising with
+  temperature, dynamic ratings). It would couple every interval's solve to the weather
+  model; it is named in the honesty panel as the full treatment instead.

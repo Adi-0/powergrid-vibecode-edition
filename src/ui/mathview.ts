@@ -30,6 +30,8 @@ function unitSpan(unit: string): Node | null {
   if (!unit || unit === 'pu') return null;
   const u = document.createElement('span');
   u.className = 'u';
+  // a unit can carry an exponent (m², kg/m³): notation, not data
+  u.dataset.prov = 'notation:unit';
   u.textContent = unit === '°' || unit === '%' ? unit : `\u2009${unit}`;
   return u;
 }
@@ -64,7 +66,8 @@ function render(e: Expr, shown: number[], units: Array<{ unit: string; prov: str
       f.appendChild(render(e.a, shown, units, bare));
       t(')');
       break;
-    case 'sq': {
+    case 'sq':
+    case 'pow': {
       const leafUnit = e.a.k === 'num' ? e.a.unit : e.a.k === 'ref' ? units[e.a.step]!.unit : '';
       const wrap = !atomic(e.a) || negLeaf(e.a, shown) || (!bare && unitSpan(leafUnit) !== null);
       if (wrap) t('(');
@@ -72,7 +75,7 @@ function render(e: Expr, shown: number[], units: Array<{ unit: string; prov: str
       if (wrap) t(')');
       const sup = document.createElement('sup');
       sup.dataset.prov = 'notation:formula';
-      sup.textContent = '2';
+      sup.textContent = e.k === 'sq' ? '2' : String(e.p);
       f.appendChild(sup);
       break;
     }

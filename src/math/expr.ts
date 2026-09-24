@@ -17,6 +17,8 @@ export type Expr =
   | { k: 'op'; op: '+' | '−' | '×' | '÷'; a: Expr; b: Expr }
   | { k: 'fn'; fn: 'cos' | 'sin' | 'sqrt' | 'atan'; a: Expr }
   | { k: 'sq'; a: Expr }
+  /** A power other than two (an exponent from a correlation: 0.52, 1.25, 4). */
+  | { k: 'pow'; a: Expr; p: number }
   | { k: 'neg'; a: Expr }
   | { k: 'paren'; a: Expr };
 
@@ -72,6 +74,8 @@ export function evaluate(e: Expr, results: number[]): number {
       const v = evaluate(e.a, results);
       return v * v;
     }
+    case 'pow':
+      return Math.pow(evaluate(e.a, results), e.p);
     case 'fn': {
       const v = evaluate(e.a, results);
       // cos and sin take degrees; atan returns degrees
@@ -104,6 +108,7 @@ export const sin = (a: Expr): Expr => ({ k: 'fn', fn: 'sin', a });
 export const sqrt = (a: Expr): Expr => ({ k: 'fn', fn: 'sqrt', a });
 export const atan = (a: Expr): Expr => ({ k: 'fn', fn: 'atan', a });
 export const sq = (a: Expr): Expr => ({ k: 'sq', a });
+export const pow = (a: Expr, p: number): Expr => ({ k: 'pow', a, p });
 export const neg = (a: Expr): Expr => ({ k: 'neg', a });
 export const par = (a: Expr): Expr => ({ k: 'paren', a });
 

@@ -194,6 +194,13 @@ function poletopRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
 }
 
+/** The Span level: a line's span, sagging. */
+function spanRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 3], [14, 9], [27, 12], [40, 9], [50, 3]], w: 1.6 }]), 'A conductor sagging between two towers, as low as its temperature makes it'));
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 3], [14, 11], [27, 15], [40, 11], [50, 3]], w: 0.8, color: INK_35, dash: '5 3' }]), 'Where it would hang at its temperature limit: what the line’s [[rating]] protects'));
+  g.appendChild(row(drawSample(20, [{ pts: [[27, 2], [27, 18]], w: 0.8 }, { pts: [[23, 2], [31, 2]], w: 0.8 }, { pts: [[23, 18], [31, 18]], w: 0.8 }]), '[[clearance|Clearance]] from the lowest conductor to the ground'));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -331,6 +338,8 @@ export class Legend {
       breakerRows(g2);
     } else if (s.level === 'poletop') {
       poletopRows(g2);
+    } else if (s.level === 'span') {
+      spanRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);

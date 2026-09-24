@@ -204,3 +204,9 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - The inspector shows the legs' voltages (120 V each, 240 V across), their currents, the neutral's (|I₁ + I₂|) and the primary's.
     - Its math panel works in rectangular phasors: |V₁₂| = |V₁ − V₂|, |I_N| = |I₁ + I₂|, |I_p| = |I₁ − I₂| / n (exact here), and each leg's power as Re(V·I*). It is tested for every service transformer.
     - Per-phase branch currents now travel in the feeder snapshot.
+  - **A Span level at every corridor out of a yard:** the first span, from the tower outside the yard to the next, with each phase's conductor hanging at its solved sag and a dashed ghost where it would hang at its temperature limit.
+    - The conductor's temperature is IEEE 738's steady-state heat balance for the solved current, the hour's air and sun at the station, and a wind the reader picks (still, the rating's 0.61 m/s, a breeze). The implementation reproduces the standard's Drake example (about 1025 A) term by term.
+    - Sag follows by a change of state from an everyday reference; the clearance to the ground is dimensioned.
+    - The inspector adds a side elevation (heights exaggerated, stated), temperature against current with the ampacity marked, and sag against temperature.
+    - Its math panel works the whole balance (film temperature, air properties, Reynolds number, the three convection correlations, radiation, sun, I²R, residual) and the sag. It is tested for every line span in all three winds.
+  - **Fix: zooming toward one child no longer hands the sheet to a larger neighbour** that happens to be whole sooner.

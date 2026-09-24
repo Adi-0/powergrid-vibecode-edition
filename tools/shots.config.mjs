@@ -800,6 +800,56 @@ export default [
     probe: both(provenance, mathShown, mathArithmetic),
   },
   {
+    name: 'span-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        const keys = a.keysFor('span');
+        a.holdBand(keys[keys.length - 1], 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'span',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['span']));
+      await page.waitForFunction(() => window.__app.level === 'span' && !window.__app.transitioning, null, { timeout: 90000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'span-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['span']));
+      await page.waitForFunction(() => window.__app.level === 'span' && !window.__app.transitioning, null, { timeout: 90000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

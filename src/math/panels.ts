@@ -5,7 +5,7 @@ import type { Feeder } from '../model/feeder';
 import { nodeIndex } from '../model/feeder';
 import { WIRING_12AWG } from '../data/dist/evergreen';
 import { COUPLING_BUS } from '../model/coupling';
-import { add, atan, cos, div, mul, neg, num, par, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
+import { add, atan, cos, div, mul, neg, num, par, pow, ref, sigDigits, sin, sq, sqrt, sub, type Expr, type Panel, type Step } from './expr';
 import { CCGT, plantState } from '../model/ccgt';
 import { machineOf, phasors } from '../model/machine';
 import type { TripResponse } from '../model/frequency';
@@ -15,6 +15,7 @@ import type { FeederEvent } from '../app/inspect-fault';
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
 import { interruption, type BreakerState } from '../model/breakerState';
 import { HALF_V, PRIMARY_LN_V, type PoleTopState } from '../model/poletopState';
+import type { SpanState } from '../model/spanState';
 import { COMPONENTS } from '../data/components';
 
 /**
@@ -940,6 +941,157 @@ export function poletopPanel(st: PoleTopState | null, id: string): Panel | null 
   return {
     title: 'Through the pole-top transformer',
     intro: 'Phasors in rectangular form (real and imaginary parts), RMS, as the phase-by-phase solution has them. Complex power S = V·I*: the current conjugated.',
+    steps,
+  };
+}
+
+/**
+ * A span's working, IEEE 738 (SI): the heat balance at the conductor temperature the
+ * iteration found — resistance, the current's heat, the air's properties at the film
+ * temperature, the three convection correlations (the largest applies), radiation,
+ * the sun — then the check that heat in equals heat out, and the sag it gives.
+ */
+export function spanPanel(st: SpanState | null, ci: number, key: string): Panel | null {
+  const c = st?.circuits[ci];
+  if (!st || !c || c.amps <= 0) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.${key}.${c.branch}.${x}`;
+  const w = st.weather;
+  const cd = st.conductor;
+  const b = c.balance;
+  const note = (x: number, d: number, unit: string, prov: string, sym?: string) => num(x, d, unit, prov, sym);
+  const Ts = note(c.Ts, 4, '°C', k('Ts'), 'T_s');
+  const Ta = note(w.Ta, 4, '°C', st.prov.air, 'T_a');
+  const D = note(cd.D, 7, 'm', `data:conductors.${c.conductor}.diameter_in`, 'D');
+  const I = note(c.perSub, 2, 'A', st.prov.amps[ci]!, 'I');
+  const steps: Step[] = [
+    { label: 'The conductor’s temperature: found by iteration (heat in = heat out), not a closed form — checked below', general: 'T_s', sym: 'T_s', expr: Ts, unit: '°C', digits: 4, prov: k('Ts2'), solver: c.Ts },
+    { label: 'Film temperature: the air at the wire’s surface', general: 'T_{film} = (T_s + T_a) / 2', sym: 'T_{film}', expr: div(par(add(ref(0), Ta)), num(2, 0, '', 'data:notation.two')), unit: '°C', digits: 4, prov: k('Tfilm'), solver: b.Tfilm },
+    {
+      label: 'Resistance at that temperature (linear between two tabulated points)',
+      general: 'R(T_s) = R_{25} + (R_{75} − R_{25}) (T_s − 25) / 50',
+      sym: 'R(T_s)',
+      expr: add(num(cd.rLo * 1000, 6, 'Ω/km', `data:conductors.${c.conductor}.r25`, 'R_{25}'), div(mul(par(sub(num(cd.rHi * 1000, 6, 'Ω/km', `data:conductors.${c.conductor}.r75`, 'R_{75}'), num(cd.rLo * 1000, 6, 'Ω/km', `data:conductors.${c.conductor}.r25`, 'R_{25}'))), par(sub(ref(0), num(25, 0, '°C', 'data:notation.T25')))), num(50, 0, '°C', 'data:notation.dT50'))),
+      unit: 'Ω/km',
+      digits: 6,
+      prov: k('R'),
+      solver: b.R * 1000,
+    },
+    { label: 'Heat in from the current, per metre of one conductor', general: 'q_j = I^2 R', sym: 'q_j', expr: div(mul(sq(I), ref(2)), num(1000, 0, '', 'data:notation.kilo')), unit: 'W/m', digits: 3, prov: k('qj'), solver: b.qj },
+    { label: 'Air density at the film temperature (sea level)', general: 'ρ_f = 1.293 / (1 + 0.00367 T_{film})', sym: 'ρ_f', expr: div(num(1.293, 3, '', 'data:ieee738.rho0'), par(add(num(1, 0, '', 'data:notation.one'), mul(num(0.00367, 5, '', 'data:ieee738.rhoT'), ref(1))))), unit: 'kg/m³', digits: 5, prov: k('rho'), solver: b.rho },
+    {
+      label: 'Air viscosity at the film temperature',
+      general: 'μ_f = 1.458·10^{-6} (T_{film} + 273)^{1.5} / (T_{film} + 383.4)',
+      sym: 'μ_f',
+      expr: div(mul(num(1.458, 3, '', 'data:ieee738.mu0'), pow(par(add(ref(1), num(273, 0, '', 'data:notation.kelvin'))), 1.5)), par(add(ref(1), num(383.4, 1, '', 'data:ieee738.muT')))),
+      unit: 'µPa·s',
+      digits: 4,
+      prov: k('mu'),
+      solver: b.mu * 1e6,
+    },
+    {
+      label: 'Air’s thermal conductivity at the film temperature',
+      general: 'k_f = 2.424·10^{-2} + 7.477·10^{-5} T_{film} − 4.407·10^{-9} T_{film}^2',
+      sym: 'k_f',
+      expr: sub(add(num(0.02424, 5, '', 'data:ieee738.k0'), mul(num(7.477e-5, 8, '', 'data:ieee738.k1'), ref(1))), mul(num(4.407e-9, 12, '', 'data:ieee738.k2'), sq(ref(1)))),
+      unit: 'W/(m·°C)',
+      digits: 7,
+      prov: k('kf'),
+      solver: b.kf,
+    },
+    {
+      label: 'Reynolds number of the wind round the wire',
+      general: 'N_{Re} = D ρ_f V_w / μ_f',
+      sym: 'N_{Re}',
+      expr: div(mul(mul(mul(D, ref(4)), num(w.windMs, 2, 'm/s', `data:conductors.SPAN_WEATHER.windMs.${st.wind}`, 'V_w')), num(1e6, 0, '', 'data:notation.micro')), ref(5)),
+      unit: '',
+      digits: 1,
+      prov: k('Re'),
+      solver: b.Re,
+    },
+  ];
+  const Kang = num(b.Kangle, 4, '', 'data:conductors.SPAN_WEATHER.windAngleDeg', 'K_{angle}');
+  const dTs = () => par(sub(ref(0), Ta));
+  steps.push(
+    {
+      label: 'Carried off by the wind: the low-wind correlation',
+      general: 'q_{c1} = K_{angle} (1.01 + 1.35 N_{Re}^{0.52}) k_f (T_s − T_a)',
+      sym: 'q_{c1}',
+      expr: mul(mul(mul(Kang, par(add(num(1.01, 2, '', 'data:ieee738.c1a'), mul(num(1.35, 2, '', 'data:ieee738.c1b'), pow(ref(7), 0.52))))), ref(6)), dTs()),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('qc1'),
+      solver: b.qc1,
+    },
+    {
+      label: 'Carried off by the wind: the high-wind correlation',
+      general: 'q_{c2} = K_{angle} 0.754 N_{Re}^{0.6} k_f (T_s − T_a)',
+      sym: 'q_{c2}',
+      expr: mul(mul(mul(mul(Kang, num(0.754, 3, '', 'data:ieee738.c2')), pow(ref(7), 0.6)), ref(6)), dTs()),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('qc2'),
+      solver: b.qc2,
+    },
+    {
+      label: 'Carried off by the wire’s own warmth rising (still air)',
+      general: 'q_{cn} = 3.645 ρ_f^{0.5} D^{0.75} (T_s − T_a)^{1.25}',
+      sym: 'q_{cn}',
+      expr: mul(mul(mul(num(3.645, 3, '', 'data:ieee738.cn'), pow(ref(4), 0.5)), pow(D, 0.75)), pow(dTs(), 1.25)),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('qcn'),
+      solver: b.qcn,
+    },
+  );
+  const qcIdx = [b.qc1, b.qc2, b.qcn].indexOf(b.qc);
+  steps.push(
+    { label: `Convection: the largest of the three applies (${['the low-wind', 'the high-wind', 'still air’s'][qcIdx]})`, general: 'q_c = max(q_{c1}, q_{c2}, q_{cn})', sym: 'q_c', expr: ref(8 + qcIdx), unit: 'W/m', digits: 3, prov: k('qc'), solver: b.qc },
+    {
+      label: 'Radiated',
+      general: 'q_r = 17.8 D ε [((T_s + 273)/100)^4 − ((T_a + 273)/100)^4]',
+      sym: 'q_r',
+      expr: mul(mul(mul(num(17.8, 1, '', 'data:ieee738.r0'), D), num(cd.emissivity, 2, '', 'data:conductors.SPAN_WEATHER.emissivity', 'ε')), par(sub(pow(par(div(par(add(ref(0), num(273, 0, '', 'data:notation.kelvin'))), num(100, 0, '', 'data:notation.hundred'))), 4), pow(par(div(par(add(Ta, num(273, 0, '', 'data:notation.kelvin'))), num(100, 0, '', 'data:notation.hundred'))), 4)))),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('qr'),
+      solver: b.qr,
+    },
+    {
+      label: 'From the sun: its clear-sky flux at this altitude, at the angle it meets the wire',
+      general: 'q_s = α Q_s sin θ D',
+      sym: 'q_s',
+      expr: mul(mul(mul(num(cd.absorptivity, 2, '', 'data:conductors.SPAN_WEATHER.absorptivity', 'α'), num(b.Qs, 2, 'W/m²', st.prov.sun, 'Q_s')), sin(num(b.thetaDeg, 3, '°', st.prov.sun, 'θ'))), D),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('qs'),
+      solver: b.qs,
+    },
+    {
+      label: 'The check: heat out less heat in, at this temperature — near zero, as the iteration left it',
+      general: 'q_c + q_r − q_s − q_j',
+      sym: 'residual',
+      expr: sub(sub(add(ref(11), ref(12)), ref(13)), ref(3)),
+      unit: 'W/m',
+      digits: 3,
+      prov: k('residual'),
+      solver: c.residual,
+      approx: { note: 'Each term is rounded as shown; the iteration’s own residual is smaller.', tol: 0.004 },
+    },
+    {
+      label: 'Sag at mid-span, from the tension the change of state gives at this temperature (also found by iteration)',
+      general: 'D = w S^2 / (8 H)',
+      sym: 'D',
+      expr: div(mul(num(st.mech.w, 3, 'N/m', `data:conductors.CONDUCTOR_MECH.${c.conductor}.massKgPerM`, 'w'), sq(num(st.mech.S, 1, 'm', `derived:${key}.S`, 'S'))), par(mul(num(8, 0, '', 'data:notation.eight'), num(c.tension, 1, 'N', k('H'), 'H')))),
+      unit: 'm',
+      digits: 3,
+      prov: k('sag'),
+      solver: c.sag,
+    },
+  );
+  return {
+    title: 'The wire’s temperature and sag',
+    intro: 'The [[ieee738|IEEE 738]] steady-state heat balance, per metre of one conductor, at the temperature where heat in equals heat out. The air’s properties are at the film temperature; the wind is taken across the line.',
     steps,
   };
 }

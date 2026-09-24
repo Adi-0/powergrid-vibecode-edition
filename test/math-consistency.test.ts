@@ -7,7 +7,8 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel, poletopPanel, spanPanel } from '../src/math/panels';
+import { spanState } from '../src/model/spanState';
 import { poletopState } from '../src/model/poletopState';
 import { breakerState } from '../src/model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../src/model/xfmrState';
@@ -40,6 +41,8 @@ function redo(e: Expr, printed: string[]): number {
       return redo(e.a, printed);
     case 'sq':
       return redo(e.a, printed) ** 2;
+    case 'pow':
+      return redo(e.a, printed) ** e.p;
     case 'fn': {
       const v = redo(e.a, printed);
       return e.fn === 'cos' ? Math.cos(v * DEG) : e.fn === 'sin' ? Math.sin(v * DEG) : e.fn === 'atan' ? Math.atan(v) / DEG : Math.sqrt(v);
@@ -178,6 +181,21 @@ describe('math panels', () => {
         if (p) (check(p, br.id), n++);
       });
       expect(n).toBeGreaterThan(30);
+    });
+
+    it(`every line's span out of every yard, in every wind, at interval ${t}`, () => {
+      const s = snapshot(g, day.points[t]!);
+      let n = 0;
+      g.branches.forEach((br, k) => {
+        if (br.kind !== 'line') return;
+        for (const site of [br.from, br.to])
+          for (const wind of ['still', 'rating', 'breeze'] as const) {
+            const st = spanState(g, s, site.site.id, [k], 300, 45, wind);
+            const p = spanPanel(st, 0, `span:${site.site.id}`);
+            if (p) (check(p, `${br.id} at ${site.site.id}, ${wind}`), n++);
+          }
+      });
+      expect(n).toBeGreaterThan(300);
     });
 
     it(`every line's breaker at both ends, opened, at interval ${t}`, () => {
