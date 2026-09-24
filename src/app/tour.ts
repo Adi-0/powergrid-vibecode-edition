@@ -73,27 +73,35 @@ export const STOPS: Stop[] = [
     },
   },
   {
+    title: 'Every node is a place',
+    text: 'Zoom into any node on the map — scroll, pinch, or double-click it — and it unfolds into what it stands for. This is Tesla, where the state’s highest-voltage backbone meets the Bay Area’s [[transmission]] ring: each circuit arrives on its own bay, [[transformer|transformers]] join the two [[bus|buses]], and the chevrons show every megawatt in and out. Zoom back out and it folds into its node again.',
+    go: async (app) => {
+      await reset(app);
+      await app.navigate(['site']);
+    },
+  },
+  {
     title: 'A region, in layers',
-    text: 'The Bay Area, pulled apart by voltage: each layer carries every circuit at that voltage, [[transformer|transformers]] join the layers, generation rises from the ground and demand descends to it. Zoom out and it folds back into the map.',
+    text: 'Another way to look at the map: the Bay Area pulled apart by voltage. Each layer carries every circuit at that voltage, transformers join the layers, generation rises from the ground and demand descends to it. Zoom out and it folds back into the map.',
     go: async (app) => {
       await reset(app);
       await app.navigate(['region']);
     },
   },
   {
-    title: 'A substation',
-    text: 'One node on the region opens into a yard: the lines arrive on a gantry, pass switches and breakers onto a [[bus]], and a [[transformer]] steps the voltage down for the neighbourhood’s feeders.',
+    title: 'A neighbourhood',
+    text: 'Evergreen is a small node in east San José. Zoomed into, it is a neighbourhood: the substation at the head of one [[feeder]], and the feeder down the street — a three-phase trunk, fused side streets, a [[recloser]], a [[regulator|voltage regulator]], pole-top transformers and homes. It is solved phase by phase, unbalanced, and coupled to the transmission solution at the substation.',
     go: async (app) => {
       await reset(app);
-      await app.navigate(['region', 'substation']);
+      await app.navigate(['feeder']);
     },
   },
   {
-    title: 'A feeder, pole by pole',
-    text: 'One [[feeder]] out of that substation, down the street: a three-phase trunk, fused side streets, a [[recloser]], a [[regulator|voltage regulator]], pole-top transformers and homes. It is solved phase by phase, unbalanced, and coupled to the transmission solution at the substation.',
+    title: 'A substation',
+    text: 'Zoom into the substation and its yard unfolds: the [[subtransmission]] lines from Metcalf arrive on a gantry, pass switches and breakers onto a [[bus]], and a [[transformer]] steps the voltage down for the neighbourhood’s feeders.',
     go: async (app) => {
       await reset(app);
-      await app.navigate(['region', 'substation', 'feeder']);
+      await app.navigate(['substation']);
     },
   },
   {
@@ -101,7 +109,7 @@ export const STOPS: Stop[] = [
     text: 'One pole-top transformer, its homes, and one wall [[outlet]] with a hair dryer plugged in. The inspector traces its voltage all the way back to the transmission bus; the working shows the last few volts by Ohm’s law.',
     go: async (app) => {
       await reset(app);
-      await app.navigate(['region', 'substation', 'feeder', 'service']);
+      await app.navigate(['service']);
       await app.solved();
       app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' });
       app.inspector.toggleWorking(true);
@@ -109,7 +117,7 @@ export const STOPS: Stop[] = [
   },
   {
     title: 'A power plant',
-    text: 'A [[combined-cycle|combined-cycle]] plant on the coast. Every chevron is megawatts, whatever form it takes — gas in, hot exhaust, steam, shaft work, electricity out, and heat to the stacks and the sea. The inspector shows the energy balance closing to the watt.',
+    text: 'Moss Landing, zoomed into twice: its switchyard, then the [[combined-cycle|combined-cycle]] plant beside it. Every chevron is megawatts, whatever form it takes — gas in, hot exhaust, steam, shaft work, electricity out, and heat to the stacks and the sea. The inspector shows the energy balance closing to the watt.',
     go: async (app) => {
       await reset(app);
       await app.navigate(['plant']);
@@ -120,7 +128,7 @@ export const STOPS: Stop[] = [
     text: 'One gas turbine’s generator, cut open. Its inspector draws the [[phasor|phasors]] and the [[capability-curve|capability curve]]. Try Raise excitation: the power flow re-solves and the operating point moves — more reactive power out.',
     go: async (app) => {
       await reset(app);
-      await app.navigate(['plant', 'machine']);
+      await app.navigate(['machine']);
     },
   },
   {
@@ -139,7 +147,7 @@ export const STOPS: Stop[] = [
     text: 'Something has touched the line at the end of a side street and stayed. Watch the protection act in its real sequence: the recloser opens and closes twice, then the fuse clears the fault; only that street is left without supply. The inspector plots each device’s [[tcc|time–current curve]] against the fault current.',
     go: async (app) => {
       await reset(app);
-      await app.navigate(['region', 'substation', 'feeder']);
+      await app.navigate(['feeder']);
       await app.solved();
       const lat = app.feederModel().layout.laterals.find((l) => l.id === 'L10')!;
       app.faultFeeder(lat.nodes[lat.nodes.length - 1]!, true);
@@ -168,6 +176,8 @@ export class Tour {
   private next: HTMLButtonElement;
   index = 0;
   busy = false;
+  /** How many stops the route has. */
+  readonly stops = STOPS.length;
 
   constructor(
     parent: HTMLElement,

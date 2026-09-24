@@ -111,6 +111,14 @@ function substationRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
 }
 
+/** The Site level: a station's yard, drawn from the network data. */
+function siteRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 4 }]), 'One [[bus]] per voltage, on post insulators'));
+  g.appendChild(row(drawSample(22, [{ pts: [[8, 21], [8, 3], [24, 3], [24, 21]], w: 1.4 }, { pts: [[40, 21], [44, 2], [48, 21]], w: 1 }, { pts: [[38, 5], [50, 5]], w: 1 }]), 'A circuit’s bay: breaker, disconnect, gantry; outside the fence, its first tower'));
+  g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), '[[transformer|Transformer]] banks between the buses; generators and demand in their own bays'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 0.6, color: INK_60, dash: '18 5' }]), 'Fence'));
+}
+
 /** The Plant level: machinery to scale, pipes, the shaft, the enclosed bus. */
 function plantRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(22, [{ pts: [[16, 18], [30, 21], [42, 15], [42, 5], [28, 2], [16, 8], [16, 18]], w: 1.2 }, { pts: [[16, 8], [30, 11], [42, 5]], w: 1.2 }, { pts: [[30, 11], [30, 21]], w: 1.2 }]), 'Machinery drawn to scale: turbines, [[hrsg|HRSGs]], stacks, generators, transformers'));
@@ -255,6 +263,8 @@ export class Legend {
       regionRows(g2);
     } else if (s.level === 'substation') {
       substationRows(g2);
+    } else if (s.level === 'site') {
+      siteRows(g2);
     } else if (s.level === 'feeder' || s.level === 'service') {
       feederRows(g2);
     } else if (s.level === 'plant') {

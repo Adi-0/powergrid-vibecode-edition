@@ -9,7 +9,7 @@ import type { Snapshot } from '../model/snapshot';
  * (kilometres for System and Region, metres below), and the app hands the camera from
  * one frame to the next during a transition.
  */
-export type LevelKind = 'system' | 'region' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine';
+export type LevelKind = 'system' | 'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine';
 
 export type Selection =
   | { kind: 'site'; id: string }
@@ -81,12 +81,30 @@ export interface Level {
   fitPoints(): Vec3[];
   /** Voltage classes drawn (for the key). */
   readonly classes: VoltageClass[];
+  /**
+   * The ground point (y = 0) of this frame that sits on the node it unfolds from, one
+   * level up. (Its drawing folds toward its own collapse point, near it.)
+   */
+  readonly seat: Vec3;
+  /**
+   * Circuits of the System that end inside this level's drawing: where each leaves it,
+   * on its true bearing (a ground point in this frame), and when that stroke unfolds.
+   * The System's own stroke gives way to it there.
+   */
+  exits?(): Array<{ branch: number; at: Vec3; stagger: number }>;
+  /**
+   * A level below is unfolding in place of something this one draws (its footprint):
+   * `m` from 0 (not open: draw it) to 1 (fully unfolded: the level below draws it).
+   */
+  yieldTo?(key: string, m: number): void;
 }
 
 /** Flow scales, one per kind of level, so a chevron's size always means the same per level. */
 export const FLOW_SCALES: Record<LevelKind, FlowScale> = {
   system: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
   region: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
+  // the System's own scale: a circuit's chevrons keep their size as its yard unfolds
+  site: { unit: 'MW', perPx: 120, perSpeed: 40, samples: [500, 2000] },
   substation: { unit: 'MW', perPx: 1.5, perSpeed: 0.5, samples: [5, 20] },
   feeder: { unit: 'kW', perPx: 150, perSpeed: 50, samples: [200, 2000] },
   service: { unit: 'kW', perPx: 2.5, perSpeed: 0.8, samples: [5, 25] },

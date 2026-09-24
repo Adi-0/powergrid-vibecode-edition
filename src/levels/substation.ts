@@ -7,10 +7,15 @@ import type { Grid } from '../model/grid';
 import type { Snapshot } from '../model/snapshot';
 import { COUPLING_BUS } from '../model/coupling';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
-import { NORTH_ISO, Sketch, enIso as en } from './sketch';
+import { NORTH_ISO, PERSIST, Sketch, enIso as en } from './sketch';
+import { EV_EXIT_N, evergreenIn, evergreenRiser } from './feeder';
 
 /**
  * The Substation level: the Evergreen 60/12 kV substation as a yard, in metres.
+ *
+ * It sits inside the Feeder level (the neighbourhood), which draws its fence, its
+ * gantry and the circuits in: those are drawn here in the same place and never fold;
+ * the yard unfolds inside them.
  *
  * Three 60 kV circuits from Metcalf arrive on the east side at a dead-end gantry and
  * each passes a disconnect and a circuit breaker onto the 60 kV bus. The bus also
@@ -24,7 +29,7 @@ import { NORTH_ISO, Sketch, enIso as en } from './sketch';
  * Every conductor carries chevrons in proportion to megawatts, at this level's scale.
  */
 
-const FEEDER_N = [-7.5, -2.5, 2.5, 7.5]; // north positions of the four feeder exits
+const FEEDER_N = [EV_EXIT_N, -2.5, 2.5, 7.5]; // north positions of the four feeder exits
 const FEEDER_IDS = ['1105', '1102', '1103', '1104'];
 const CIRCUIT_N = [-10, 0, 10]; // incoming 60 kV circuits
 const BUS60 = { e: 14, h: 7, n0: -16, n1: 16 };
@@ -40,8 +45,10 @@ export class SubstationLevel implements Level {
   readonly north = NORTH_ISO;
   readonly labels: LabelSpec[] = [];
   readonly sk = new Sketch(en);
-  /** The 60 kV bus's centre: what the Region's Evergreen busbar unfolds into. */
-  readonly origin: Vec3 = en(BUS60.e, BUS60.h, 0);
+  /** Where the yard folds to: the bank, in the middle. */
+  readonly origin: Vec3 = en(0, 0, 0);
+  /** The centre of the fence, on the ground: where this level sits in the neighbourhood. */
+  readonly seat: Vec3 = en(0, 0, 0);
   /** The feeder 1105 exit at the west fence: what the Feeder level unfolds from. */
   readonly feederExit: Vec3 = en(-40, 9, FEEDER_N[0]!);
   private morphValue = 1;
@@ -63,8 +70,8 @@ export class SubstationLevel implements Level {
     const w60 = cls60.weight + 0.4;
     const w12 = cls12.weight + 0.2;
 
-    // ---- the fence and the gravel pad's edge, first to unfold
-    sk.stagger = 0;
+    // ---- the fence: the neighbourhood draws it too
+    sk.stagger = PERSIST;
     const fence: Array<[number, number]> = [
       [-40, -25],
       [40, -25],
@@ -83,35 +90,37 @@ export class SubstationLevel implements Level {
       }
     }
     // control building
+    sk.stagger = 0;
     sk.box(26, 0, 18, 9, 3.5, 5);
     this.labels.push({ id: 'eq:ctrl', text: 'Control building', anchor: en(26, 3.5, 18), priority: 2, minZoom: 0, kind: 'equip' });
 
-    // ---- 60 kV: gantry, the three circuits in, the bus, the circuits onward
-    sk.stagger = 0.08;
-    for (const n of [-16, 16]) sk.seg(en(37, 0, n), en(37, 11, n), { width: PEN.medium, color: INK });
-    sk.seg(en(37, 11, -16), en(37, 11, 16), { width: PEN.medium, color: INK });
-    const lines60 = g.branches
-      .map((b, k) => ({ b, k }))
-      .filter(({ b }) => b.kind === 'line' && (b.from.id === COUPLING_BUS || b.to.id === COUPLING_BUS))
-      .sort((a, b) => a.b.circuit - b.b.circuit);
-    lines60.forEach(({ b, k }, i) => {
-      const n = CIRCUIT_N[i] ?? 0;
-      // from the Metcalf direction (off the yard to the east), dropping to the gantry
-      const far = en(90, 13, n + 25);
-      const top = en(37, 11, n);
+    // ---- 60 kV: gantry, the three circuits in (as the neighbourhood draws them), the bus
+    const lines60 = evergreenIn(g);
+    lines60.forEach((x) => {
+      sk.stagger = PERSIST;
+      for (const [a, b] of x.frame) sk.seg(en(...a), en(...b), { width: PEN.medium, color: INK });
+      const X = en(x.exit[0], x.exit[1], x.exit[2]);
+      const tower = en(...x.gantry[1]);
+      const top = en(...x.gantry[0]);
+      const n = x.gantry[0][2];
+      const segs = [
+        sk.seg(X, tower, { width: w60, color: INK, dash: cls60.dash, px: [x.sidePx[0], x.sidePx[1], 0, 0], collapsePx: [x.sidePx[0], x.sidePx[1], 0, 0] }),
+        sk.seg(tower, top, { width: w60, color: INK, dash: cls60.dash }),
+      ];
+      // inside the fence: a disconnect switch (two posts and a blade) and a dead-tank breaker
+      sk.stagger = 0.08;
       const sw = en(31, 5, n);
-      const segs = [sk.seg(far, top, { width: w60, color: INK, dash: cls60.dash }), sk.seg(top, sw, { width: w60, color: INK }), sk.seg(sw, en(24, 4.2, n), { width: w60, color: INK })];
-      // disconnect switch (two posts and a blade) and a dead-tank breaker
+      segs.push(sk.seg(top, sw, { width: w60, color: INK }), sk.seg(sw, en(24, 4.2, n), { width: w60, color: INK }));
       sk.seg(en(31, 0, n), en(31, 5, n), { width: PEN.thin, color: INK });
       sk.box(24, 0, n, 2.4, 3.2, 1.8);
       segs.push(sk.seg(en(24, 4.2, n), en(BUS60.e, BUS60.h, n), { width: w60, color: INK }));
-      // chevrons follow the conductor: in over the gantry, through the switch and breaker, onto the bus
-      const path = [far, top, sw, en(24, 4.2, n), en(BUS60.e, BUS60.h, n)];
+      // chevrons follow the conductor: in from the exit, over the gantry, through the switch and breaker, onto the bus
+      const path = [X, tower, top, sw, en(24, 4.2, n), en(BUS60.e, BUS60.h, n)];
       const flows = path.slice(1).map((p, j) => sk.flowSeg(path[j]!, p));
-      this.circuits.push({ k, flows, seg: segs });
-      sk.target({ kind: 'branch', index: k }, [far, top, sw, en(BUS60.e, BUS60.h, n)]);
+      this.circuits.push({ k: x.branch, flows, seg: segs });
+      sk.target({ kind: 'branch', index: x.branch }, path);
     });
-    this.labels.push({ id: 'eq:in', text: 'From Metcalf', anchor: en(62, 12, 12), priority: 5, minZoom: 0, kind: 'equip' });
+    this.labels.push({ id: 'eq:in', text: 'From Metcalf', anchor: en(66, 15, 12), priority: 5, minZoom: 0, kind: 'equip' });
     // the bus on post insulators
     sk.stagger = 0.12;
     for (const n of [-14, 0, 14]) sk.seg(en(BUS60.e, 0, n), en(BUS60.e, BUS60.h, n), { width: PEN.thin, color: INK });
@@ -169,13 +178,20 @@ export class SubstationLevel implements Level {
       const out = en(GEAR.e - GEAR.se / 2, 0, n);
       const pole = en(-40, 0, n);
       sk.seg(out, pole, { width: w12, color: INK, dash: 'hidden' });
-      sk.seg(pole, en(-40, 9, n), { width: PEN.medium, color: INK });
-      sk.seg(en(-40, 8.5, n - 1.2), en(-40, 8.5, n + 1.2), { width: PEN.medium, color: INK });
+      // the riser poles; 1105's (and its first span) are drawn by the neighbourhood too
+      if (i === 0) sk.stagger = PERSIST;
+      if (i === 0) for (const [a, b] of evergreenRiser()) sk.seg(en(...a), en(...b), { width: PEN.medium, color: INK });
+      else {
+        sk.seg(pole, en(-40, 9, n), { width: PEN.medium, color: INK });
+        sk.seg(en(-40, 8.5, n - 1.2), en(-40, 8.5, n + 1.2), { width: PEN.medium, color: INK });
+      }
       const f = sk.flowSeg(out, pole);
       this.feederFlows.push(f);
       if (i === 0) {
-        const away = en(-75, 9.5, n - 10);
-        sk.seg(en(-40, 9, n), away, { width: w12, color: INK });
+        // on to feeder 1105's first pole, outside the fence
+        const away = en(-80, 11, 0);
+        sk.seg(en(-40, 9, n), away, { width: voltageClassFor(12.47).weight + 0.7, color: INK });
+        sk.stagger = 0.36;
         this.feederFlows.push(sk.flowSeg(en(-40, 9, n), away));
         sk.target({ kind: 'dist', what: 'feeder', id: 'CB-1105' }, [out, pole, en(-40, 9, n), away]);
         this.labels.push({ id: 'eq:f1105', text: `Feeder ${FEEDER_IDS[i]}`, anchor: away, priority: 9, minZoom: 0, kind: 'equip', prov: 'data:evergreen.feeder.1105' });
@@ -265,6 +281,6 @@ export class SubstationLevel implements Level {
 
   fitPoints(): Vec3[] {
     // the yard; the incoming and outgoing lines run on off the sheet
-    return [en(-44, 0, -27), en(44, 0, -27), en(44, 0, 27), en(-44, 0, 27), en(-44, 11, -27), en(44, 11, 27)];
+    return [en(-44, 0, -27), en(70, 0, -27), en(70, 0, 27), en(-44, 0, 27), en(-44, 11, -27), en(70, 15, 27)];
   }
 }

@@ -28,9 +28,16 @@ export const en = (e: number, h: number, n: number): Vec3 => [(e + n) * R, h, (e
  * (substation, service). North then points to the upper right.
  */
 export const enIso = (e: number, h: number, n: number): Vec3 => [e, h, -n];
-/** North as a unit vector in the frame's ground plane, for each plan convention. */
+/**
+ * North as a unit vector in the frame's ground plane. Every level shares the System
+ * frame's orientation (north up the sheet), so a level can sit inside the one above it
+ * without turning; an equipment drawing is laid out square to the frame, which puts
+ * its site grid ("plant north", `enIso`'s n) 45° west of true north.
+ */
 export const NORTH_MAP: [number, number] = [R, -R];
-export const NORTH_ISO: [number, number] = [0, -1];
+export const NORTH_ISO: [number, number] = NORTH_MAP;
+/** Stagger for a stroke that never folds: something the level above draws in the same place. */
+export const PERSIST = -1;
 
 interface Target {
   sel: Selection;
@@ -52,7 +59,7 @@ export class Sketch {
   private targets: Target[] = [];
 
   /** `plan`: how (east, height, north) become frame points — `en` or `enIso`. */
-  constructor(readonly plan: (e: number, h: number, n: number) => Vec3 = en) {
+  constructor(public plan: (e: number, h: number, n: number) => Vec3 = en) {
     this.glyphs.mesh.renderOrder = 30;
     this.marks.mesh.renderOrder = 31;
     this.group.add(this.faces.mesh, this.lines.mesh, this.flow.mesh, this.glyphs.mesh, this.marks.mesh);

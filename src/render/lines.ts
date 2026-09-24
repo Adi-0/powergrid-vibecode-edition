@@ -114,6 +114,7 @@ uniform vec4 uPatterns[8];
 uniform float uPixelRatio;
 uniform float uTime;
 uniform float uOpacity;
+uniform float uInk;
 
 out vec4 fragColor;
 
@@ -148,7 +149,7 @@ void main() {
     float inside = max(max(d1, d2), d3);
     a *= clamp(inside + 0.5, 0.0, 1.0);
   }
-  a *= vColor.a * uOpacity;
+  a *= vColor.a * uOpacity * uInk;
   if (a <= 0.003) discard;
   fragColor = vec4(vColor.rgb, a);
 }
@@ -223,6 +224,7 @@ export class LineBatch {
         uPatterns: { value: patterns },
         uTime: { value: 0 },
         uOpacity: { value: 1 },
+        uInk: { value: 1 },
       },
     });
     this.mesh = new THREE.Mesh(g, this.material);
@@ -286,6 +288,12 @@ export class LineBatch {
       for (let k = 0; k < values.length; k++) arr[o + k] = values[k]!;
       this.attrs[name].needsUpdate = true;
     }
+  }
+
+  /** Move a segment's ends. */
+  setEnds(index: number, a: Vec3, b: Vec3): void {
+    this.write('start', index, [a[0], a[1], a[2]]);
+    this.write('end', index, [b[0], b[1], b[2]]);
   }
 
   setColor(index: number, color: string, alpha = 1): void {

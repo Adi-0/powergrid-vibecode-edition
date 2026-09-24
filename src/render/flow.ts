@@ -75,6 +75,7 @@ in vec4 vColor;
 uniform float uTime;
 uniform float uPixelRatio;
 uniform float uOpacity;
+uniform float uInk;
 out vec4 fragColor;
 void main() {
   // exact position and depth along the segment (see lines.ts)
@@ -103,7 +104,7 @@ void main() {
   // fade in/out at the segment ends so marks do not pop
   float edge = min(vLocal.x, vLen - vLocal.x);
   a *= clamp(edge / (0.5 * W + 1.0), 0.0, 1.0);
-  a *= vColor.a * uOpacity;
+  a *= vColor.a * uOpacity * uInk;
   if (a <= 0.003) discard;
   fragColor = vec4(vColor.rgb, a);
 }
@@ -131,6 +132,8 @@ export class FlowBatch {
   private attrDim: THREE.InstancedBufferAttribute | null = null;
   private attrFlow: THREE.InstancedBufferAttribute | null = null;
   private attrColor: THREE.InstancedBufferAttribute | null = null;
+  private attrStart: THREE.InstancedBufferAttribute | null = null;
+  private attrEnd: THREE.InstancedBufferAttribute | null = null;
   count = 0;
 
   constructor(name = 'flow') {
@@ -149,6 +152,7 @@ export class FlowBatch {
         uPixelRatio: { value: 1 },
         uTime: { value: 0 },
         uOpacity: { value: 1 },
+        uInk: { value: 1 },
       },
     });
     this.mesh = new THREE.Mesh(g, this.material);
@@ -183,6 +187,20 @@ export class FlowBatch {
     }
   }
 
+  /** Move an instance's ends (a circuit giving way to the yard it enters, as that unfolds). */
+  setEnds(index: number, a: Vec3, b: Vec3): void {
+    for (let k = 0; k < 3; k++) {
+      this.start[index * 3 + k] = a[k]!;
+      this.end[index * 3 + k] = b[k]!;
+    }
+    if (this.attrStart && this.attrEnd) {
+      (this.attrStart.array as Float32Array).set(a, index * 3);
+      (this.attrEnd.array as Float32Array).set(b, index * 3);
+      this.attrStart.needsUpdate = true;
+      this.attrEnd.needsUpdate = true;
+    }
+  }
+
   /** Recede an instance (0: as drawn, 1: gone). */
   setDim(index: number, dim: number): void {
     this.dim[index] = dim;
@@ -198,8 +216,12 @@ export class FlowBatch {
     this.attrDim = new THREE.InstancedBufferAttribute(new Float32Array(this.dim), 1);
     this.attrDim.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aDim', this.attrDim);
-    g.setAttribute('aStart', new THREE.InstancedBufferAttribute(new Float32Array(this.start), 3));
-    g.setAttribute('aEnd', new THREE.InstancedBufferAttribute(new Float32Array(this.end), 3));
+    this.attrStart = new THREE.InstancedBufferAttribute(new Float32Array(this.start), 3);
+    this.attrEnd = new THREE.InstancedBufferAttribute(new Float32Array(this.end), 3);
+    this.attrStart.setUsage(THREE.DynamicDrawUsage);
+    this.attrEnd.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('aStart', this.attrStart);
+    g.setAttribute('aEnd', this.attrEnd);
     this.attrFlow = new THREE.InstancedBufferAttribute(new Float32Array(this.flow), 4);
     this.attrColor = new THREE.InstancedBufferAttribute(new Float32Array(this.color), 4);
     this.attrFlow.setUsage(THREE.DynamicDrawUsage);

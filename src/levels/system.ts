@@ -41,6 +41,11 @@ interface CircuitDraw {
   seg: number;
   flow: number;
   cls: VoltageClass;
+  /** Its ends as drawn (from-site, to-site), and where they are now (a yard open at one end). */
+  a: Vec3;
+  b: Vec3;
+  endA: Vec3;
+  endB: Vec3;
 }
 
 export class SystemLevel implements Level {
@@ -50,9 +55,12 @@ export class SystemLevel implements Level {
   readonly north: [number, number] = [Math.SQRT1_2, -Math.SQRT1_2];
   readonly needsDetail = false;
   readonly flowScale = FLOW_SCALES.system;
+  readonly seat: Vec3 = [0, 0, 0];
   private zoom = 1;
   readonly group = new THREE.Group();
   readonly faces = new FaceBatch('sys-faces');
+  /** The map: coast, borders, lakes, break lines. The network is drawn over it. */
+  readonly mapLines = new LineBatch('sys-map');
   readonly lines = new LineBatch('sys-lines');
   readonly glyphs = new LineBatch('sys-glyphs');
   readonly marks = new LineBatch('sys-marks');
@@ -75,6 +83,8 @@ export class SystemLevel implements Level {
    * of the way), with the rest of the network kept faint as context.
    */
   private context: { sites: Set<string>; fade: number } | null = null;
+  /** Sites whose own level is unfolding in their place: how far (0 … 1). */
+  private yielded = new Map<string, number>();
 
   constructor(
     readonly grid: Grid,
@@ -83,6 +93,7 @@ export class SystemLevel implements Level {
     this.buildSlab();
     this.buildNetwork();
     this.buildGlyphs();
+    this.mapLines.commit();
     this.lines.commit();
     this.faces.commit();
     this.glyphs.commit();
@@ -92,7 +103,7 @@ export class SystemLevel implements Level {
     this.glyphs.mesh.renderOrder = 30;
     this.marks.mesh.renderOrder = 31;
     for (const r of this.surfaces) this.group.add(...r.meshes);
-    this.group.add(this.faces.mesh, this.lines.mesh, this.flow.mesh, this.glyphs.mesh, this.marks.mesh);
+    this.group.add(this.faces.mesh, this.mapLines.mesh, this.lines.mesh, this.flow.mesh, this.glyphs.mesh, this.marks.mesh);
   }
 
   // ------------------------------------------------------------------ slab
@@ -118,7 +129,7 @@ export class SystemLevel implements Level {
       let runBorder: boolean | null = null;
       const flush = () => {
         if (run.length > 1)
-          this.lines.polyline(run, runBorder ? { width: PEN.fine, color: INK_60, dash: 'dashDot' } : { width, color: outline });
+          this.mapLines.polyline(run, runBorder ? { width: PEN.fine, color: INK_60, dash: 'dashDot' } : { width, color: outline });
       };
       for (let i = 0; i <= ring.length; i++) {
         const a = ring[i % ring.length]!;
@@ -134,8 +145,8 @@ export class SystemLevel implements Level {
         run.push([b[0], top, b[1]]);
       }
       flush();
-    } else this.lines.polyline(top3, { width, color: outline }, true);
-    this.lines.polyline(
+    } else this.mapLines.polyline(top3, { width, color: outline }, true);
+    this.mapLines.polyline(
       ring.map(([x, z]) => [x, bottom, z] as Vec3),
       { width: PEN.hairline, color: outline },
       true,
@@ -164,7 +175,7 @@ export class SystemLevel implements Level {
         let runKind: Kind | null = null;
         const flush = () => {
           if (run.length > 1 && runKind !== 'skip')
-            this.lines.polyline(run, runKind === 'border' ? { width: PEN.fine, color: INK_60, dash: 'dashDot' } : { width: PEN.hairline, color: INK_60 });
+            this.mapLines.polyline(run, runKind === 'border' ? { width: PEN.fine, color: INK_60, dash: 'dashDot' } : { width: PEN.hairline, color: INK_60 });
           run = [];
         };
         for (let i = 0; i < r.length; i++) {
@@ -180,14 +191,14 @@ export class SystemLevel implements Level {
         }
         flush();
       }
-    for (const c of this.geo.cuts) this.lines.polyline(breakLine(c, 0), { width: PEN.hairline, color: INK_35 });
+    for (const c of this.geo.cuts) this.mapLines.polyline(breakLine(c, 0), { width: PEN.hairline, color: INK_35 });
     this.surfaces.push(
       new RegionFace(this.geo.neighbours.flatMap((n) => n.rings), 0, 2, -4, undefined, 'neighbours'),
       new RegionFace(this.geo.california, 0, 1, -2, undefined, 'california'),
     );
     this.geo.california.forEach((r, i) => this.slab(r, 0, -SLAB_KM, INK, INK_15, i === 0 ? PEN.coast + 0.3 : PEN.coast, i === 0));
     for (const l of this.geo.lakes) {
-      this.lines.polyline(
+      this.mapLines.polyline(
         l.ring.map(([x, z]) => [x, 0.01, z] as Vec3),
         { width: PEN.hairline, color: INK_60 },
         true,
@@ -235,7 +246,7 @@ export class SystemLevel implements Level {
       const side = (br.circuit - (n + 1) / 2) * gap;
       const seg = this.lines.segment(a, b, { width: cls.weight, dash: cls.dash, color: INK, side });
       const flow = this.flow.segment(a, b, { sizePx: 0, speed: 0, side, color: INK, alpha: 0 });
-      const c: CircuitDraw = { branch: k, seg, flow, cls };
+      const c: CircuitDraw = { branch: k, seg, flow, cls, a, b, endA: a, endB: b };
       this.circuits.push(c);
       this.byBranch.set(k, c);
     });
@@ -338,7 +349,7 @@ export class SystemLevel implements Level {
   }
 
   frame(o: FrameInfo): void {
-    for (const b of [this.lines, this.glyphs, this.marks]) b.frame(o);
+    for (const b of [this.mapLines, this.lines, this.glyphs, this.marks]) b.frame(o);
     this.flow.frame(o.width, o.height, o.pixelRatio, o.time);
     this.faces.frame(o.pixelRatio);
   }
@@ -408,6 +419,39 @@ export class SystemLevel implements Level {
     this.flow.opacity = on ? 1 : 0;
     this.marks.opacity = on ? 1 : 0;
     this.highlight(this.selection);
+  }
+
+  /**
+   * Zoomed in far enough that the state's outline says nothing (a yard fills the
+   * sheet): the map recedes, the network stays. 1: drawn, 0: gone.
+   */
+  setMapShown(v: number): void {
+    this.mapLines.opacity = v;
+    this.faces.opacity = v;
+  }
+
+  /** A site's own level unfolding in its place: its symbol gives way (0 … 1). */
+  yieldTo(key: string, m: number): void {
+    if (!key.startsWith('site:')) return;
+    const id = key.slice(5);
+    if (m <= 0) this.yielded.delete(id);
+    else this.yielded.set(id, m);
+    this.highlight(this.selection);
+  }
+
+  /**
+   * Move one end of a circuit (the end at `siteId`) to `p` — where the level open at
+   * that site takes the circuit up — or back to the site (null).
+   */
+  setCircuitEnd(branch: number, siteId: string, p: Vec3 | null): void {
+    const c = this.byBranch.get(branch);
+    if (!c) return;
+    const br = this.grid.branches[branch]!;
+    if (br.from.site.id === siteId) c.endA = p ?? c.a;
+    else if (br.to.site.id === siteId) c.endB = p ?? c.b;
+    else return;
+    this.lines.setEnds(c.seg, c.endA, c.endB);
+    this.flow.setEnds(c.flow, c.endA, c.endB);
   }
 
   /** Mid-span of a circuit, and the pixel offset that puts a mark on its own stroke. */
@@ -523,6 +567,8 @@ export class SystemLevel implements Level {
     for (const [id, [first, n]] of this.siteGlyphRange) {
       let dim = keepSites && !keepSites.has(id) && !darkSite(id) ? 0.7 : 0;
       if (ctx) dim = ctx.sites.has(id) ? ctx.fade : Math.max(0.8 * ctx.fade, dim);
+      const y = this.yielded.get(id);
+      if (y !== undefined) dim = Math.max(dim, Math.min(1, y * 3));
       for (let i = first; i < first + n; i++) this.glyphs.setDim(i, dim);
     }
     return keepSites;

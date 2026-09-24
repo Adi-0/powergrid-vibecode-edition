@@ -9,6 +9,12 @@ them look at one.
 - `npm run build` — static site in `dist/` (no backend, no runtime network requests).
 - `npm run shots` — headless screenshots of every view into `screenshots/`.
 
+Getting around: zoom (scroll, pinch, `+`/`−`) toward any node and it unfolds into what
+it stands for — a station's yard, a neighbourhood and its feeder, a plant, a
+generator — and folds back as you zoom out. Double-click or Enter on a selection flies
+the same zoom; Esc or the breadcrumbs fly back out. Click anything for its numbers;
+"Working" shows the arithmetic behind them.
+
 See `CLAUDE.md` for the rules the build follows, `docs/model.md` for the physics and
 parameter sources, `docs/simplifications.md` for what the model leaves out, and
 `docs/decisions/` for why things are the way they are.

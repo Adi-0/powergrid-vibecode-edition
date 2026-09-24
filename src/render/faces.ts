@@ -72,6 +72,7 @@ export class FaceBatch {
   private col: number[] = [];
   private fill: number[] = [];
   private coll: number[] = [];
+  private attrColl: THREE.Float32BufferAttribute | null = null;
 
   constructor(name = 'faces') {
     this.material = new THREE.RawShaderMaterial({
@@ -119,6 +120,26 @@ export class FaceBatch {
     }
   }
 
+  /** Vertices so far: mark where a solid starts, to hide it later. */
+  get vertexCount(): number {
+    return this.pos.length / 3;
+  }
+
+  /**
+   * Hide (or show again) the faces between two vertex marks — something a lower level
+   * draws in its place while it is open. A hidden face is folded to its collapse point
+   * whatever the morph (its stagger pushed past the end of any transition).
+   */
+  setHidden(first: number, count: number, hidden: boolean, stagger = 0): void {
+    const w = hidden ? 10 : stagger;
+    for (let v = first; v < first + count; v++) this.coll[v * 4 + 3] = w;
+    if (this.attrColl) {
+      const a = this.attrColl.array as Float32Array;
+      for (let v = first; v < first + count; v++) a[v * 4 + 3] = w;
+      this.attrColl.needsUpdate = true;
+    }
+  }
+
   clear(): void {
     this.pos = [];
     this.col = [];
@@ -131,7 +152,8 @@ export class FaceBatch {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('aColor', new THREE.Float32BufferAttribute(this.col, 4));
     g.setAttribute('aFill', new THREE.Float32BufferAttribute(this.fill, 1));
-    g.setAttribute('aCollapse', new THREE.Float32BufferAttribute(this.coll, 4));
+    this.attrColl = new THREE.Float32BufferAttribute(this.coll, 4);
+    g.setAttribute('aCollapse', this.attrColl);
   }
 
   frame(pixelRatio: number): void {

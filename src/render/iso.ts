@@ -75,8 +75,12 @@ export class IsoCamera {
     this.height = height;
   }
 
-  /** Recompute the three.js camera from target and zoom. Near/far span ±depth units. */
-  update(depth = 1e4): void {
+  /**
+   * Recompute the three.js camera from target and zoom. Near/far span ±depth units: by
+   * default a generous multiple of what the viewport covers (so depth resolution keeps
+   * up as the camera zooms in by orders of magnitude), never more than 10⁴ units.
+   */
+  update(depth = Math.min(1e4, Math.max(1, (40 * Math.max(this.width, this.height)) / this.pxPerUnit))): void {
     const off = isoViewOffset().multiplyScalar(depth);
     this.camera.position.copy(this.target).add(off);
     this.camera.lookAt(this.target);

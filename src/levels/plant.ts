@@ -7,7 +7,7 @@ import type { Grid } from '../model/grid';
 import type { Snapshot } from '../model/snapshot';
 import { ccgtDesign, plantState, type CcgtBalance, type CcgtDesign } from '../model/ccgt';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
-import { NORTH_ISO, Sketch, enIso as en } from './sketch';
+import { NORTH_ISO, PERSIST, Sketch, enIso as en } from './sketch';
 
 /**
  * The Plant level: Moss Landing Unit 1, a 2-on-1 combined cycle, in metres.
@@ -15,8 +15,8 @@ import { NORTH_ISO, Sketch, enIso as en } from './sketch';
  * Two trains of gas turbine → heat-recovery steam generator (HRSG) → stack, and one
  * steam turbine fed from both HRSGs, its exhaust condensed with seawater from Monterey
  * Bay. Each machine's generator steps up through its own transformer (GSU) into the
- * plant's 230 kV switchyard, which the Metcalf circuits, the 500/230 kV banks, Unit 2,
- * the battery and the local load share.
+ * 230 kV switchyard — drawn by the Moss Landing Site level this one sits inside, with
+ * the Metcalf circuits, the 500/230 kV banks, Unit 2, the battery and the local load.
  *
  * Chevrons carry megawatts whatever form the energy is in — fuel, hot exhaust, steam,
  * heat to the sea, electricity — at one scale, so the eye sees where it goes: every
@@ -33,6 +33,49 @@ const STACK = { e: -52, s: 5, h: 45 };
 const STT = { e: 2, se: 16, sh: 6.5, sn: 8 };
 const COND = { e: 2, n: 33, se: 14, sh: 5, sn: 6 };
 
+/**
+ * Where Unit 1 meets the switchyard: its bus (drawn by the Site level, which this level
+ * sits inside), the three step-up bays' positions along it, and how far west the plant
+ * reaches — in this level's plan coordinates.
+ */
+export const UNIT1 = {
+  plant: PLANT,
+  bus: 'MOSS_LANDING-230',
+  busE: BUS.e,
+  busSpan: [BUS.n0, BUS.n1] as [number, number],
+  trains: TRAIN_N,
+  reachW: BUS.e + 72,
+  /** Boxes to pick the plant by, in the Site level (plan corner pairs). */
+  pick: [
+    [[HRSG.e - HRSG.se / 2, 0, TRAIN_N.GT1! - HRSG.sn / 2], [HRSG.e + HRSG.se / 2, HRSG.sh, TRAIN_N.GT2! + HRSG.sn / 2]],
+    [[GSU_E - 4, 0, TRAIN_N.GT1! - 4], [GSU_E + 4, 6, TRAIN_N.ST! + 4]],
+  ] as Array<[[number, number, number], [number, number, number]]>,
+};
+
+/**
+ * The parts of Unit 1 the Site level draws too, in the same place: the step-up
+ * transformers and the two recovery boilers with their stacks — the silhouette one
+ * sees from the switchyard. Drawn with the sketch's current stagger (this level draws
+ * them never folding, the Site level folding with its yard). Returns each unit's
+ * high-voltage bushing, where its lead to the bus starts (plan coordinates).
+ */
+export function unit1Shell(sk: Sketch, _site = false): Record<string, [number, number, number]> {
+  const en = sk.plan;
+  const hv: Record<string, [number, number, number]> = {};
+  for (const [u, n] of Object.entries(TRAIN_N)) {
+    sk.box(GSU_E, 0.4, n, 6, 5.5, 6);
+    sk.box(GSU_E, 0, n, 7.4, 0.4, 7.4);
+    sk.seg(en(GSU_E + 1.5, 5.9, n), en(GSU_E + 1.5, 8.5, n), { width: PEN.medium, color: INK });
+    hv[u] = [GSU_E + 1.5, 8.5, n];
+  }
+  for (const u of ['GT1', 'GT2']) {
+    const n = TRAIN_N[u]!;
+    sk.box(HRSG.e, 0, n, HRSG.se, HRSG.sh, HRSG.sn);
+    sk.box(STACK.e, 0, n, STACK.s, STACK.h, STACK.s);
+  }
+  return hv;
+}
+
 export class PlantLevel implements Level {
   readonly kind = 'plant' as const;
   readonly name = 'Moss Landing Unit 1';
@@ -44,14 +87,17 @@ export class PlantLevel implements Level {
   readonly sk = new Sketch(en);
   readonly plantId = PLANT;
   readonly design: CcgtDesign;
-  /** The 230 kV bus's centre: what the System's Moss Landing node unfolds into. */
-  readonly origin: Vec3 = en(BUS.e, BUS.h, 0);
+  /** Under the 230 kV bus's centre: where this level sits on the Site level's bus. */
+  readonly seat: Vec3 = en(BUS.e, 0, 0);
+  /** Where the machinery folds to: the middle of the three trains. */
+  readonly origin: Vec3 = en(0, 0, -4);
   private morphValue = 1;
+  /** Each generator's strokes and faces, hidden while its own level is open. */
+  private genDraw: Record<string, { lines: [number, number]; faces: [number, number]; stagger: number }> = {};
   private gens: Record<string, number> = {};
   private gsuK: Record<string, number> = {};
   /** Flow segments by what they carry. */
   private fl: Record<string, number[]> = {};
-  private circuits: Array<{ k: number; flow: number; segs: number[] }> = [];
   private unitSegs: Record<string, number[]> = {};
   private snapshot: Snapshot | null = null;
   balance: CcgtBalance | null = null;
@@ -69,59 +115,16 @@ export class PlantLevel implements Level {
         addFlow(key, pts[i]!, pts[i + 1]!);
       }
     };
-    const c230 = voltageClassFor(230);
 
-    // ---- ground: the site boundary and the shore
-    sk.stagger = 0;
-    sk.poly([en(-70, 0, -60), en(100, 0, -60), en(100, 0, 58), en(-70, 0, 58)], { width: PEN.hairline, color: INK_60, dash: 'long' }, true);
+    // ---- what the switchyard's level draws here too: the step-up transformers, the boilers, the stacks
+    sk.stagger = PERSIST;
+    unit1Shell(sk);
     this.labels.push({ id: 'eq:bay', text: 'To Monterey Bay', anchor: en(-120, 0, 33), priority: 3, minZoom: 0, kind: 'equip' });
 
-    // ---- 230 kV switchyard
-    sk.stagger = 0.05;
-    for (const n of [BUS.n0 + 2, 0, BUS.n1 - 2]) sk.seg(en(BUS.e, 0, n), en(BUS.e, BUS.h, n), { width: PEN.thin, color: INK });
-    const busSeg = sk.seg(en(BUS.e, BUS.h, BUS.n0), en(BUS.e, BUS.h, BUS.n1), { width: 4, color: INK });
-    this.unitSegs.bus = [busSeg];
-    sk.target({ kind: 'equip', what: 'bus', id: 'MOSS_LANDING-230' }, [en(BUS.e, BUS.h, BUS.n0), en(BUS.e, BUS.h, BUS.n1)]);
-    this.labels.push({ id: 'eq:bus', text: '230 kV switchyard', anchor: en(BUS.e, BUS.h, BUS.n1), priority: 8, minZoom: 0, kind: 'equip', prov: 'data:network.bus.MOSS_LANDING-230.baseKV' });
-    // circuits and banks leaving the bus: the Metcalf lines east, the 500 kV banks north
-    const busId = 'MOSS_LANDING-230';
-    const away = grid.branches.filter((b) => (b.from.id === busId || b.to.id === busId) && !b.id.startsWith(`${PLANT}-`));
-    let li = 0;
-    let xi = 0;
-    for (const b of away) {
-      const isX = b.kind === 'transformer';
-      const n = isX ? 30 + xi * 8 : -36 + li * 10;
-      const tap = en(BUS.e, BUS.h, n);
-      const far = isX ? en(BUS.e + 10 + xi * 6, 18, 75) : en(150, 14, n + 20);
-      const segs = [sk.seg(tap, far, { width: isX ? PEN.medium : c230.weight, color: INK, dash: isX ? 'solid' : c230.dash })];
-      const flow = sk.flowSeg(tap, far);
-      this.circuits.push({ k: b.index, flow, segs });
-      sk.target({ kind: 'branch', index: b.index }, [tap, far]);
-      if (isX) xi++;
-      else li++;
-    }
-    this.labels.push({ id: 'eq:metcalf', text: 'To Metcalf', anchor: en(150, 14, -6), priority: 6, minZoom: 0, kind: 'equip' });
-    this.labels.push({ id: 'eq:500', text: 'To the 500 kV yard', anchor: en(BUS.e + 16, 18, 75), priority: 5, minZoom: 0, kind: 'equip', prov: 'data:network.bus.MOSS_LANDING-500.baseKV' });
-    // the rest of the bus: Unit 2 and the battery in, the local load out
-    const others = en(BUS.e + 12, 6, -62);
-    this.fl.others = [sk.flowSeg(others, en(BUS.e, BUS.h, BUS.n0))];
-    sk.seg(others, en(BUS.e, BUS.h, BUS.n0), { width: PEN.medium, color: INK });
-    this.labels.push({ id: 'eq:others', text: 'Unit 2 and the battery', anchor: others, priority: 4, minZoom: 0, kind: 'equip', prov: 'data:plants.ML2.name' });
-    const load = en(BUS.e + 18, 4, 58);
-    this.fl.load = [sk.flowSeg(en(BUS.e, BUS.h, BUS.n1), load)];
-    sk.seg(en(BUS.e, BUS.h, BUS.n1), load, { width: PEN.medium, color: INK });
-    this.labels.push({ id: 'eq:load', text: 'Local load', anchor: load, priority: 3, minZoom: 0, kind: 'equip' });
-
-    // ---- per unit: GSU, isolated-phase bus, generator
+    // ---- per unit: isolated-phase bus, generator
     sk.stagger = 0.14;
     for (const [u, n] of Object.entries(TRAIN_N)) {
-      const segs: number[] = [];
-      const tank = sk.box(GSU_E, 0.4, n, 6, 5.5, 6);
-      sk.box(GSU_E, 0, n, 7.4, 0.4, 7.4);
-      const hv = en(GSU_E + 1.5, 8.5, n);
-      segs.push(sk.seg(en(GSU_E + 1.5, 5.9, n), hv, { width: PEN.medium, color: INK }));
-      segs.push(sk.seg(hv, en(BUS.e, BUS.h, n), { width: c230.weight, color: INK }));
-      addFlow(`hv:${u}`, hv, en(BUS.e, BUS.h, n));
+      const tank: Vec3[] = [en(GSU_E - 3, 0.4, n - 3), en(GSU_E + 3, 5.9, n + 3)];
       sk.target({ kind: 'equip', what: 'gsu', id: `${PLANT}-${u}` }, tank, true);
       // isolated-phase bus: an enclosed duct from the generator terminals to the GSU's low side
       // chevrons ride on top of the duct (the conductors are inside it)
@@ -129,10 +132,13 @@ export class PlantLevel implements Level {
       const ipbB = en(GSU_E - 3, 3.9, n);
       sk.box((GEN.e + GEN.se / 2 + GSU_E - 3) / 2, 2.6, n, GSU_E - 3 - GEN.e - GEN.se / 2, 1.2, 1.2);
       addFlow(`gen:${u}`, ipbA, ipbB);
+      const l0 = sk.lines.count;
+      const f0 = sk.faces.vertexCount;
       const gen = sk.box(GEN.e, 0.6, n, GEN.se, GEN.sh, GEN.sn);
       sk.box(GEN.e, 0, n, GEN.se + 1, 0.6, GEN.sn + 1);
+      this.genDraw[u] = { lines: [l0, sk.lines.count - l0], faces: [f0, sk.faces.vertexCount - f0], stagger: sk.stagger };
       sk.target({ kind: 'equip', what: 'generator', id: `${PLANT}-${u}` }, gen, true);
-      this.unitSegs[u] = segs;
+      this.unitSegs[u] = [];
       this.labels.push({ id: `eq:gen:${u}`, text: u === 'ST' ? 'Generator (steam)' : `Generator (${u})`, anchor: en(GEN.e, 5.2, n + 2.3), priority: 6, minZoom: 0, kind: 'equip', prov: `data:plants.${PLANT}.units.${u}.id` });
     }
     this.labels.push({ id: 'eq:gsu', text: 'Step-up transformers', anchor: en(GSU_E, 6, -34), priority: 5, minZoom: 0, kind: 'equip' });
@@ -151,11 +157,10 @@ export class PlantLevel implements Level {
       const d1 = HRSG.e + HRSG.se / 2;
       sk.box((d0 + d1) / 2, 1, n, d0 - d1, 8, 9);
       addFlow(`exhaust:${u}`, en(d0, 9.1, n), en(d1, 9.1, n));
-      const h = sk.box(HRSG.e, 0, n, HRSG.se, HRSG.sh, HRSG.sn);
-      sk.target({ kind: 'equip', what: 'hrsg', id: `${PLANT}-${u}` }, h, true);
+      // the HRSG and its stack are in the shell drawn above: picked here
+      sk.target({ kind: 'equip', what: 'hrsg', id: `${PLANT}-${u}` }, [en(HRSG.e - HRSG.se / 2, 0, n - HRSG.sn / 2), en(HRSG.e + HRSG.se / 2, HRSG.sh, n + HRSG.sn / 2)], true);
       // stack: what the HRSG did not take, up to the sky
-      const st = sk.box(STACK.e, 0, n, STACK.s, STACK.h, STACK.s);
-      sk.target({ kind: 'equip', what: 'stack', id: `${PLANT}-${u}` }, st, true);
+      sk.target({ kind: 'equip', what: 'stack', id: `${PLANT}-${u}` }, [en(STACK.e - STACK.s / 2, 0, n - STACK.s / 2), en(STACK.e + STACK.s / 2, STACK.h, n + STACK.s / 2)], true);
       addFlow(`stack:${u}`, en(STACK.e, STACK.h, n), en(STACK.e, STACK.h + 14, n));
       this.labels.push({ id: `eq:gt:${u}`, text: `Gas turbine ${u.slice(2)}`, anchor: en(GT.e, GT.sh, n + GT.sn / 2), priority: 7, minZoom: 0, kind: 'equip', prov: `data:plants.${PLANT}.units.${u}.name` });
       this.labels.push({ id: `eq:hrsg:${u}`, text: `HRSG ${u.slice(2)}`, anchor: en(HRSG.e, HRSG.sh, n + HRSG.sn / 2), priority: 6, minZoom: 0, kind: 'equip', prov: `data:plants.${PLANT}.units.${u}.id` });
@@ -201,9 +206,18 @@ export class PlantLevel implements Level {
     return [voltageClassFor(230), generatorClass(18)];
   }
 
-  /** The generator of a unit, as a point (where the Machine level unfolds from). */
+  /** The ground under a unit's generator: where the Machine level sits. */
   generatorAt(unit: string): Vec3 {
-    return en(GEN.e, 2.9, TRAIN_N[unit] ?? 0);
+    return en(GEN.e, 0, TRAIN_N[unit] ?? 0);
+  }
+
+  /** A unit's machine unfolding in place of its generator box. */
+  yieldTo(key: string, m: number): void {
+    const d = this.genDraw[key.replace('machine:', '')];
+    if (!d) return;
+    const hide = m > 0;
+    for (let i = d.lines[0]; i < d.lines[0] + d.lines[1]; i++) this.sk.lines.setDim(i, hide ? 1 : 0);
+    this.sk.faces.setHidden(d.faces[0], d.faces[1], hide, d.stagger);
   }
 
   applySnapshot(s: Snapshot): void {
@@ -242,7 +256,6 @@ export class PlantLevel implements Level {
     for (const u of Object.keys(TRAIN_N)) {
       const k = this.gsuK[u]!;
       set(`gen:${u}`, running ? pg(u) : 0);
-      set(`hv:${u}`, running && s.inService[k] ? -s.pf[k]! : 0);
       for (const seg of this.unitSegs[u] ?? []) {
         sk.lines.setColor(seg, tripped ? INK_35 : INK, 1);
         sk.lines.setPattern(seg, tripped ? 'hidden' : 'solid');
@@ -251,23 +264,6 @@ export class PlantLevel implements Level {
     if (tripped)
       for (const u of Object.keys(TRAIN_N))
         crossSymbol(10).polys.forEach((p) => sk.marks.glyph(en(GSU_E + 1.5, 10, TRAIN_N[u]!), p, { width: PEN.medium, color: INK }, false));
-    // the yard
-    const bus = this.grid.bus('MOSS_LANDING-230').index;
-    for (const c of this.circuits) {
-      const br = this.grid.branches[c.k]!;
-      const mw = br.from.index === bus ? s.pf[c.k]! : s.pt[c.k]!; // leaving the bus
-      const out = !s.inService[c.k];
-      const over = !out && s.loading[c.k]! > 1;
-      for (const seg of c.segs) {
-        sk.lines.setColor(seg, over ? SIGNAL : out ? INK_35 : INK, 1);
-        sk.lines.setPattern(seg, out ? 'hidden' : 'solid');
-      }
-      sk.flow.set(c.flow, { sizePx: chevronSizeFor(mw, sc), speed: chevronSpeedFor(mw, sc) * Math.sign(mw), side: 0, color: over ? SIGNAL : INK, alpha: !none && !out && Math.abs(mw) > 1e-3 ? 1 : 0 });
-    }
-    let others = 0;
-    for (const g of this.grid.gens) if (g.bus.index === bus && g.plant.id !== PLANT && s.genOnline[g.index]) others += s.pg[g.index]!;
-    set('others', others);
-    set('load', s.energized[bus] ? s.pd[bus]! : 0);
     sk.marks.commit();
   }
 
@@ -293,6 +289,6 @@ export class PlantLevel implements Level {
   }
 
   fitPoints(): Vec3[] {
-    return [en(-72, 0, -62), en(102, 0, -62), en(102, 0, 60), en(-72, 0, 60), en(STACK.e, STACK.h + 4, TRAIN_N.GT1!), en(-72, 30, 60)];
+    return [en(-72, 0, -62), en(BUS.e + 4, 0, -62), en(BUS.e + 4, 0, 60), en(-72, 0, 60), en(STACK.e, STACK.h + 4, TRAIN_N.GT1!), en(-72, 30, 60)];
   }
 }

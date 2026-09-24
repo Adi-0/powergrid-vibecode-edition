@@ -58,6 +58,7 @@ export class RegionLevel implements Level {
   readonly kind = 'region' as const;
   readonly unitKm = 1;
   readonly north: [number, number] = [Math.SQRT1_2, -Math.SQRT1_2];
+  readonly seat: Vec3 = [0, 0, 0];
   readonly needsDetail = false;
   readonly flowScale = FLOW_SCALES.region;
   readonly group = new THREE.Group();

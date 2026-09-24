@@ -323,9 +323,7 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterRegion('bay'));
-      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
-      await page.evaluate(() => window.__app.enterSubstation());
+      await page.evaluate(() => window.__app.navigate(['substation']));
       await page.waitForFunction(() => window.__app.level === 'substation' && !window.__app.transitioning && window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
     },
     probe: provenance,
@@ -343,9 +341,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => window.__app.navigate(['feeder']), 'feeder');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
     },
     probe: provenance,
@@ -363,9 +359,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => window.__app.navigate(['feeder']), 'feeder');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       await page.evaluate(() => {
         const app = window.__app;
@@ -387,9 +381,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => window.__app.navigate(['feeder']), 'feeder');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       // a permanent fault on the trunk beyond the recloser, held during the second fast shot
       await page.evaluate(() => {
@@ -419,9 +411,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => window.__app.navigate(['feeder']), 'feeder');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       // a permanent fault at the far end of lateral L10: the fuse clears it; hold the view after the sequence
       await page.evaluate(() => {
@@ -456,9 +446,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
+      await go(() => window.__app.navigate(['feeder']), 'feeder');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       await page.evaluate(() => {
         const app = window.__app;
@@ -484,18 +472,67 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
-      await go(() => {
-        const app = window.__app;
-        const h = app.feederModel().layout.homes.find((x) => x.id === app.feederModel().layout.outlet.home);
-        app.enterService(h.transformer);
-      }, 'service');
+      await go(() => window.__app.navigate(['service']), 'service');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       await page.evaluate(() => window.__app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' }));
     },
     probe: provenance,
+  },
+  {
+    name: 'site-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.holdBand('site:TESLA', 0.55));
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'site',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'site-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'feeder-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.holdBand('site:EVERGREEN', 0.6));
+      await page.waitForTimeout(800);
+    },
   },
   {
     name: 'substation-unfold',
@@ -503,17 +540,16 @@ export default [
     width: 1440,
     height: 900,
     timeout: 150000,
-    settle: 300,
+    settle: 600,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterRegion('bay'));
-      await page.waitForFunction(() => window.__app.level === 'region' && !window.__app.transitioning, null, { timeout: 30000 });
+      await page.evaluate(() => window.__app.navigate(['feeder']));
+      await page.waitForFunction(() => window.__app.level === 'feeder' && !window.__app.transitioning, null, { timeout: 60000 });
       await page.evaluate(() => {
-        window.__app.freezeMorph = 0.6;
-        window.__app.enterSubstation();
+        window.__app.inspector.hide();
+        window.__app.holdBand('substation', 0.55);
       });
-      await page.waitForFunction(() => window.__app.level === 'substation', null, { timeout: 30000 });
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(800);
     },
   },
   {
@@ -522,15 +558,16 @@ export default [
     width: 1440,
     height: 900,
     timeout: 150000,
-    settle: 300,
+    settle: 600,
     before: async (page) => {
       await waitSnap(page);
+      await page.evaluate(() => window.__app.goTo(['site:MOSS_LANDING']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
       await page.evaluate(() => {
-        window.__app.freezeMorph = 0.55;
-        window.__app.enterPlant();
+        window.__app.inspector.hide();
+        window.__app.holdBand('plant:ML1', 0.55);
       });
-      await page.waitForFunction(() => window.__app.level === 'plant', null, { timeout: 30000 });
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(800);
     },
   },
   {
@@ -539,17 +576,16 @@ export default [
     width: 1440,
     height: 900,
     timeout: 150000,
-    settle: 300,
+    settle: 600,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
       await page.evaluate(() => {
-        window.__app.freezeMorph = 0.55;
-        window.__app.enterMachine('GT1');
+        window.__app.inspector.hide();
+        window.__app.holdBand('machine:GT1', 0.55);
       });
-      await page.waitForFunction(() => window.__app.level === 'machine', null, { timeout: 30000 });
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(800);
     },
   },
   {
@@ -643,14 +679,7 @@ export default [
         await page.evaluate(fn);
         await page.waitForFunction((lv) => window.__app.level === lv && !window.__app.transitioning, level, { timeout: 60000 });
       };
-      await go(() => window.__app.enterRegion('bay'), 'region');
-      await go(() => window.__app.enterSubstation(), 'substation');
-      await go(() => window.__app.enterFeeder(), 'feeder');
-      await go(() => {
-        const app = window.__app;
-        const h = app.feederModel().layout.homes.find((x) => x.id === app.feederModel().layout.outlet.home);
-        app.enterService(h.transformer);
-      }, 'service');
+      await go(() => window.__app.navigate(['service']), 'service');
       await page.waitForFunction(() => window.__app.current && window.__app.current.feeder, null, { timeout: 60000 });
       await page.evaluate(() => {
         window.__app.select({ kind: 'dist', what: 'outlet', id: 'OUTLET' });
@@ -668,7 +697,7 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
     },
@@ -683,7 +712,7 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
       await page.evaluate(() => window.__app.tripPlant('ML1'));
@@ -708,7 +737,7 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
       await page.evaluate(() => window.__app.inspector.toggleWorking(true));
@@ -724,9 +753,9 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
-      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.evaluate(() => window.__app.navigate(['machine']));
       await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
     },
@@ -742,9 +771,9 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
-      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.evaluate(() => window.__app.navigate(['machine']));
       await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
     },
@@ -759,9 +788,9 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
-      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.evaluate(() => window.__app.navigate(['machine']));
       await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
       const q0 = await page.evaluate(() => window.__app.current.qg[window.__app.grid.gens.find((g) => g.id === 'ML1-GT1').index]);
@@ -793,9 +822,9 @@ export default [
     settle: 1000,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.enterPlant());
+      await page.evaluate(() => window.__app.navigate(['plant']));
       await page.waitForFunction(() => window.__app.level === 'plant' && !window.__app.transitioning, null, { timeout: 60000 });
-      await page.evaluate(() => window.__app.enterMachine('GT1'));
+      await page.evaluate(() => window.__app.navigate(['machine']));
       await page.waitForFunction(() => window.__app.level === 'machine' && !window.__app.transitioning, null, { timeout: 60000 });
       await waitSolved(page);
       await page.evaluate(() => window.__app.inspector.toggleWorking(true));
@@ -811,7 +840,7 @@ export default [
     settle: 800,
     before: async (page) => {
       await waitSnap(page);
-      await page.evaluate(() => window.__app.navigate(['region', 'substation', 'feeder']));
+      await page.evaluate(() => window.__app.navigate(['feeder']));
       await page.evaluate(() => window.__app.openHonesty());
     },
     probe: async (page) => {
@@ -860,7 +889,7 @@ export default [
     before: async (page) => {
       await waitSnap(page);
       const report = [];
-      const n = await page.evaluate(() => window.__app.tour.constructor && 13);
+      const n = await page.evaluate(() => window.__app.tour.stops);
       for (let i = 0; i < n; i++) {
         const t0 = Date.now();
         await page.evaluate((i) => window.__app.tour.goTo(i), i);
@@ -884,7 +913,7 @@ export default [
     },
     probe: async (page) => {
       const r = await page.evaluate(() => window.__tourReport);
-      const ok = r.length === 13 && r.every((x) => x.bad.length === 0 && !x.busy);
+      const ok = r.length >= 13 && r.every((x) => x.bad.length === 0 && !x.busy);
       return { ok, value: r.map((x) => `${x.i}:${x.level}:${(x.ms / 1000).toFixed(1)}s${x.bad.length ? ' BAD ' + x.bad.join('|') : ''}`) };
     },
   },

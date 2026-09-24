@@ -35,6 +35,8 @@ export class MachineLevel implements Level {
   readonly rec: MachineRecord;
   /** The generator's centre: what the Plant level's generator unfolds into. */
   readonly origin: Vec3 = en(0, AX, 0);
+  /** The ground under it: where this level sits in the plant. */
+  readonly seat: Vec3 = en(0, 0, 0);
   private morphValue = 1;
   private genIndex: number;
   private shaftFlow = -1;

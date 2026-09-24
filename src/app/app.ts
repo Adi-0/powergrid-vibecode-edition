@@ -23,6 +23,8 @@ import { FeederLevel } from '../levels/feeder';
 import { ServiceLevel } from '../levels/service';
 import { PlantLevel } from '../levels/plant';
 import { MachineLevel } from '../levels/machine';
+import { SiteLevel } from '../levels/site';
+import { smoothstep } from '../levels/exits';
 import { equipView, machineView, plantView } from './inspect-plant';
 import { tripResponse, type TripResponse } from '../model/frequency';
 import { faultStudy, type FaultStudy } from '../model/faultStudy';
@@ -31,7 +33,7 @@ import { simulateProtection } from '../model/protection';
 import { pathBetween, type FeederFaultKind } from '../physics/dist/fault';
 import { busFaultSection, feederFaultView, reliabilitySection, type FeederEvent } from './inspect-fault';
 import { simulateYears, type ReliabilityRun } from '../model/reliability';
-import type { Level, LevelKind } from '../levels/level';
+import type { LabelSpec, Level, LevelKind } from '../levels/level';
 import type { Vec3 } from '../render/lines';
 import { PaperTooth } from '../render/paper';
 import { REGIONS, type RegionId } from '../data/ca/network';
@@ -45,8 +47,46 @@ import type { Panel } from '../math/expr';
 import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel } from '../math/panels';
 
 /**
- * The application: one sheet (the System level for now), its camera and input, the
- * solver thread, and the panels around the drawing.
+ * A place in a level that has a level of its own. Zoom toward it and that level
+ * unfolds there, in the parent's frame, as far as the zoom has gone; zoom on and the
+ * camera is handed to the child's own frame; zoom back out and it is handed back and
+ * the child folds away. `anchor` is where the child's seat lands in the parent's frame,
+ * `ratio` how many parent units one child unit is (1000 from kilometres to metres).
+ */
+interface Portal {
+  key: string;
+  anchor: Vec3;
+  ratio: number;
+  make: () => Level;
+  /** What the node is in its level's own terms (to dive into it from a selection). */
+  sel: Selection;
+  /** The parent's label for the node, which gives way to the child's own names. */
+  label?: string;
+}
+
+/** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
+interface Band {
+  portal: Portal;
+  level: Level;
+  /** Parent px/unit where it starts to unfold, and where it is whole (the hand-off). */
+  zIn: number;
+  zOut: number;
+  m: number;
+}
+
+/**
+ * At the hand-off the child fills this share of the zoom that fits it to the sheet, and
+ * it starts to unfold BAND times further out: a station out of the System when its
+ * yard would span some 45 px, a part of a level (ratio 1) when it would span some 70.
+ */
+const HANDOFF = { deep: 0.6, near: 0.85 };
+const BAND = { deep: 9, near: 6 };
+/** At most this many children unfold at once (the ones nearest where the reader zooms). */
+const MAX_BANDS = 6;
+
+/**
+ * The application: the sheet, its camera and input, the zoom tree, the solver thread,
+ * and the panels around the drawing.
  */
 /** Is `to` downstream of `from` on the feeder (following closed and open switches alike)? */
 function pathBetweenIds(fd: Feeder, from: string, to: string): boolean {
@@ -147,29 +187,27 @@ export class App {
   private notice!: HTMLElement;
   private playTimer = 0;
   /** A camera move in progress (navigation, eased). */
-  private flight: { t0: number; ms: number; from: [number, number, number]; to: [number, number, number]; done?: () => void } | null = null;
+  private flight: { t0: number; ms: number; ease: (u: number) => number; at: (e: number) => void; done?: () => void } | null = null;
   /** The levels open, System first; the last is the one on the sheet. */
   readonly stack: Level[] = [];
-  /** How each open level (after the System) relates to the one below it. */
-  private links: Array<{
-    mode: 'fold' | 'unfold';
-    anchor: Vec3;
-    origin: Vec3;
-    ratio: number;
-    /** The parent's camera before the move, and at the moment of hand-off. */
-    saved: { target: THREE.Vector3; zoom: number };
-    parentHand?: { target: THREE.Vector3; zoom: number };
-    /** The child's camera at hand-off, and the zoom it settles at. */
-    hand: { target: THREE.Vector3; zoom: number };
-    fitZoom: number;
-    autoClose: boolean;
-  }> = [];
+  /** How each level after the System sits in the one before it. */
+  private path: Portal[] = [];
+  /** The Region lens (voltage layers), when open: the camera before it. */
+  private lens: { saved: { target: THREE.Vector3; zoom: number } } | null = null;
   private regions = new Map<RegionId, RegionLevel>();
-  private substation: SubstationLevel | null = null;
-  private feederLevel: FeederLevel | null = null;
-  private services = new Map<string, ServiceLevel>();
-  private plantLevel: PlantLevel | null = null;
-  private machines = new Map<string, MachineLevel>();
+  /** Every level built so far, by its portal's key; and each level's portals. */
+  private kids = new Map<string, Level>();
+  private portalLists = new Map<Level, Portal[]>();
+  private bandZooms = new Map<string, { zIn: number; zOut: number }>();
+  /** Children unfolding in the level on the sheet. */
+  private bands = new Map<string, Band>();
+  /** The furthest the camera may zoom here: to the hand-off of any child in view. */
+  private reach = 0;
+  /** Where the reader last zoomed (the wheel's point), for choosing among children. */
+  private focus: { x: number; y: number } | null = null;
+  /** px per frame unit, per drawn level, relative to the camera's (for dash phases). */
+  private scaleOf = new Map<Level, number>();
+  private labelKey = '';
   /** A level transition in progress. */
   private anim: { t0: number; ms: number; frame: (e: number) => void; done: () => void } | null = null;
   /** For tests: hold a transition at this fold (0 flat … 1 exploded). */
@@ -487,14 +525,14 @@ export class App {
       feederOpen: [...this.feederOpen],
       vset: [...this.vset],
       seq: ++this.seq,
-      detail: this.stack.some((l) => l.needsDetail),
+      detail: this.needsDetail(),
     };
     this.worker.postMessage(msg);
   }
 
   private setCurrent(s: Snapshot): void {
     this.current = s;
-    for (const l of this.stack) l.applySnapshot(s);
+    for (const l of this.drawn()) l.applySnapshot(s);
     this.scrubber.setSolved(s.t, DAY.intervalMin);
     this.updateTitleblock();
     this.updateNotice();
@@ -751,6 +789,9 @@ export class App {
     this.renderer.setSize(w, h, false);
     this.cam.setViewport(w, h);
     this.cameraDirty = true;
+    // fits and band zooms depend on the free area
+    this.fitZooms?.clear();
+    this.bandZooms?.clear();
   }
 
   /** Fit California in the part of the sheet the panels leave free. */
@@ -815,17 +856,55 @@ export class App {
   }
 
   private zoomAt(sx: number, sy: number, factor: number): void {
-    const before = this.cam.screenToGround(sx, sy);
-    // the System spans 0.35–60 px/km; each level below, a range around its own fit
-    const link = this.links[this.links.length - 1];
-    const [lo, hi] = link ? [link.fitZoom * 0.3, link.fitZoom * 30] : [0.35, 60];
+    // a move of the camera in progress (a dive, a fold) finishes first
+    if (this.anim || this.flight) return;
+    // zooming in near a node that has a level of its own draws the zoom toward it, so
+    // the node stays put on the sheet while it unfolds
+    let fx = sx;
+    let fy = sy;
+    if (factor > 1) {
+      const a = this.attractor(sx, sy);
+      if (a) {
+        fx += (a.x - sx) * a.w;
+        fy += (a.y - sy) * a.w;
+      }
+    }
+    this.focus = { x: fx, y: fy };
+    const before = this.cam.screenToGround(fx, fy);
+    let lo = 0.35;
+    let hi = Math.max(60, this.reach);
+    if (this.lens) {
+      const f = this.levelFit(this.top).zoom;
+      [lo, hi] = [f * 0.3, f * 30];
+    } else if (this.path.length) {
+      // below the System there is no floor: zooming out hands the sheet back up
+      lo = 0;
+      hi = Math.max(this.fitZoom(this.top) * 30, this.reach);
+    }
     const z = Math.max(lo, Math.min(hi, this.cam.pxPerUnit * factor));
     this.cam.pxPerUnit = z;
     this.cam.update();
-    const after = this.cam.screenToGround(sx, sy);
+    const after = this.cam.screenToGround(fx, fy);
     this.cam.target.add(before.sub(after));
     this.clampTarget();
     this.cameraDirty = true;
+  }
+
+  /** The node with a level of its own nearest the pointer, and how strongly it holds the zoom (0 … 1). */
+  private attractor(sx: number, sy: number): { x: number; y: number; w: number } | null {
+    const z = this.cam.pxPerUnit;
+    const r = 0.3 * Math.min(this.cam.width, this.cam.height);
+    let best: { x: number; y: number; w: number } | null = null;
+    let bd = r;
+    for (const c of this.candidates) {
+      const d = Math.hypot(c.x - sx, c.y - sy);
+      if (d >= bd) continue;
+      const w = Math.max(0, Math.min(1, Math.log(z / (c.zIn * 0.5)) / Math.LN2));
+      if (w <= 0) continue;
+      bd = d;
+      best = { x: c.x, y: c.y, w };
+    }
+    return best;
   }
 
   private clampTarget(): void {
@@ -900,6 +979,7 @@ export class App {
     c.addEventListener('dblclick', (e) => {
       const hit = this.pick(e.offsetX, e.offsetY);
       if (hit) this.openFrom(hit);
+      else this.diveNear(e.offsetX, e.offsetY);
     });
     c.addEventListener('pointercancel', (e) => pointers.delete(e.pointerId));
     c.addEventListener(
@@ -993,6 +1073,16 @@ export class App {
     return (this.stack.find((l) => l instanceof RegionLevel) as RegionLevel | undefined) ?? null;
   }
 
+  /** Evergreen's neighbourhood and feeder 1105, once built. */
+  get feederLevel(): FeederLevel | null {
+    return (this.kids.get('site:EVERGREEN') as FeederLevel | undefined) ?? null;
+  }
+
+  /** Moss Landing Unit 1, once built. */
+  get plantLevel(): PlantLevel | null {
+    return (this.kids.get('plant:ML1') as PlantLevel | undefined) ?? null;
+  }
+
   private updateCrumbs(): void {
     const c = this.crumbs;
     c.replaceChildren();
@@ -1045,9 +1135,6 @@ export class App {
     }
     const free = this.freeRect(true); // levels open with their balance in the inspector
     const zoom = Math.min(free.w / (x1 - x0), (free.h - 30) / (y1 - y0)) * 0.94;
-    const [gx, gz] = this.groundUnder([(0 + 0) / 2, 0, 0]);
-    void gx;
-    void gz;
     // the ground point under the middle of the box
     const [ax, ay] = projectToView(1, 0, 0);
     const [bx, by] = projectToView(0, 0, 1);
@@ -1057,10 +1144,667 @@ export class App {
     return { x: (cx * by - bx * cy) / det, z: (ax * cy - cx * ay) / det, zoom };
   }
 
-  /** System → Region: fly to the region, hand the network to it, and unfold its layers. */
+  private fitZooms = new Map<Level, number>();
+  /** The zoom that fits a level to the free area (cached until the window changes). */
+  private fitZoom(l: Level): number {
+    let z = this.fitZooms.get(l);
+    if (z === undefined) {
+      z = this.levelFit(l).zoom;
+      this.fitZooms.set(l, z);
+    }
+    return z;
+  }
+
+  // ------------------------------------------------------------------ the zoom tree
+  /**
+   * The places in a level that have a level of their own. Every System node has one:
+   * Evergreen opens into its neighbourhood (feeder 1105 and the substation at its
+   * head), every other station into its yard. Inside: Moss Landing's Unit 1 (then each
+   * of its generators), Evergreen's substation, and every pole-top transformer's service.
+   */
+  private portalsOf(l: Level): Portal[] {
+    let ps = this.portalLists.get(l);
+    if (ps) return ps;
+    ps = [];
+    if (l === this.system) {
+      for (const s of this.system.sites) {
+        const id = s.id;
+        ps.push({
+          key: `site:${id}`,
+          anchor: [s.pos[0], 0, s.pos[2]],
+          ratio: 1000,
+          sel: { kind: 'site', id },
+          label: `site:${id}`,
+          make: () => (id === 'EVERGREEN' ? new FeederLevel(this.feederModel(), this.grid) : new SiteLevel(this.grid, id)),
+        });
+      }
+    } else if (l instanceof SiteLevel && l.unit1At) {
+      ps.push({ key: 'plant:ML1', anchor: l.unit1At, ratio: 1, sel: { kind: 'plant', id: 'ML1' }, label: 'st:plant:ML1', make: () => new PlantLevel(this.grid) });
+    } else if (l instanceof FeederLevel) {
+      ps.push({ key: 'substation', anchor: l.substationAt, ratio: 1, sel: { kind: 'dist', what: 'bank', id: 'EV-BANK' }, label: 'fd:sub', make: () => new SubstationLevel(this.grid) });
+      for (const t of this.feederModel().layout.transformers)
+        ps.push({ key: `service:${t.id}`, anchor: l.transformerAt(t.id), ratio: 1, sel: { kind: 'dist', what: 'transformer', id: t.id }, make: () => new ServiceLevel(this.feederModel(), t.id) });
+    } else if (l instanceof PlantLevel) {
+      for (const u of ['GT1', 'GT2', 'ST'])
+        ps.push({ key: `machine:${u}`, anchor: l.generatorAt(u), ratio: 1, sel: { kind: 'equip', what: 'generator', id: `${l.plantId}-${u}` }, label: `eq:gen:${u}`, make: () => new MachineLevel(this.grid, `${l.plantId}-${u}`) });
+    }
+    this.portalLists.set(l, ps);
+    return ps;
+  }
+
+  private levelPortal = new Map<Level, Portal>();
+  private built = 0;
+  /** The level a portal opens into (built once, then kept). */
+  private child(p: Portal): Level {
+    let l = this.kids.get(p.key);
+    if (!l) {
+      l = p.make();
+      l.group.matrixAutoUpdate = false;
+      this.kids.set(p.key, l);
+      this.levelPortal.set(l, p);
+      this.built++;
+    }
+    return l;
+  }
+
+  /**
+   * Where a child starts to unfold and where it is handed the sheet, in its parent's
+   * px/unit: at the hand-off it fills HANDOFF of its own fit; it starts BAND times
+   * further out — but never before its parent has itself been handed the sheet.
+   */
+  private zooms(p: Portal): { zIn: number; zOut: number } {
+    let zz = this.bandZooms.get(p.key);
+    if (!zz) {
+      const c = this.child(p);
+      const kind = p.ratio > 1 ? 'deep' : 'near';
+      const zOut = this.fitZoom(c) * p.ratio * HANDOFF[kind];
+      let zIn = zOut / BAND[kind];
+      const up = this.parentPortalOf(p);
+      if (up) {
+        // not before the parent has the sheet, and not in the view that fits the parent
+        // (a level at rest shows its children folded) — so long as the band keeps some length
+        const hand = this.zooms(up).zOut / up.ratio;
+        zIn = Math.min(Math.max(zIn, hand * 1.08, this.fitZoom(this.child(up)) * 1.15), zOut / 1.6);
+      }
+      zz = { zIn, zOut };
+      this.bandZooms.set(p.key, zz);
+    }
+    return zz;
+  }
+
+  /** The zoom a level settles at when the camera arrives: its fit, with its children folded. */
+  private settleZoom(l: Level): number {
+    let z = this.fitZoom(l);
+    const ps = this.portalsOf(l);
+    if (ps.length && ps.length <= 4) for (const p of ps) z = Math.min(z, this.zooms(p).zIn / 1.12);
+    return z;
+  }
+
+  /** The portal of the level that holds `p` (null: it is one of the System's). */
+  private parentPortalOf(p: Portal): Portal | null {
+    for (const [l, q] of this.levelPortal) if (this.portalLists.get(l)?.includes(p)) return q;
+    return null;
+  }
+
+  /** A child's point in its parent's frame, and back. */
+  private place(p: Portal, c: Level, v: Vec3): Vec3 {
+    return [p.anchor[0] + (v[0] - c.seat[0]) / p.ratio, p.anchor[1] + (v[1] - c.seat[1]) / p.ratio, p.anchor[2] + (v[2] - c.seat[2]) / p.ratio];
+  }
+
+  private toChild(p: Portal, c: Level, v: Vec3): Vec3 {
+    return [c.seat[0] + (v[0] - p.anchor[0]) * p.ratio, c.seat[1] + (v[1] - p.anchor[1]) * p.ratio, c.seat[2] + (v[2] - p.anchor[2]) * p.ratio];
+  }
+
+  private placeMatrix(p: Portal, c: Level): THREE.Matrix4 {
+    const k = 1 / p.ratio;
+    return new THREE.Matrix4().makeTranslation(p.anchor[0], p.anchor[1], p.anchor[2]).multiply(new THREE.Matrix4().makeScale(k, k, k)).multiply(new THREE.Matrix4().makeTranslation(-c.seat[0], -c.seat[1], -c.seat[2]));
+  }
+
+  /** Portals in view: where each node is on the sheet, and its zooms. */
+  private candidates: Array<{ p: Portal; x: number; y: number; zIn: number; zOut: number; box: [number, number, number, number] }> = [];
+
+  /** The least zoom at which a level's children are worth looking for (building them costs). */
+  private bandGate(l: Level): number {
+    if (l === this.system) return 5;
+    if (l instanceof FeederLevel) return this.fitZoom(l) * 1.4;
+    return 0;
+  }
+
+  /** Which children are unfolding in the level on the sheet, and how far: from the zoom. */
+  private updateBands(): void {
+    const top = this.top;
+    const z = this.cam.pxPerUnit;
+    this.candidates = [];
+    this.reach = 0;
+    const ps = this.portalsOf(top);
+    const W = this.cam.width;
+    const H = this.cam.height;
+    if (ps.length && z >= this.bandGate(top)) {
+      const v = new THREE.Vector3();
+      const s2 = new THREE.Vector2();
+      const budget = this.built + 4; // build a few levels per frame at most
+      for (const p of ps) {
+        this.cam.worldToScreen(v.set(p.anchor[0], p.anchor[1], p.anchor[2]), s2);
+        const ax = s2.x;
+        const ay = s2.y;
+        // far off the sheet: skip before building anything
+        if (ax < -2 * W || ax > 3 * W || ay < -2 * H || ay > 3 * H) continue;
+        if (!this.kids.has(p.key) && this.built >= budget) continue;
+        const zz = this.zooms(p);
+        const c = this.kids.get(p.key)!;
+        // the child's extent, whole, on the sheet
+        let x0 = Infinity;
+        let x1 = -Infinity;
+        let y0 = Infinity;
+        let y1 = -Infinity;
+        for (const q of c.fitPoints()) {
+          this.cam.worldToScreen(v.set(...this.place(p, c, q)), s2);
+          x0 = Math.min(x0, s2.x);
+          x1 = Math.max(x1, s2.x);
+          y0 = Math.min(y0, s2.y);
+          y1 = Math.max(y1, s2.y);
+        }
+        if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+        this.candidates.push({ p, x: ax, y: ay, ...zz, box: [x0, y0, x1, y1] });
+        this.reach = Math.max(this.reach, zz.zOut * 1.06);
+      }
+    }
+    const f = this.focusPoint();
+    const dist = (c: (typeof this.candidates)[number]) => {
+      const [x0, y0, x1, y1] = c.box;
+      const dx = Math.max(x0 - f.x, 0, f.x - x1);
+      const dy = Math.max(y0 - f.y, 0, f.y - y1);
+      return Math.hypot(c.x - f.x, c.y - f.y) + 4 * Math.hypot(dx, dy);
+    };
+    const live = this.candidates.filter((c) => z > c.zIn).sort((a, b) => dist(a) - dist(b)).slice(0, MAX_BANDS);
+    this.focusBand = live[0]?.p.key ?? null;
+    const keep = new Set(live.map((c) => c.p.key));
+    for (const [key, b] of this.bands)
+      if (!keep.has(key)) {
+        this.dropBand(b);
+        this.bands.delete(key);
+      }
+    for (const c of live) {
+      const m = Math.max(0, Math.min(1, Math.log(z / c.zIn) / Math.log(c.zOut / c.zIn)));
+      let b = this.bands.get(c.p.key);
+      if (!b) {
+        const level = this.child(c.p);
+        if (this.current) level.applySnapshot(this.current);
+        level.highlight(null);
+        this.scene.add(level.group);
+        b = { portal: c.p, level, zIn: c.zIn, zOut: c.zOut, m: -1 };
+        this.bands.set(c.p.key, b);
+        if (level.needsDetail && this.current && !this.current.feeder) this.requestSolve();
+      }
+      if (m !== b.m) {
+        b.m = m;
+        b.level.morph = m;
+        this.yieldBand(top, b.portal, b.level, m);
+        this.cameraDirty = true;
+      }
+    }
+  }
+
+  /** The child nearest where the reader zooms: the one the sheet will go to. */
+  private focusBand: string | null = null;
+
+  private focusPoint(): { x: number; y: number } {
+    if (this.focus) return this.focus;
+    const r = this.freeRect();
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+  }
+
+  private dropBand(b: Band): void {
+    this.scene.remove(b.level.group);
+    this.yieldBand(this.top, b.portal, b.level, 0);
+  }
+
+  /**
+   * A parent gives way to its unfolding child: what the child draws in its place
+   * recedes, and a System circuit ending at that node now ends where the child's own
+   * stroke takes it up (following that stroke as it unfolds).
+   */
+  private yieldBand(parent: Level, p: Portal, c: Level, m: number): void {
+    parent.yieldTo?.(p.key, m);
+    if (parent !== this.system || !c.exits) return;
+    const siteId = p.key.slice(5);
+    for (const x of c.exits()) {
+      if (m <= 0) {
+        this.system.setCircuitEnd(x.branch, siteId, null);
+        continue;
+      }
+      const t = smoothstep(x.stagger, x.stagger + 0.5, m);
+      const P = this.place(p, c, x.at);
+      const a = p.anchor;
+      this.system.setCircuitEnd(x.branch, siteId, [a[0] + (P[0] - a[0]) * t, a[1] + (P[1] - a[1]) * t, a[2] + (P[2] - a[2]) * t]);
+    }
+  }
+
+  /** Is the camera to hand the sheet down (a child whole in view) or up (zoomed out past the hand-off)? */
+  private checkHandoff(): void {
+    if (this.anim || this.flight || this.diving || this.lens) return;
+    const z = this.cam.pxPerUnit;
+    const p = this.path[this.path.length - 1];
+    if (p && z < (this.zooms(p).zOut / p.ratio) * 0.94) {
+      this.handBack();
+      return;
+    }
+    const f = this.focusPoint();
+    let best: Band | null = null;
+    let bd = Infinity;
+    for (const b of this.bands.values()) {
+      if (z < b.zOut) continue;
+      const c = this.candidates.find((x) => x.p === b.portal);
+      if (!c) continue;
+      const d = Math.hypot(c.x - f.x, c.y - f.y);
+      if (d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    if (best) this.handOff(best);
+  }
+
+  /** The child is whole: the sheet (and the camera) go over to its own frame. */
+  private handOff(b: Band): void {
+    const parent = this.top;
+    const p = b.portal;
+    const c = b.level;
+    const t = this.cam.target;
+    const v = this.toChild(p, c, [t.x, 0, t.z]);
+    this.cam.target.set(v[0], 0, v[2]);
+    this.cam.pxPerUnit /= p.ratio;
+    this.cam.update();
+    if (this.focus) this.focus = { ...this.focus };
+    for (const o of this.bands.values()) if (o !== b) this.dropBand(o);
+    this.bands.clear();
+    b.m = 1;
+    c.morph = 1;
+    this.yieldBand(parent, p, c, 1);
+    this.stack.push(c);
+    this.path.push(p);
+    this.afterLevelChange();
+  }
+
+  /** Zoomed back out past the hand-off: the sheet returns to the parent, the child unfolding in it. */
+  private handBack(): void {
+    for (const o of this.bands.values()) this.dropBand(o);
+    this.bands.clear();
+    const c = this.stack.pop()!;
+    const p = this.path.pop()!;
+    const t = this.cam.target;
+    const v = this.place(p, c, [t.x, 0, t.z]);
+    this.cam.target.set(v[0], 0, v[2]);
+    this.cam.pxPerUnit *= p.ratio;
+    this.cam.update();
+    const zz = this.zooms(p);
+    this.bands.set(p.key, { portal: p, level: c, zIn: zz.zIn, zOut: zz.zOut, m: 1 });
+    this.afterLevelChange();
+  }
+
+  /** Can this level show this selection? */
+  private selectionFits(l: Level, sel: Selection): boolean {
+    if (l === this.system) return sel.kind === 'site' || sel.kind === 'branch' || sel.kind === 'plant';
+    if (l instanceof SiteLevel) return (sel.kind === 'site' && sel.id === l.siteId) || sel.kind === 'branch' || sel.kind === 'plant';
+    if (l instanceof FeederLevel || l instanceof SubstationLevel || l instanceof ServiceLevel) return sel.kind === 'dist' || sel.kind === 'branch';
+    if (l instanceof PlantLevel || l instanceof MachineLevel) return sel.kind === 'equip';
+    return false;
+  }
+
+  /** The sheet has a new level on it: its crumbs, key, labels and balance. */
+  private afterLevelChange(): void {
+    this.applyMatrices();
+    if (this.selection && !this.selectionFits(this.top, this.selection)) this.selection = null;
+    this.focusSites = this.system.highlight(this.top === this.system ? this.selection : null);
+    if (this.top !== this.system) this.top.highlight(this.selection);
+    this.updateCrumbs();
+    this.labelKey = '';
+    this.updateLegend();
+    // the level may draw what the last solve did not include (the substation and feeder)
+    this.requestSolve();
+    if (this.stack.length > 1 || this.selection) this.inspect();
+    else this.inspector.hide();
+    if (!this.honesty.root.hidden) this.honesty.show(this.top.kind, this.honestyContext());
+    this.cameraDirty = true;
+  }
+
+  private needsDetail(): boolean {
+    return this.stack.some((l) => l.needsDetail) || [...this.bands.values()].some((b) => b.level.needsDetail);
+  }
+
+  private setMatrix(g: THREE.Object3D, m: THREE.Matrix4): void {
+    g.matrixAutoUpdate = false;
+    g.matrix.copy(m);
+    g.matrixWorldNeedsUpdate = true;
+  }
+
+  /** Every drawn level in the frame of the one on the sheet. */
+  private applyMatrices(): void {
+    if (this.lens) return;
+    const n = this.stack.length;
+    this.setMatrix(this.top.group, new THREE.Matrix4());
+    this.scaleOf.clear();
+    this.scaleOf.set(this.top, 1);
+    let M = new THREE.Matrix4();
+    let k = 1;
+    for (let i = n - 2; i >= 0; i--) {
+      const p = this.path[i]!;
+      const c = this.stack[i + 1]!;
+      M = M.clone().multiply(this.placeMatrix(p, c).invert());
+      k *= p.ratio;
+      this.setMatrix(this.stack[i]!.group, M);
+      this.scaleOf.set(this.stack[i]!, k);
+    }
+    for (const b of this.bands.values()) {
+      this.setMatrix(b.level.group, this.placeMatrix(b.portal, b.level));
+      this.scaleOf.set(b.level, 1 / b.portal.ratio);
+    }
+  }
+
+  /**
+   * The levels around the one on the sheet recede, so it reads first: its parent to
+   * half ink, further up to a third — except the System around a station, whose
+   * circuits are the station's own, carried on. The sheet's own level recedes the same
+   * way as a child unfolds in it, so nothing jumps at the hand-off.
+   */
+  private applyContextInk(): void {
+    const ink = (l: Level, v: number) => {
+      l.group.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
+        if (m?.uniforms?.uInk) m.uniforms.uInk.value = v;
+      });
+    };
+    const n = this.stack.length;
+    // how far the child in focus has unfolded: the levels recede one step as it does
+    let mMax = 0;
+    for (const b of this.bands.values()) mMax = Math.max(mMax, b.m);
+    const s = this.lens ? 0 : smoothstep(0.55, 1, mMax);
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.max(0, Math.min(1, t));
+    for (let i = 0; i < n; i++) {
+      const l = this.stack[i]!;
+      const d = n - 1 - i + s;
+      const v = this.lens ? 1 : l === this.system ? (d <= 1 ? 1 : lerp(1, 0.32, d - 1)) : d <= 1 ? lerp(1, 0.5, d) : lerp(0.5, 0.32, d - 1);
+      ink(l, v);
+    }
+    // the child in focus in full ink; its neighbours recede with the sheet they unfold in
+    const selfInk = this.lens ? 1 : this.top === this.system ? 1 : 1 - 0.5 * s;
+    for (const b of this.bands.values()) ink(b.level, b.portal.key === this.focusBand ? 1 : selfInk);
+  }
+
+  /** The levels drawn this frame. */
+  private drawn(): Level[] {
+    return [...this.stack, ...[...this.bands.values()].map((b) => b.level)];
+  }
+
+  // ------------------------------------------------------------------ moving through the tree
+  /** A dive or an ascent in progress (the hand-offs are the move's own). */
+  private diving = false;
+
+  /**
+   * Zoom into a child of the level on the sheet: the camera closes on its node (held
+   * steady on the sheet) through the band, so it unfolds as the zoom passes, and is
+   * handed its frame; then settles on it.
+   */
+  dive(key: string): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.anim || this.flight || this.diving || this.lens) return resolve();
+      const p = this.portalsOf(this.top).find((x) => x.key === key);
+      if (!p) return resolve();
+      this.scrubber.setPlaying(false);
+      this.diving = true;
+      const zz = this.zooms(p);
+      const free = this.freeRect(true);
+      const z0 = this.cam.pxPerUnit;
+      const z1 = zz.zOut * 1.001;
+      const s0 = this.cam.worldToScreen(new THREE.Vector3(...p.anchor), new THREE.Vector2());
+      const s1 = { x: free.x + free.w / 2, y: free.y + free.h / 2 };
+      const L = Math.log(z1 / z0);
+      const ms = Math.max(900, Math.min(2600, 420 * Math.abs(L)));
+      this.fly(
+        ms,
+        inOut,
+        (e) => {
+          const x = s0.x + (s1.x - s0.x) * e;
+          const y = s0.y + (s1.y - s0.y) * e;
+          this.focus = { x, y };
+          this.placeAt(p.anchor, x, y, z0 * Math.exp(L * e));
+        },
+        () => {
+          this.updateBands();
+          let b = this.bands.get(key);
+          if (!b) {
+            const c = this.child(p);
+            if (this.current) c.applySnapshot(this.current);
+            this.scene.add(c.group);
+            b = { portal: p, level: c, zIn: zz.zIn, zOut: zz.zOut, m: 1 };
+            this.bands.set(key, b);
+          }
+          this.handOff(b);
+          // settle: the child fitted to the free area, its own children still folded
+          const to = this.cameraFor({ ...this.levelFit(b.level), zoom: this.settleZoom(b.level) });
+          const from = { t: this.cam.target.clone(), z: this.cam.pxPerUnit };
+          this.fly(
+            650,
+            easeOut,
+            (e) => {
+              this.cam.target.lerpVectors(from.t, to.target, e);
+              this.cam.pxPerUnit = from.z * (to.zoom / from.z) ** e;
+            },
+            () => {
+              this.diving = false;
+              this.focus = null;
+              resolve();
+            },
+          );
+        },
+      );
+    });
+  }
+
+  /**
+   * Zoom out of the level on the sheet, one level up: the camera draws back to the
+   * hand-off, hands the sheet back, and the level folds into its node as the zoom goes on.
+   */
+  ascend(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.anim || this.flight || this.diving) return resolve();
+      if (this.lens) {
+        this.closeLens(() => resolve());
+        return;
+      }
+      const p = this.path[this.path.length - 1];
+      if (!p) return resolve();
+      this.scrubber.setPlaying(false);
+      this.diving = true;
+      const c = this.top;
+      const zz = this.zooms(p);
+      const free = this.freeRect(true);
+      const s1 = { x: free.x + free.w / 2, y: free.y + free.h / 2 };
+      const s0 = this.cam.worldToScreen(new THREE.Vector3(...c.seat), new THREE.Vector2());
+      const z0 = this.cam.pxPerUnit;
+      const zh = (zz.zOut / p.ratio) * 0.92;
+      const L1 = Math.log(zh / z0);
+      this.fly(
+        Math.max(350, Math.min(1100, 380 * Math.abs(L1))),
+        (u) => u * u,
+        (e) => this.placeAt(c.seat, s0.x + (s1.x - s0.x) * e, s0.y + (s1.y - s0.y) * e, z0 * Math.exp(L1 * e)),
+        () => {
+          this.handBack();
+          const z1 = this.cam.pxPerUnit;
+          const L2 = Math.log((zz.zIn * 0.7) / z1);
+          this.fly(
+            1300,
+            easeOut,
+            (e) => {
+              this.focus = s1;
+              this.placeAt(p.anchor, s1.x, s1.y, z1 * Math.exp(L2 * e));
+            },
+            () => {
+              this.diving = false;
+              this.focus = null;
+              resolve();
+            },
+          );
+        },
+      );
+    });
+  }
+
+  /**
+   * For the screenshot harness and tests: hold the camera on a node of the level on the
+   * sheet at the zoom where its child is `m` of the way unfolded.
+   */
+  holdBand(key: string, m: number): void {
+    const p = this.portalsOf(this.top).find((x) => x.key === key);
+    if (!p) return;
+    const zz = this.zooms(p);
+    const free = this.freeRect();
+    const x = free.x + free.w / 2;
+    const y = free.y + free.h / 2;
+    this.focus = { x, y };
+    this.placeAt(p.anchor, x, y, zz.zIn * (zz.zOut / zz.zIn) ** m);
+    this.cameraDirty = true;
+  }
+
+  /** Go to a place in the tree (a path of portal keys from the System), each move a real zoom. */
+  async goTo(keys: string[]): Promise<void> {
+    await this.waitFor(() => !this.transitioning);
+    if (this.lens) await this.ascend();
+    let k = 0;
+    while (k < this.path.length && k < keys.length && this.path[k]!.key === keys[k]) k++;
+    while (this.path.length > k) {
+      const before = this.path.length;
+      await this.ascend();
+      if (this.path.length >= before) break;
+    }
+    for (let i = k; i < keys.length; i++) {
+      const before = this.path.length;
+      await this.dive(keys[i]!);
+      if (this.path.length <= before) break;
+    }
+  }
+
+  /** Dive into whatever the selection is a node for, one level down. */
+  openFrom(sel: Selection): void {
+    const top = this.top;
+    if (top instanceof SubstationLevel && sel.kind === 'dist' && sel.what === 'feeder') {
+      void this.ascend();
+      return;
+    }
+    let s = sel;
+    if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'home') {
+      const h = this.feederModel().layout.homes.find((x) => x.id === sel.id);
+      if (h) s = { kind: 'dist', what: 'transformer', id: h.transformer };
+    }
+    const same = (a: Selection, b: Selection) => a.kind === b.kind && (a as { id?: string }).id === (b as { id?: string }).id && (a as { what?: string }).what === (b as { what?: string }).what;
+    const p = this.portalsOf(top).find((x) => same(x.sel, s));
+    if (p) void this.dive(p.key);
+  }
+
+  /** Double-click on the sheet away from anything pickable: dive into the nearest node there. */
+  private diveNear(sx: number, sy: number): void {
+    let best: Portal | null = null;
+    let bd = 40;
+    for (const c of this.candidates) {
+      const d = Math.hypot(c.x - sx, c.y - sy);
+      if (d < bd) {
+        bd = d;
+        best = c.p;
+      }
+    }
+    if (best) void this.dive(best.key);
+  }
+
+  /** Close the level on the sheet: fold it back into its node one level up. */
+  closeTop(done?: () => void): void {
+    if (this.stack.length < 2) return;
+    void this.ascend().then(() => done?.());
+  }
+
+  /** Close levels until the one at `index` is on the sheet. */
+  closeTo(index: number): void {
+    if (this.lens) {
+      void this.ascend();
+      return;
+    }
+    void this.goTo(this.path.slice(0, index).map((p) => p.key));
+  }
+
+  private feeder: Feeder | null = null;
+  /** The feeder model the drawing thread keeps (same topology as the solver's). */
+  feederModel(): Feeder {
+    this.feeder ??= makeFeeder();
+    return this.feeder;
+  }
+
+  /** The keys from the System to a named place (for the guided route and the harness). */
+  keysFor(place: 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine'): string[] {
+    const outletT = this.feederModel().layout.homes.find((h) => h.id === this.feederModel().layout.outlet.home)!.transformer;
+    switch (place) {
+      case 'site':
+        return ['site:TESLA'];
+      case 'feeder':
+        return ['site:EVERGREEN'];
+      case 'substation':
+        return ['site:EVERGREEN', 'substation'];
+      case 'service':
+        return ['site:EVERGREEN', `service:${outletT}`];
+      case 'plant':
+        return ['site:MOSS_LANDING', 'plant:ML1'];
+      case 'machine':
+        return ['site:MOSS_LANDING', 'plant:ML1', 'machine:GT1'];
+      default:
+        return [];
+    }
+  }
+
+  /** Back-compat for tests and the guided route: the last element names the place. */
+  async navigate(path: Array<'region' | 'site' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine'>): Promise<void> {
+    const want = path[path.length - 1];
+    if (want === 'region') {
+      await this.goTo([]);
+      this.enterRegion('bay');
+      await this.waitFor(() => this.level === 'region' && !this.transitioning);
+      return;
+    }
+    await this.goTo(this.keysFor(want ?? 'system'));
+  }
+
+  enterFeeder(): void {
+    void this.goTo(this.keysFor('feeder'));
+  }
+
+  enterSubstation(): void {
+    void this.goTo(this.keysFor('substation'));
+  }
+
+  enterService(transformerId: string): void {
+    void this.goTo(['site:EVERGREEN', `service:${transformerId}`]);
+  }
+
+  enterPlant(): void {
+    void this.goTo(this.keysFor('plant'));
+  }
+
+  enterMachine(unit: string): void {
+    void this.goTo(['site:MOSS_LANDING', 'plant:ML1', `machine:${unit}`]);
+  }
+
+  exitRegion(): void {
+    this.closeTo(0);
+  }
+
+  // ------------------------------------------------------------------ the Region lens
+  /**
+   * The Region lens: a region's network pulled apart into one layer per voltage. Not a
+   * level of the zoom tree — a way of looking at the System — opened from a place's
+   * inspector and folded away again.
+   */
   enterRegion(id: RegionId): void {
-    if (this.top !== this.system || this.anim || this.flight || id === 'tie') return;
+    if (this.top !== this.system || this.anim || this.flight || this.diving || id === 'tie') return;
     this.scrubber.setPlaying(false);
+    for (const b of this.bands.values()) this.dropBand(b);
+    this.bands.clear();
     let r = this.regions.get(id);
     if (!r) {
       r = new RegionLevel(this.grid, id);
@@ -1075,245 +1819,40 @@ export class App {
       reg.highlight(this.selection);
       reg.morph = 0;
       this.scene.add(reg.group);
+      this.system.group.matrixAutoUpdate = true;
       this.system.group.position.set(-reg.center[0], 0, -reg.center[1]);
       this.cam.target.x -= reg.center[0];
       this.cam.target.z -= reg.center[1];
       this.system.setNetworkShown(false, new Set(reg.siteIds), 0);
       this.stack.push(reg);
-      this.links.push({ mode: 'fold', anchor: [0, 0, 0], origin: [0, 0, 0], ratio: 1, saved, hand: { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit }, fitZoom: f.zoom, autoClose: true });
+      this.lens = { saved };
       this.labels.set([]);
       this.updateCrumbs();
       this.updateLegend();
-      this.tween(1500, (e) => this.foldFrame(reg, e), () => this.arrived());
+      this.tween(1500, (e) => this.foldFrame(reg, e), () => {
+        this.labelKey = '';
+        this.updateLegend();
+        this.inspect();
+      });
     }, this.freeRect(true));
   }
 
-  /**
-   * Open a level inside the one on the sheet: fly toward `anchor` (a node of the parent,
-   * in its frame), hand the camera to the child's frame so that its `origin` sits where
-   * the node was, and unfold the child out of that point while the camera settles on
-   * it. `ratio` is parent frame units per child frame unit.
-   */
-  private open(child: Level, anchor: Vec3, origin: Vec3, ratio: number, opts: { dive?: number; autoClose?: boolean } = {}): void {
-    if (this.anim || this.flight) return;
-    this.scrubber.setPlaying(false);
-    const parent = this.top;
-    const saved = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
-    const [gx, gz] = this.groundUnder(anchor);
-    const zh = this.cam.pxPerUnit * (opts.dive ?? 2.2);
-    this.select(null);
-    this.flyTo(gx, gz, zh, 650, () => {
-      // where the node is on screen now
-      const v = new THREE.Vector3(...anchor).applyMatrix4(parent.group.matrixWorld);
-      const sA = this.cam.worldToScreen(v, new THREE.Vector2());
-      const parentHand = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
-      // hand-off to the child's frame
-      for (const l of this.stack) l.group.visible = false;
-      this.scene.add(child.group);
-      child.group.visible = true;
-      child.group.position.set(0, 0, 0);
-      child.morph = 0;
-      if (this.current) child.applySnapshot(this.current);
-      this.stack.push(child);
-      const [ox, oz] = this.groundUnder(origin);
-      this.cam.pxPerUnit = zh / ratio;
-      this.cam.target.set(ox, 0, oz);
-      this.cam.update();
-      const sO = this.cam.worldToScreen(new THREE.Vector3(...origin), new THREE.Vector2());
-      this.panPixels(sA.x - sO.x, sA.y - sO.y);
-      this.cam.update();
-      const from = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
-      const fit = this.levelFit(child);
-      const to = this.cameraFor(fit);
-      this.links.push({ mode: 'unfold', anchor, origin, ratio, saved, hand: from, parentHand, fitZoom: fit.zoom, autoClose: opts.autoClose ?? true });
-      this.labels.set([]);
-      this.updateCrumbs();
-      this.updateLegend();
-      this.requestSolve(); // this level may need the substation and feeder solved
-      this.tween(
-        1700,
-        (e) => {
-          // the camera leads (it covers most of a large zoom early) and the level unfolds
-          // behind it, so what unfolds is always big enough to follow
-          const c = 1 - (1 - e) ** 3;
-          child.morph = e;
-          this.cam.target.lerpVectors(from.target, to.target, c);
-          this.cam.pxPerUnit = from.zoom * (to.zoom / from.zoom) ** c;
-          this.cameraDirty = true;
-        },
-        () => this.arrived(),
-      );
-    }, this.freeRect(true));
-  }
-
-  /** The camera target and zoom that put a fit's ground point in the free area's middle. */
-  private cameraFor(fit: { x: number; z: number; zoom: number }): { target: THREE.Vector3; zoom: number } {
-    const save = { t: this.cam.target.clone(), z: this.cam.pxPerUnit };
-    this.cam.pxPerUnit = fit.zoom;
-    this.cam.target.set(fit.x, 0, fit.z);
-    this.cam.update();
-    const free = this.freeRect(true);
-    const g0 = this.cam.screenToGround(this.cam.width / 2, this.cam.height / 2);
-    const g1 = this.cam.screenToGround(free.x + free.w / 2, free.y + free.h / 2);
-    const target = new THREE.Vector3(fit.x - (g1.x - g0.x), 0, fit.z - (g1.z - g0.z));
-    this.cam.pxPerUnit = save.z;
-    this.cam.target.copy(save.t);
-    this.cam.update();
-    return { target, zoom: fit.zoom };
-  }
-
-  /** A level has finished unfolding: its labels, key and inspector. */
-  private arrived(): void {
-    this.refreshLabels();
-    this.updateLegend();
-    this.inspect();
-  }
-
-  /** Close the level on the sheet, folding it back into its node one level up. */
-  closeTop(done?: () => void): void {
-    if (this.stack.length < 2 || this.anim || this.flight) return;
-    this.scrubber.setPlaying(false);
-    const child = this.top;
-    const link = this.links[this.links.length - 1]!;
-    const parent = this.stack[this.stack.length - 2]!;
+  private closeLens(done?: () => void): void {
+    const r = this.top as RegionLevel;
+    if (!this.lens || !(r instanceof RegionLevel) || this.anim) return;
     this.labels.set([]);
     this.select(null);
-    if (link.mode === 'fold') {
-      const r = child as RegionLevel;
-      this.tween(1100, (e) => this.foldFrame(r, 1 - e), () => {
-        this.scene.remove(r.group);
-        this.system.group.position.set(0, 0, 0);
-        this.cam.target.x += r.center[0];
-        this.cam.target.z += r.center[1];
-        this.system.setNetworkShown(true);
-        this.stack.pop();
-        this.links.pop();
-        this.afterClose(done);
-      });
-      return;
-    }
-    const from = { target: this.cam.target.clone(), zoom: this.cam.pxPerUnit };
-    const to = link.hand;
-    this.tween(
-      1200,
-      (e) => {
-        child.morph = 1 - e;
-        this.cam.target.lerpVectors(from.target, to.target, e);
-        this.cam.pxPerUnit = from.zoom * (to.zoom / from.zoom) ** e;
-        this.cameraDirty = true;
-      },
-      () => {
-        this.scene.remove(child.group);
-        this.stack.pop();
-        this.links.pop();
-        // the parent (and, under a region, the System as its ground) back on the sheet
-        parent.group.visible = true;
-        if (parent instanceof RegionLevel) this.system.group.visible = true;
-        this.cam.target.copy(link.parentHand!.target);
-        this.cam.pxPerUnit = link.parentHand!.zoom;
-        this.cam.update();
-        this.cameraDirty = true;
-        this.flyTo(link.saved.target.x, link.saved.target.z, link.saved.zoom, 600, () => this.afterClose(done));
-      },
-    );
-  }
-
-  private afterClose(done?: () => void): void {
-    this.focusSites = this.top.highlight(this.selection);
-    this.updateCrumbs();
-    this.refreshLabels();
-    this.updateLegend();
-    this.requestSolve();
-    if (this.stack.length > 1) this.inspect();
-    else this.inspector.hide();
-    done?.();
-  }
-
-  /** Close levels until the one at `index` is on the sheet. */
-  closeTo(index: number): void {
-    if (this.stack.length - 1 > index) this.closeTop(() => this.closeTo(index));
-  }
-
-  /** Region → Substation (Evergreen): its busbar unfolds into the yard. */
-  enterSubstation(): void {
-    const r = this.region;
-    if (!r || this.top !== r || !r.siteIds.includes('EVERGREEN')) return;
-    this.substation ??= new SubstationLevel(this.grid);
-    const s = this.substation;
-    this.open(s, r.busbarOf('EVERGREEN', 60), s.origin, 1000, { dive: 2.5 });
-  }
-
-  private feeder: Feeder | null = null;
-  /** The feeder model the drawing thread keeps (same topology as the solver's). */
-  feederModel(): Feeder {
-    this.feeder ??= makeFeeder();
-    return this.feeder;
-  }
-
-  /** Open whatever the selection is a node for, one level down. */
-  openFrom(sel: Selection): void {
-    const top = this.top;
-    if (top === this.system && sel.kind === 'site') {
-      const site = this.grid.sites.find((x) => x.id === sel.id);
-      if (site) this.enterRegion(site.region);
-    } else if (top instanceof RegionLevel && sel.kind === 'site' && sel.id === 'EVERGREEN') this.enterSubstation();
-    else if (top instanceof SubstationLevel && sel.kind === 'dist' && sel.what === 'feeder') this.enterFeeder();
-    else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'transformer') this.enterService(sel.id);
-    else if (top instanceof PlantLevel && sel.kind === 'equip' && sel.what === 'generator') this.enterMachine(sel.id.slice(top.plantId.length + 1));
-    else if (top instanceof FeederLevel && sel.kind === 'dist' && sel.what === 'home') {
-      const h = this.feederModel().layout.homes.find((x) => x.id === sel.id);
-      if (h) this.enterService(h.transformer);
-    }
-  }
-
-  /** Substation → Feeder: feeder 1105 grows out of its exit at the yard's west fence. */
-  enterFeeder(): void {
-    const s = this.substation;
-    if (!s || this.top !== s) return;
-    this.feederLevel ??= new FeederLevel(this.feederModel());
-    const f = this.feederLevel;
-    this.open(f, s.feederExit, f.origin, 1, { dive: 1.4, autoClose: false });
-  }
-
-  /** Feeder → Service: a pole-top transformer unfolds into its secondary, drops and homes. */
-  enterService(transformerId: string): void {
-    const f = this.feederLevel;
-    if (!f || this.top !== f) return;
-    let sv = this.services.get(transformerId);
-    if (!sv) {
-      sv = new ServiceLevel(this.feederModel(), transformerId);
-      this.services.set(transformerId, sv);
-    }
-    this.open(sv, f.transformerAt(transformerId), sv.origin, 1, { dive: 3 });
-  }
-
-  /** System (or the Central Coast region) → Plant: Moss Landing's node unfolds into Unit 1. */
-  enterPlant(): void {
-    const top = this.top;
-    if (top !== this.system && !(top instanceof RegionLevel && top.siteIds.includes('MOSS_LANDING'))) return;
-    this.plantLevel ??= new PlantLevel(this.grid);
-    const pl = this.plantLevel;
-    const bus = this.grid.bus('MOSS_LANDING-230');
-    const anchor: Vec3 = top instanceof RegionLevel ? top.busbarOf('MOSS_LANDING', 230) : [bus.x, 0, bus.z];
-    this.open(pl, anchor, pl.origin, 1000, { dive: 2.5 });
-  }
-
-  /** Plant → Machine: a unit's generator unfolds into its cutaway. */
-  enterMachine(unit: string): void {
-    const pl = this.plantLevel;
-    if (!pl || this.top !== pl) return;
-    const id = `${pl.plantId}-${unit}`;
-    let m = this.machines.get(id);
-    if (!m) {
-      m = new MachineLevel(this.grid, id);
-      this.machines.set(id, m);
-    }
-    this.open(m, pl.generatorAt(unit), m.origin, 1, { dive: 3 });
-  }
-
-  /** Back-compat for tests and the guided route. */
-  exitRegion(): void {
-    this.closeTo(0);
+    this.tween(1100, (e) => this.foldFrame(r, 1 - e), () => {
+      this.scene.remove(r.group);
+      this.system.group.position.set(0, 0, 0);
+      this.cam.target.x += r.center[0];
+      this.cam.target.z += r.center[1];
+      this.system.setNetworkShown(true);
+      this.stack.pop();
+      this.lens = null;
+      this.afterLevelChange();
+      done?.();
+    });
   }
 
   /** One frame of the fold: layers rise, and the System's symbols give way to the Region's. */
@@ -1347,7 +1886,7 @@ export class App {
   }
 
   get transitioning(): boolean {
-    return !!this.anim || !!this.flight;
+    return !!this.anim || !!this.flight || this.diving;
   }
 
   /** Resolve once `cond` holds (checked each frame), or reject after `ms`. */
@@ -1368,36 +1907,20 @@ export class App {
     return this.waitFor(() => !!this.current && this.current.seq === this.seq && !this.inFlight && !this.stale, 60000);
   }
 
-  /**
-   * Go to a place in the zoom tree from wherever the sheet is: close levels down to the
-   * part of the path already open, then open the rest, each with its transition.
-   * Paths: region → substation → feeder → service (the outlet's), or plant → machine.
-   */
-  async navigate(path: Array<'region' | 'substation' | 'feeder' | 'service' | 'plant' | 'machine'>): Promise<void> {
-    const outletT = () => this.feederModel().layout.homes.find((h) => h.id === this.feederModel().layout.outlet.home)!.transformer;
-    const matches = (l: Level, kind: string): boolean =>
-      l.kind === kind &&
-      (!(l instanceof RegionLevel) || l.id === 'bay') &&
-      (!(l instanceof ServiceLevel) || l.transformerId === outletT()) &&
-      (!(l instanceof MachineLevel) || l.genId === 'ML1-GT1');
-    let k = 1;
-    while (k < this.stack.length && k - 1 < path.length && matches(this.stack[k]!, path[k - 1]!)) k++;
-    await this.waitFor(() => !this.transitioning);
-    while (this.stack.length > k) {
-      const before = this.stack.length;
-      this.closeTop();
-      await this.waitFor(() => !this.transitioning && this.stack.length < before);
-    }
-    for (let i = k - 1; i < path.length; i++) {
-      const want = path[i]!;
-      if (want === 'region') this.enterRegion('bay');
-      else if (want === 'substation') this.enterSubstation();
-      else if (want === 'feeder') this.enterFeeder();
-      else if (want === 'service') this.enterService(outletT());
-      else if (want === 'plant') this.enterPlant();
-      else this.enterMachine('GT1');
-      await this.waitFor(() => this.level === want && !this.transitioning);
-    }
+  /** The camera target and zoom that put a fit's ground point in the free area's middle. */
+  private cameraFor(fit: { x: number; z: number; zoom: number }): { target: THREE.Vector3; zoom: number } {
+    const save = { t: this.cam.target.clone(), z: this.cam.pxPerUnit };
+    this.cam.pxPerUnit = fit.zoom;
+    this.cam.target.set(fit.x, 0, fit.z);
+    this.cam.update();
+    const free = this.freeRect(true);
+    const g0 = this.cam.screenToGround(this.cam.width / 2, this.cam.height / 2);
+    const g1 = this.cam.screenToGround(free.x + free.w / 2, free.y + free.h / 2);
+    const target = new THREE.Vector3(fit.x - (g1.x - g0.x), 0, fit.z - (g1.z - g0.z));
+    this.cam.pxPerUnit = save.z;
+    this.cam.target.copy(save.t);
+    this.cam.update();
+    return { target, zoom: fit.zoom };
   }
 
 
@@ -1438,7 +1961,7 @@ export class App {
       if (sel.kind === 'dist') {
         if (sel.what === 'bank') return show('Selected transformer', bankView(s, f));
         if (sel.what === 'bus60' || sel.what === 'bus12') return show('Selected bus', busView(this.grid, s, sel.what, f));
-        if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f), [{ label: 'Follow feeder 1105', title: 'Out of the yard and down the street (Enter)', run: () => this.enterFeeder() }]);
+        if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f), [{ label: 'Follow feeder 1105', title: 'Out of the yard and down the street (Enter)', run: () => void this.ascend() }]);
       }
     }
     if (top instanceof FeederLevel) {
@@ -1454,7 +1977,7 @@ export class App {
         const fs = s.feeder && !this.feederOpen.size ? this.faultStudyNow() : null;
         if (fs && s.feeder && (!this.reliabilityCache || this.reliabilityCache.t !== s.t)) this.reliabilityCache = { t: s.t, run: simulateYears(f, s, feederSource(this.grid, fs)) };
         const rel = this.reliabilityCache && this.reliabilityCache.t === s.t ? reliabilitySection(this.reliabilityCache.run, s.t) : null;
-        return show('Feeder', rel ? { ...v, sections: [...v.sections, rel] } : v);
+        return show('Feeder', rel ? { ...v, sections: [...v.sections, rel] } : v, [{ label: 'Into the substation', title: 'Zoom into the yard at the head of the feeder', run: () => void this.dive('substation') }]);
       }
       // a fault can be put on any primary line or pole
       const faultActs = (node: string): Action[] => {
@@ -1473,10 +1996,10 @@ export class App {
           return show('Selected', feederElementView(s, f, sel.id, sel.what), b && sel.what === 'line' ? faultActs(b.to) : []);
         }
         if (sel.what === 'transformer')
-          return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Open this service', title: 'Down the pole to the homes (Enter)', run: () => this.enterService(sel.id) }]);
+          return show('Selected transformer', distTransformerView(s, f, sel.id), [{ label: 'Zoom into this service', title: 'Down the pole to the homes (Enter)', run: () => void this.dive(`service:${sel.id}`) }]);
         if (sel.what === 'home') {
           const h = f.layout.homes.find((x) => x.id === sel.id)!;
-          return show('Selected home', homeView(s, f, sel.id), [{ label: 'Open its service', title: 'Down the pole to this home (Enter)', run: () => this.enterService(h.transformer) }]);
+          return show('Selected home', homeView(s, f, sel.id), [{ label: 'Zoom into its service', title: 'Down the pole to this home (Enter)', run: () => void this.dive(`service:${h.transformer}`) }]);
         }
         if (sel.what === 'feeder') return show('Selected feeder', feederBreakerView(s, f));
       }
@@ -1502,7 +2025,7 @@ export class App {
       if (!sel) return show('Plant', plantView(this.grid, s, id, trip), act);
       if (sel.kind === 'equip') {
         const unit = sel.id.slice(id.length + 1);
-        const more: Action[] = sel.what === 'generator' ? [{ label: 'Open the generator', title: 'Into the machine (Enter)', run: () => this.enterMachine(unit) }] : [];
+        const more: Action[] = sel.what === 'generator' ? [{ label: 'Zoom into the generator', title: 'Into the machine (Enter)', run: () => void this.dive(`machine:${unit}`) }] : [];
         return show('Selected', equipView(this.grid, s, id, sel.what, sel.id), more);
       }
     }
@@ -1524,25 +2047,40 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    const siteActions = (id: string): Action[] => {
+      const site = this.grid.sites.find((x) => x.id === id)!;
+      const acts: Action[] = [];
+      const p = this.portalsOf(this.top).find((x) => x.key === `site:${id}`);
+      if (p) acts.push({ label: id === 'EVERGREEN' ? 'Zoom into the neighbourhood' : 'Zoom inside', title: 'Down into what this node stands for (Enter, or double-click)', run: () => void this.dive(p.key) });
+      if (this.top === this.system && site.region !== 'tie')
+        acts.push({ label: 'See the region in layers', title: `${REGIONS[site.region].name}, pulled apart by voltage`, run: () => this.enterRegion(site.region) });
+      if (this.top instanceof SiteLevel && this.top.unit1At && id === this.top.siteId)
+        acts.push({ label: 'Zoom into Unit 1', title: 'The combined-cycle plant beside the yard', run: () => void this.dive('plant:ML1') });
+      return acts;
+    };
+    const siteShow = (header: string, id: string) => {
+      const v = siteView(this.grid, s, id);
+      const fs = this.faultStudyNow();
+      const fsec = fs ? busFaultSection(this.grid, s, fs, id) : null;
+      this.inspector.show({ header, name: v.name, kind: v.kind, actions: siteActions(id), panels, ...(v.intro ? { intro: v.intro } : {}), sections: fsec ? [...v.sections, fsec] : v.sections });
+    };
     if (!sel) {
-      // in a region with nothing selected: the region's own balance
+      // in a region with nothing selected: the region's own balance; in a yard, the station's
       if (top instanceof RegionLevel) show('Region', regionView(this.grid, s, top.id, top.siteIds));
+      if (top instanceof SiteLevel) siteShow('Station', top.siteId);
       return;
     }
     if (sel.kind === 'dist') return;
+    if (sel.kind === 'plant') {
+      const g = this.grid.gens.find((x) => x.plant.id === sel.id);
+      if (!g) return;
+      const siteId = g.bus.site.id;
+      siteShow('Selected plant', siteId);
+      if (top instanceof SiteLevel && sel.id === 'ML1') this.inspector.show({ header: 'Selected plant', name: g.plant.name, kind: siteView(this.grid, s, siteId).kind, actions: [{ label: 'Zoom into Unit 1', title: 'Into the plant (Enter)', run: () => void this.dive('plant:ML1') }], panels, sections: siteView(this.grid, s, siteId).sections });
+      return;
+    }
     if (sel.kind === 'site') {
-      const v = siteView(this.grid, s, sel.id);
-      const site = this.grid.sites.find((x) => x.id === sel.id)!;
-      const actions: Action[] = [];
-      if (this.top === this.system && site.region !== 'tie')
-        actions.push({ label: `Open ${REGIONS[site.region].name}`, title: 'Unfold the region into its voltage layers (Enter)', run: () => this.enterRegion(site.region) });
-      if (site.id === 'MOSS_LANDING' && (this.top === this.system || this.top instanceof RegionLevel))
-        actions.push({ label: 'Open the combined-cycle plant', title: 'Unfold the node into Moss Landing’s first unit', run: () => this.enterPlant() });
-      if (this.top instanceof RegionLevel && site.id === 'EVERGREEN')
-        actions.push({ label: 'Open the substation', title: 'Unfold the busbar into the substation yard (Enter)', run: () => this.enterSubstation() });
-      const fs = this.faultStudyNow();
-      const fsec = fs ? busFaultSection(this.grid, s, fs, sel.id) : null;
-      this.inspector.show({ header: 'Selected place', name: v.name, kind: v.kind, actions, panels, ...(v.intro ? { intro: v.intro } : {}), sections: fsec ? [...v.sections, fsec] : v.sections });
+      siteShow('Selected place', sel.id);
     } else if (sel.kind === 'branch') {
       const k = sel.index;
       const isX = this.grid.branches[k]!.kind === 'transformer';
@@ -1584,26 +2122,47 @@ export class App {
       const f = this.feederModel();
       if (sel?.kind === 'dist' && sel.what === 'home') out.push(meterPanel(s, f, sel.id));
       else out.push(outletPanel(s, f));
-    } else if (sel?.kind === 'site') {
-      for (const b of this.grid.buses) if (b.site.id === sel.id && !b.terminalOf) out.push(busPanel(this.grid, s, b.index));
-      const fs = this.faultStudyNow();
-      if (fs) for (const b of this.grid.buses) if (b.site.id === sel.id && !b.terminalOf && s.energized[b.index]) out.push(busFaultPanel(this.grid, s, fs, b.index));
     } else if (sel?.kind === 'branch') out.push(branchPanel(this.grid, s, sel.index));
+    else if (sel?.kind === 'site' || sel?.kind === 'plant' || (!sel && top instanceof SiteLevel)) {
+      // a place: its buses' working (a plant: the buses it feeds; in a yard with nothing selected: the yard's)
+      const id = sel?.kind === 'site' ? sel.id : sel?.kind === 'plant' ? this.grid.gens.find((g) => g.plant.id === sel.id)?.bus.site.id : (top as SiteLevel).siteId;
+      for (const b of this.grid.buses) if (b.site.id === id && !b.terminalOf) out.push(busPanel(this.grid, s, b.index));
+      const fs = this.faultStudyNow();
+      if (fs) for (const b of this.grid.buses) if (b.site.id === id && !b.terminalOf && s.energized[b.index]) out.push(busFaultPanel(this.grid, s, fs, b.index));
+    }
     else if (!sel && top instanceof RegionLevel) out.push(regionPanel(this.grid, s, top.siteIds, top.id));
     return out.filter((p): p is Panel => p !== null);
   }
 
   // ------------------------------------------------------------------ labels & legend
+  /** What the labels depend on besides the camera: the levels drawn, and the selection. */
+  private labelSignature(): string {
+    const bands = [...this.bands.values()]
+      .filter((b) => b.m >= 0.7)
+      .map((b) => b.portal.key)
+      .sort()
+      .join(',');
+    return `${this.stack.map((l) => l.name).join('>')}|${bands}|${this.anim ? 'anim' : ''}|${JSON.stringify(this.selection)}`;
+  }
+
   private refreshLabels(): void {
+    // during a fold the drawing is moving under its names: they return when it settles
+    if (this.anim) {
+      this.labels.set([]);
+      return;
+    }
     const sel = this.selection;
-    const specs = this.top.labels;
-    const items: LabelItem[] = specs.map((l) => {
+    const items: LabelItem[] = [];
+    // a node whose own level has (nearly) unfolded gives its name over to that level
+    const yielding = new Set([...this.bands.values()].filter((b) => b.m >= 0.7 && b.portal.label).map((b) => b.portal.label!));
+    for (const l of this.top.labels) {
       const site = l.kind === 'site' ? l.id.slice(5) : null;
+      if (yielding.has(l.id)) continue;
       const selected = sel?.kind === 'site' && site === sel.id;
       // with a selection, the places it connects to keep their names and the rest recede
       const kept = !!site && !!this.focusSites?.has(site);
       const dim = !!site && !!this.focusSites && !kept;
-      return {
+      items.push({
         id: l.id,
         anchor: l.anchor,
         priority: l.priority + (selected ? 100 : kept ? 50 : 0),
@@ -1613,10 +2172,38 @@ export class App {
         ...(l.kind === 'site' ? { dx: 0, dy: 0 } : {}),
         ...(l.prov ? { prov: l.prov } : {}),
         pinned: selected || (sel?.kind === 'branch' && kept) || l.kind === 'layer',
-      };
-    });
+      });
+    }
+    // the levels unfolding here, once nearly whole: their own names for their parts
+    for (const b of this.bands.values()) {
+      if (b.m < 0.7) continue;
+      for (const l of b.level.labels) items.push(this.contextLabel(l, `${b.portal.key}/${l.id}`, this.place(b.portal, b.level, l.anchor), l.minZoom * b.portal.ratio, -1));
+    }
+    // the level above, as the ground this one stands on (its name for this node is this level's)
+    const p = this.path[this.path.length - 1];
+    if (p && !this.lens) {
+      const parent = this.stack[this.stack.length - 2]!;
+      for (const l of parent.labels) {
+        if (l.kind === 'region' || l.kind === 'sea') continue;
+        if (l.id === p.label) continue;
+        items.push(this.contextLabel(l, `up/${l.id}`, this.toChild(p, this.top, l.anchor), l.minZoom / p.ratio, -3));
+      }
+    }
     this.labels.set(items);
     this.cameraDirty = true;
+  }
+
+  private contextLabel(l: LabelSpec, id: string, anchor: Vec3, minZoom: number, dp: number): LabelItem {
+    return {
+      id,
+      anchor,
+      priority: l.priority + dp,
+      minZoom,
+      className: `${l.kind}${l.kind === 'site' ? ' minor' : ''}`,
+      text: l.text,
+      ...(l.kind === 'site' ? { dx: 0, dy: 0 } : {}),
+      ...(l.prov ? { prov: l.prov } : {}),
+    };
   }
 
   private updateLegend(): void {
@@ -1652,19 +2239,33 @@ export class App {
     this.advanceAnim(performance.now());
     this.tickFault(performance.now());
     this.cam.update();
+    if (!this.lens) {
+      // what unfolds, whether the sheet changes hands, and where every drawn level sits
+      this.updateBands();
+      this.checkHandoff();
+      this.applyMatrices();
+      this.applyContextInk();
+    }
     const w = this.cam.width;
     const h = this.cam.height;
     const pr = this.pixelRatio;
-    const fi = { width: w, height: h, pixelRatio: pr, pxPerUnit: this.cam.pxPerUnit, time };
-    for (const l of this.stack) if (l.group.visible) l.frame(fi);
-    this.paper.frame(this.cam.pxPerUnit / this.top.unitKm, pr);
-    // zooming well out of a level folds it back into its node one level up
-    const link = this.links[this.links.length - 1];
-    if (link?.autoClose && !this.anim && !this.flight && this.cam.pxPerUnit < link.fitZoom * 0.4) this.closeTop();
-    if (this.cam.pxPerUnit !== this.lastZoom) {
-      this.system.setZoom(this.cam.pxPerUnit);
+    const z = this.cam.pxPerUnit;
+    for (const l of this.drawn()) if (l.group.visible) l.frame({ width: w, height: h, pixelRatio: pr, pxPerUnit: z * (this.scaleOf.get(l) ?? 1), time });
+    this.paper.frame(z / this.top.unitKm, pr);
+    // the Region lens folds away when zoomed well out of it
+    if (this.lens && !this.anim && !this.flight && z < this.levelFit(this.top).zoom * 0.4) this.closeTop();
+    const pxKm = z / this.top.unitKm;
+    if (pxKm !== this.lastZoom) {
+      this.system.setZoom(pxKm);
+      // in a yard the state's outline says nothing: the map recedes, the network stays
+      this.system.setMapShown(1 - smoothstep(250, 1200, pxKm));
       this.updateLegend();
-      this.lastZoom = this.cam.pxPerUnit;
+      this.lastZoom = pxKm;
+    }
+    const lk = this.labelSignature();
+    if (lk !== this.labelKey) {
+      this.labelKey = lk;
+      this.refreshLabels();
     }
     this.renderer.render(this.scene, this.cam.camera);
     if (this.cameraDirty) {
@@ -1744,30 +2345,46 @@ export class App {
     this.cam.target.copy(save.t);
     this.cam.update();
     const from: [number, number, number] = [save.t.x, save.t.z, save.z];
+    this.fly(ms, inOut, (e) => {
+      this.cam.target.set(from[0] + (to[0] - from[0]) * e, 0, from[1] + (to[1] - from[1]) * e);
+      this.cam.pxPerUnit = from[2] * (to[2] / from[2]) ** e;
+    }, done);
+  }
+
+  /** A camera move: `at(e)` places the camera for e from 0 to 1, eased. */
+  private fly(ms: number, ease: (u: number) => number, at: (e: number) => void, done?: () => void): void {
     if (this.reducedMotion || ms <= 0) {
-      this.cam.target.set(to[0], 0, to[1]);
-      this.cam.pxPerUnit = to[2];
+      at(1);
       this.cam.update();
       this.cameraDirty = true;
       done?.();
       return;
     }
-    this.flight = { t0: performance.now(), ms, from, to, ...(done ? { done } : {}) };
+    this.flight = { t0: performance.now(), ms, ease, at, ...(done ? { done } : {}) };
   }
 
   private advanceFlight(now: number): void {
     const f = this.flight;
     if (!f) return;
     const u = Math.min(1, (now - f.t0) / f.ms);
-    const e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
-    this.cam.target.set(f.from[0] + (f.to[0] - f.from[0]) * e, 0, f.from[1] + (f.to[1] - f.from[1]) * e);
-    this.cam.pxPerUnit = f.from[2] * (f.to[2] / f.from[2]) ** e;
+    f.at(f.ease(u));
+    this.cam.update();
     this.cameraDirty = true;
     if (u >= 1) {
       this.flight = null;
-      this.cam.update();
       f.done?.();
     }
+  }
+
+  /** Put ground point p at screen (sx, sy) with the camera at `zoom`. */
+  private placeAt(p: Vec3, sx: number, sy: number, zoom: number): void {
+    this.cam.pxPerUnit = zoom;
+    this.cam.target.set(p[0], 0, p[2]);
+    this.cam.update();
+    const g = this.cam.screenToGround(sx, sy);
+    this.cam.target.x += p[0] - g.x;
+    this.cam.target.z += p[2] - g.z;
+    this.cam.update();
   }
 
   /** Centre the view on a site at a zoom (px per km). */
@@ -1785,6 +2402,9 @@ export class App {
     this.panPixels(dx, dy);
   }
 }
+
+const inOut = (u: number): number => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
+const easeOut = (u: number): number => 1 - (1 - u) ** 3;
 
 function span(...parts: Array<Node | string>): HTMLSpanElement {
   const s = document.createElement('span');

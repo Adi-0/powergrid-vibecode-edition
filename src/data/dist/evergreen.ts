@@ -189,9 +189,10 @@ export function buildEvergreen(): { net: DistNetwork; layout: FeederLayout } {
   caps.push({ id: 'CAP-1', node: 'F5', phases: P3, kvarPerPhase: EVERGREEN.capacitor.kvarPerPhase, vRatedLN: 7200, closed: true });
 
   // ---- 3-phase spur to the grocery store
-  addNode('C1', 'primary', P3, VLN_PRI, 1500, -160);
+  // drawn to the east of lateral L5 (which leaves F3 on the same side), 160 m out as modelled
+  addNode('C1', 'primary', P3, VLN_PRI, 1640, -80);
   branches.push(seg('F3-C1', 'F3', 'C1', P3, 160, trunkLC, 'trunk'));
-  addNode('C1-480', 'primary', P3, 480 / Math.sqrt(3), 1500, -175);
+  addNode('C1-480', 'primary', P3, 480 / Math.sqrt(3), 1640, -95);
   branches.push({ kind: 'transformer', id: 'XF-C1', from: 'C1', to: 'C1-480', conn: 'YgYg', kva: 300, kvHighLL: 12.47, kvLowLL: 0.48, zpu: new Complex(0.012, 0.045) });
 
   // ---- laterals and services

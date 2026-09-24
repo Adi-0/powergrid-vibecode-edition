@@ -41,6 +41,7 @@ export const HONESTY = parseSimplifications(SIMPLIFICATIONS);
 export const LEVEL_SECTIONS: Record<LevelKind, string[]> = {
   system: ['system', 'transmission', 'slack', 'dispatch'],
   region: ['region', 'transmission', 'slack'],
+  site: ['site', 'transmission'],
   substation: ['substation', 'distribution'],
   feeder: ['feeder', 'distribution'],
   service: ['service', 'distribution'],

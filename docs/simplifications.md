@@ -32,6 +32,14 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** Each substation's buses of one voltage are one bus; its transformers of one kind are drawn as banks side by side. **Full treatment:** Breaker-and-a-half or double-bus arrangements with bus sections, drawn at the Substation level.
 - **Simplified:** A region's losses are computed by difference (generated + arriving − taken). **Full treatment:** The same number summed branch by branch; they agree because the power flow conserves power, which the tests check.
 
+## site — Inside a substation or switchyard
+
+- **Simplified:** Every station is drawn from the network data by one rule: one straight bus per voltage, each circuit on its own bay (breaker, disconnect, gantry), banks between the buses. It is not the station as built. **Full treatment:** Each station's one-line diagram and plan: breaker-and-a-half, double-bus or ring arrangements, bus sections and bus-tie breakers, from the utility's drawings.
+- **Simplified:** Breakers, disconnects and buses carry no impedance and are always closed; only whole circuits and banks can be switched. **Full treatment:** A node-breaker model, where opening one breaker can split a bus and change what connects to what.
+- **Simplified:** A plant is a block sized by its capacity beside the yard, with one step-up transformer; a solar or wind plant is really spread over square kilometres and collected at medium voltage. **Full treatment:** Each unit behind its own step-up, and collector systems for inverter-based plants.
+- **Simplified:** The demand served from a station leaves as three lines "to the distribution substations"; it is one lumped load in the model. **Full treatment:** The subtransmission network and every distribution substation it feeds (drawn for one station only: Evergreen).
+- **Simplified:** Each circuit leaves on the straight bearing to the station at its far end, as the state sheet draws it. **Full treatment:** Surveyed routes.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

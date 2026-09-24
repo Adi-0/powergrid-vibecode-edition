@@ -6,7 +6,7 @@ import type { IsoCamera } from '../render/iso';
 import type { Snapshot } from '../model/snapshot';
 import { nodeIndex, type Feeder } from '../model/feeder';
 import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type LabelSpec, type Level, type Selection } from './level';
-import { NORTH_ISO, Sketch, enIso } from './sketch';
+import { NORTH_ISO, PERSIST, Sketch, enIso } from './sketch';
 import { ANSI_A } from './feeder';
 
 /**
@@ -22,6 +22,10 @@ import { ANSI_A } from './feeder';
  *
  * Chevrons are in kilowatts: down the pole into the can, out along the secondary,
  * down each drop into each home, and along the branch circuit to the outlet.
+ *
+ * It sits inside the Feeder level, which draws the pole, the lateral, the drops and
+ * the homes in the same place: those are drawn here never folding, and the rest — the
+ * can, the secondary, the inside of the outlet home — unfolds among them.
  */
 
 const POLE = 11;
@@ -42,6 +46,8 @@ export class ServiceLevel implements Level {
   readonly sk = new Sketch(enIso);
   /** The transformer can: what the Feeder level's transformer symbol unfolds into. */
   readonly origin: Vec3;
+  /** The ground under the pole: where this level sits in the neighbourhood. */
+  readonly seat: Vec3 = enIso(0, 0, 0);
   readonly outletAt: Vec3 | null = null;
   private morphValue = 1;
   private flows: Array<{ k: number; flow: number; seg: number; sign: number }> = [];
@@ -73,9 +79,11 @@ export class ServiceLevel implements Level {
     const lv = voltageClassFor(0.24);
 
     // ---- the pole, the primary through it, and the can
-    sk.stagger = 0;
+    sk.stagger = PERSIST;
     sk.seg(enIso(0, 0, 0), enIso(0, POLE, 0), { width: PEN.medium, color: INK });
+    sk.stagger = 0;
     sk.seg(enIso(-1.2, POLE - 0.4, 0), enIso(1.2, POLE - 0.4, 0), { width: PEN.medium, color: INK }); // crossarm
+    sk.stagger = PERSIST;
     // the primary conductor along the street: from the previous pole to the next
     const k = lat.nodes.indexOf(tr.primary);
     const prev = lat.nodes[k - 1];
@@ -123,7 +131,7 @@ export class ServiceLevel implements Level {
     const idx = nodeIndex(feeder);
     const homes = L.homes.filter((h) => h.transformer === transformerId);
     for (const h of homes) {
-      sk.stagger = 0.24;
+      sk.stagger = PERSIST;
       const [e, n] = EN(h);
       const drop = net.branches.find((b) => b.to === h.id)!;
       const outlet = h.id === L.outlet.home;
@@ -131,7 +139,6 @@ export class ServiceLevel implements Level {
       const b = enIso(e + (e > 0 ? -HOUSE.se / 2 : HOUSE.se / 2), EAVE, n);
       const seg = sk.seg(a, b, { width: lv.weight, color: INK, dash: lv.dash });
       this.flows.push({ k: bidx.get(drop.id)!, flow: sk.flowSeg(a, b), seg, sign: 1 });
-      sk.stagger = 0.3;
       if (!outlet) {
         const c = sk.box(e, 0, n, HOUSE.se, HOUSE.sh, HOUSE.sn, { width: PEN.fine, color: INK });
         if (h.pvKW > 0) {
@@ -181,6 +188,7 @@ export class ServiceLevel implements Level {
     wall([x0, y0], [x1, y0], CUT, true);
     wall([x0, y0], [x0, y1], CUT, true);
     sk.target({ kind: 'dist', what: 'home', id: homeId }, [enIso(x0, 0, y0), enIso(x1, 0, y0), enIso(x1, sh, y1), enIso(x0, sh, y1)], true);
+    sk.stagger = 0.4;
     // the meter where the drop lands (on the outside of the west or east wall), then the panel inside
     const meterSide = dropEnd[0] < e ? x0 : x1;
     const meter = enIso(meterSide, 1.6, n - 1);

@@ -163,3 +163,15 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
     - A seeded twenty-year fault record on feeder 1105 runs through the protection sequence.
     - The feeder's inspector shows SAIFI, SAIDI, CAIDI and MAIFI_E, and what fuse saving trades.
   - Critique: `docs/critique/phase-9.md`. 135 tests pass; 42 screenshot views, all 38 probes OK (the other four are transition stills).
+- **After the phases: one continuous zoom** (the author's review: nodes could not be zoomed into, the Region's layers rose on double-click, the levels felt disconnected). Decision 0023.
+  - **Every node unfolds where it is, as the reader zooms.** Scroll, pinch or `+`/`−` scrub the unfold both ways; nothing is timed. At full unfold the sheet is handed to the child's own frame without anything moving; zooming out hands it back.
+  - **The levels above stay drawn around the one on the sheet**, receding in ink. A System circuit into a station ends where the station's own stroke takes it up.
+  - **A Site level for every System node:** the yard drawn from the network data — buses, bays, banks, plants, demand, capacitors — with circuits leaving on their true bearings.
+  - **The tree follows space:**
+    - System → station;
+    - Moss Landing → Unit 1 → each generator;
+    - Evergreen → its neighbourhood → the substation, or any service.
+  - **All levels share the System's orientation.** The neighbourhood grows down its streets; yards grow out of their buses.
+  - **Double-click, Enter, "Zoom inside", Esc and the breadcrumbs** fly the same zoom.
+  - **The Region's layers are now a lens** opened from a place's inspector.
+  - **Tour and harness:** the tour has a stop for "every node is a place"; the harness has views held part-way through each unfold.
