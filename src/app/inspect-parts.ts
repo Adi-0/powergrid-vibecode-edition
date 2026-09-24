@@ -1,4 +1,5 @@
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
+import { interruption, type BreakerState, type Interruption } from '../model/breakerState';
 import type { CoreGeom, Winding } from '../levels/transformer';
 import { COMPONENTS } from '../data/components';
 import { data, dataText, derived, el, qty, solver, type Prov } from '../ui/quantity';
@@ -249,5 +250,167 @@ export function transformerPartView(p: XfmrPlate, core: CoreGeom, st: XfmrState 
         sections: rows.length ? [{ title: span('Now'), rows }] : [],
       };
     }
+  }
+}
+
+// ---------------------------------------------------------------------------- the breaker
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag: string, attrs: Record<string, string | number>, parent?: Element): SVGElement {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  parent?.appendChild(e);
+  return e;
+}
+
+function svgText(parent: Element, x: number, y: number, t: string, prov: string, opts: { anchor?: string; size?: number; italic?: boolean } = {}): void {
+  const e = svgEl('text', { x, y, 'font-size': opts.size ?? 9, 'text-anchor': opts.anchor ?? 'start', fill: 'var(--ink)', 'data-prov': prov }, parent);
+  if (opts.italic) e.setAttribute('font-style', 'italic');
+  e.textContent = t;
+}
+
+const PHASE_DASH = ['', '6 3', '10 3 2 3'];
+
+/**
+ * The three phase currents through the opening, real time: the trip at 0 (drawn as the
+ * reference voltage crosses zero rising), the contacts parting, the arcs burning (the
+ * shaded span), each phase going to zero at its own current zero.
+ */
+export function interruptChart(st: BreakerState, plan: Interruption, key: string, cursorMs: number | null = null): SVGSVGElement {
+  const W = 330;
+  const H = 176;
+  const L = 36;
+  const R = 10;
+  const T = 18;
+  const Bm = 26;
+  const s = svgEl('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, 'aria-label': 'The three phase currents as the breaker opens' }) as SVGSVGElement;
+  const t0 = -5;
+  const t1 = 50;
+  const X = (t: number) => L + ((t - t0) / (t1 - t0)) * (W - L - R);
+  const Y = (v: number) => T + ((1 - v) / 2) * (H - T - Bm);
+  const w = (2 * Math.PI * COMPONENTS.fHz) / 1000;
+  // the arcs' span, lightly shaded
+  svgEl('rect', { x: X(plan.partMs), y: T, width: X(Math.max(...plan.clearMs)) - X(plan.partMs), height: H - T - Bm, fill: 'var(--ink-15)' }, s);
+  svgEl('line', { x1: L, y1: Y(0), x2: W - R, y2: Y(0), stroke: 'var(--ink-35)', 'stroke-width': 1 }, s);
+  for (const t of [0, 10, 20, 30, 40, 50]) {
+    svgEl('line', { x1: X(t), y1: H - Bm, x2: X(t), y2: H - Bm + 3, stroke: 'var(--ink-35)', 'stroke-width': 1 }, s);
+    svgText(s, X(t), H - 12, `${t}`, 'data:components.breaker.chartMs', { anchor: 'middle', size: 8.5 });
+  }
+  svgText(s, W - R, H - 2, 'ms after the trip', 'notation:formula', { anchor: 'end', size: 8.5 });
+  svgText(s, L - 4, Y(1) + 3, '+peak', 'notation:formula', { anchor: 'end', size: 8 });
+  svgText(s, L - 4, Y(-1) + 3, '−peak', 'notation:formula', { anchor: 'end', size: 8 });
+  // the traces: each phase until its zero, then flat
+  plan.thetaDeg.forEach((th, p) => {
+    const pts: string[] = [];
+    const tc = plan.clearMs[p]!;
+    for (let t = t0; t <= t1; t += 0.2) {
+      const v = t < tc ? Math.sin(w * t + (th * Math.PI) / 180) : 0;
+      pts.push(`${X(t).toFixed(1)},${Y(v).toFixed(1)}`);
+    }
+    const e = svgEl('polyline', { points: pts.join(' '), fill: 'none', stroke: 'var(--ink)', 'stroke-width': p === 0 ? 1.8 : 1.1, 'stroke-linejoin': 'round' }, s);
+    if (PHASE_DASH[p]) e.setAttribute('stroke-dasharray', PHASE_DASH[p]!);
+  });
+  // where each clears
+  plan.clearMs.forEach((tc, p) => {
+    svgEl('circle', { cx: X(tc), cy: Y(0), r: 3, fill: 'var(--ground)', stroke: 'var(--ink)', 'stroke-width': 1.3 }, s);
+    svgText(s, X(tc) + 5, Y(0) - 5 - p * 10, `${'abc'[p]} out`, 'notation:formula', { size: 8.5 });
+  });
+  // the trip and the contacts parting
+  for (const [t, label, anchor] of [
+    [0, 'trip', 'start'],
+    [plan.partMs, 'contacts part', 'end'],
+  ] as const) {
+    svgEl('line', { x1: X(t), y1: T - 4, x2: X(t), y2: H - Bm, stroke: 'var(--ink)', 'stroke-width': 1, 'stroke-dasharray': '3 2' }, s);
+    svgText(s, X(t) + (anchor === 'start' ? 3 : -3), T - 7, label, `derived:${key}.chart`, { size: 8.5, anchor });
+  }
+  if (cursorMs !== null && cursorMs >= t0 && cursorMs <= t1) svgEl('line', { x1: X(cursorMs), y1: T - 4, x2: X(cursorMs), y2: H - Bm, stroke: 'var(--ink)', 'stroke-width': 2 }, s);
+  return s;
+}
+
+export interface BreakerHead {
+  name: Node;
+  kv: number;
+  kvProv: Prov;
+}
+
+/** The breaker with nothing picked: what it carries, and how it will open. */
+export function breakerLevelView(head: BreakerHead, st: BreakerState | null, key: string, busyMs: number | null): View {
+  const kind = span('[[breaker|Circuit breaker]] · dead tank, ', dataText('SF₆', data('notation.SF6')), ' · ', el(qty(head.kv, 'kV', head.kvProv, { digits: 0, basis: 'LL' })));
+  const intro = span('Three poles, one per phase, each a sealed tank of [[sf6|sulfur hexafluoride]] gas with a pair of contacts inside; the pole nearest you is cut open. A spring-driven mechanism opens or closes all three together.');
+  if (!st) return { name: head.name, kind, intro, sections: [{ title: span('No operating point'), text: span('No solved state for this interval: nothing to report.'), rows: [] }] };
+  const t = st.t;
+  const pP = provOf(st.prov.p);
+  const pQ = provOf(st.prov.q);
+  const pV = provOf(st.prov.v);
+  const iq = derived(`t${t}.${key}.I`, pP, pQ, pV);
+  const sections: Section[] = [];
+  if (!st.closed || !st.energized) {
+    sections.push({
+      title: span(st.closed ? 'Closed, no supply' : 'Open'),
+      text: span(st.closed ? 'Its contacts are closed but the bus behind it has no source: no current.' : 'Its contacts are apart, the gap filled with gas: no current flows, and the circuit beyond is out of service. Closing it puts the circuit back and the network is solved again.'),
+      rows: [],
+    });
+    return { name: head.name, kind, intro, sections };
+  }
+  sections.push({
+    title: span('What it carries'),
+    rows: [
+      { label: span('[[current|Current]] in each pole $I$'), value: el(qty(st.amps, 'A', iq, { digits: 0 })), note: span('[[rms|RMS]]; each wave peaks at ', el(qty(Math.SQRT2 * st.amps, 'A', derived(`t${t}.${key}.Ipeak`, iq), { digits: 0, peak: true }))) },
+      { label: span('[[real-power|Real power]] out onto the circuit'), value: el(qty(st.p, 'MW', pP, { digits: 1, phases: '3φ' })), note: span(el(qty(st.q, 'MVAr', pQ, { digits: 1, phases: '3φ' }))) },
+      { label: span('Bus voltage'), value: el(qty(st.vkV, 'kV', derived(`t${t}.${key}.V`, pV), { digits: 1, basis: 'LL' })) },
+    ],
+  });
+  const plan = interruption(st);
+  const B = COMPONENTS.breaker;
+  const chart = document.createElement('div');
+  chart.className = 'chart';
+  chart.appendChild(interruptChart(st, plan, `t${t}.${key}`, busyMs));
+  const ck = (p: number) => derived(`t${t}.${key}.clear.${'abc'[p]}`, iq, provOf(st.prov.va), data('components.breaker'));
+  sections.push({
+    title: span('How it opens'),
+    text: span(
+      'A trip releases the opening spring. The moving contact slides off the fixed one, but the current does not stop: it jumps the widening gap as an [[arc]]. The moving puffer squeezes the gas and blows it through the nozzle across the arc. Alternating current passes through zero twice a cycle; at a [[current-zero|zero]] the arc goes out, and the gas, cooled and blown clean, holds off the voltage that returns. Each phase clears at its own zero:',
+      chart,
+      span('Phase $a$ solid (its pole is the one cut open), $b$ dashed, $c$ dash-dot; shaded while the arcs burn.'),
+    ),
+    rows: [
+      { label: span('Trip to contacts parting'), value: el(qty(B.partMs, 'ms', data('components.breaker.partMs'), { digits: 0 })), note: span('trip coil, latch, spring (typical)') },
+      ...[0, 1, 2].map((p) => ({ label: span(`Phase ${'abc'[p]} clears`), value: el(qty(plan.clearMs[p]!, 'ms', ck(p), { digits: 1 })), note: p === 0 ? span('at its first current zero after the shortest arc the gas can put out, ', el(qty(B.minArcMs, 'ms', data('components.breaker.minArcMs'), { digits: 0 }))) : undefined })),
+      { label: span('Its rated [[interrupting-time|interrupting time]]'), value: el(qty((B.ratedCycles * 1000) / COMPONENTS.fHz, 'ms', derived(`${key}.ratedMs`, data('components.breaker.ratedCycles'), data('components.fHz')), { digits: 1 })), note: span(el(qty(B.ratedCycles, 'cycles', data('components.breaker.ratedCycles'), { digits: 0 })), ' of ', el(qty(COMPONENTS.fHz, 'Hz', data('components.fHz'), { digits: 0 }))) },
+    ].map((r) => (r.note ? r : { label: r.label, value: r.value })),
+  });
+  return { name: head.name, kind, intro, sections };
+}
+
+/** A part picked inside the breaker. */
+export function breakerPartView(head: BreakerHead, st: BreakerState | null, key: string, what: string): View {
+  const kind = span('Part of ', head.name);
+  const on = !!st && st.closed && st.energized;
+  const iq = st ? derived(`t${st.t}.${key}.I`, provOf(st.prov.p), provOf(st.prov.q), provOf(st.prov.v)) : null;
+  const amps = on && st && iq ? [{ title: span('Now'), rows: [{ label: span('Current through it'), value: el(qty(st.amps, 'A', iq, { digits: 0 })) }] }] : [];
+  switch (what) {
+    case 'fixed':
+      return { name: 'Fixed contact', kind, intro: span('Spring-loaded fingers grip the moving contact when closed and carry the load current. In their middle, the arcing pin: the last point of contact as the breaker opens, so the arc burns there, on tips made to survive it, and not on the fingers.'), sections: amps };
+    case 'moving':
+      return { name: 'Moving contact and nozzle', kind, intro: span('A tube that slides off the arcing pin. The nozzle round its mouth, of an insulating plastic, shapes the blast of gas so it flows along the arc and carries its heat away.'), sections: amps };
+    case 'rod':
+      return { name: 'Operating rod', kind, intro: span('An insulating rod from the crank at the tank’s end to the moving contact: the mechanism outside, at earth potential, moves contacts that are at line voltage.'), sections: [] };
+    case 'ct':
+      return {
+        name: 'Current transformers',
+        kind,
+        intro: span('Rings round the conductor at the foot of each bushing: the line current passes through them as a single turn, and their own winding of many turns gives a small current in proportion. That is what the protective relays measure: they decide when to trip this breaker.'),
+        sections: amps,
+      };
+    case 'mechanism':
+      return { name: 'Operating mechanism', kind, intro: span('A cabinet of springs, latches and coils. A motor keeps the closing spring charged; closing also charges the opening spring. A trip signal energizes the trip coil, which releases the latch, and the opening spring drives all three poles apart through the gang shaft, in a few hundredths of a second.'), sections: [] };
+    default:
+      return {
+        name: 'Tank and gas',
+        kind,
+        intro: span('A steel tank at earth potential, filled with [[sf6|sulfur hexafluoride]] under pressure: a gas that insulates several times better than air and recovers from an arc very fast, which is what lets a gap of a few centimetres hold off hundreds of kilovolts moments after the current has stopped.'),
+        sections: amps,
+      };
   }
 }

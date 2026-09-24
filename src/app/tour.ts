@@ -105,6 +105,25 @@ export const STOPS: Stop[] = [
     },
   },
   {
+    title: 'Inside a transformer',
+    text: 'Zoom into the substation’s [[transformer]] and it opens. The arrows in the steel [[core]] are its [[flux]], alternating with the voltage, one phase per limb. Every [[turn]] of the [[winding|windings]] round a limb gets the same voltage from it, so the windings’ voltages are in the ratio of their turns, drawn to scale. What the windings lose as heat, the oil carries up and out to the radiators: the chevrons.',
+    go: async (app) => {
+      await reset(app);
+      await app.navigate(['bank']);
+      await app.solved();
+    },
+  },
+  {
+    title: 'A breaker opens',
+    text: 'One of the three circuits from Metcalf, at its [[breaker]], its nearest pole cut open. It is opening now, many times slower than life: the contacts part, the current goes on across the gap as an [[arc]], gas is blown through the nozzle, and at a [[current-zero|current zero]] the arc goes out. The chart shows each phase going out at its own zero. Then the network is solved again without the circuit, and the other two carry its share.',
+    go: async (app) => {
+      await reset(app);
+      await app.navigate(['breaker60']);
+      await app.solved();
+      app.openTopBreaker();
+    },
+  },
+  {
     title: 'To the wall outlet',
     text: 'One pole-top transformer, its homes, and one wall [[outlet]] with a hair dryer plugged in. The inspector traces its voltage all the way back to the transmission bus; the working shows the last few volts by Ohm’s law.',
     go: async (app) => {

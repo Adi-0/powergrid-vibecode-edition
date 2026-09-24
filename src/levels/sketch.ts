@@ -95,7 +95,7 @@ export class Sketch {
    * (radians, about the axis, 0 = up, positive toward north) to show what is inside;
    * `inner` is the bore radius the cut exposes. Returns the silhouette points for picking.
    */
-  cylinder(e0: number, e1: number, h: number, n: number, r: number, s: LineStyle = { width: PEN.outline, color: INK }, opts: { cut?: [number, number]; inner?: number; sides?: number } = {}): Vec3[] {
+  cylinder(e0: number, e1: number, h: number, n: number, r: number, s: LineStyle = { width: PEN.outline, color: INK }, opts: { cut?: [number, number]; inner?: number; sides?: number; capped?: boolean } = {}): Vec3[] {
     const N = opts.sides ?? 36;
     const pt = (e: number, t: number, rr = r): Vec3 => this.plan(e, h + rr * Math.cos(t), n + rr * Math.sin(t));
     const inCut = (t: number) => {
@@ -111,10 +111,11 @@ export class Sketch {
       const tm = (ts[i]! + ts[i + 1]!) / 2;
       if (inCut(tm)) continue;
       this.faces.quad(pt(e0, ts[i]!), pt(e1, ts[i]!), pt(e1, ts[i + 1]!), pt(e0, ts[i + 1]!), f);
-      const ri = opts.cut ? (opts.inner ?? 0) : 0;
+      // a closed vessel cut open keeps its ends whole but for the cut; a hollow one (a stator) shows its bore
+      const ri = opts.cut && !opts.capped ? (opts.inner ?? 0) : 0;
       for (const e of [e0, e1]) this.faces.quad(pt(e, ts[i]!, ri), pt(e, ts[i]!), pt(e, ts[i + 1]!), pt(e, ts[i + 1]!, ri), f);
     }
-    if (opts.cut && opts.inner)
+    if (opts.cut && opts.inner && !opts.capped)
       for (let i = 0; i < N; i++) if (!inCut((ts[i]! + ts[i + 1]!) / 2)) this.faces.quad(pt(e0, ts[i]!, opts.inner), pt(e1, ts[i]!, opts.inner), pt(e1, ts[i + 1]!, opts.inner), pt(e0, ts[i + 1]!, opts.inner), f);
     // end circles (outer arcs outside the cut; the bore where it shows)
     for (let i = 0; i < N; i++) {
@@ -123,7 +124,13 @@ export class Sketch {
       for (const e of [e0, e1]) this.seg(pt(e, ts[i]!), pt(e, ts[i + 1]!), s);
     }
     if (opts.cut && opts.inner) {
-      for (let i = 0; i < N; i++) if (!inCut((ts[i]! + ts[i + 1]!) / 2)) for (const e of [e0, e1]) this.seg(pt(e, ts[i]!, opts.inner), pt(e, ts[i + 1]!, opts.inner), { ...s, width: s.width * 0.8 });
+      if (!opts.capped)
+        for (let i = 0; i < N; i++) if (!inCut((ts[i]! + ts[i + 1]!) / 2)) for (const e of [e0, e1]) this.seg(pt(e, ts[i]!, opts.inner), pt(e, ts[i + 1]!, opts.inner), { ...s, width: s.width * 0.8 });
+      else
+        for (const e of [e0, e1]) {
+          // the ends' cut edges: from the rim in to the axis along both sides of the cut
+          for (const t of opts.cut) this.seg(pt(e, t), pt(e, t, 0), s);
+        }
       for (const t of opts.cut) {
         // the cut's faces: the shell's thickness along both edges, hatched as cut
         // material is in a section drawing (thin lines at 45°)

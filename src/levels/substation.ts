@@ -10,6 +10,7 @@ import { FLOW_SCALES, chevronSizeFor, chevronSpeedFor, type FrameInfo, type Labe
 import { NORTH_ISO, PERSIST, Sketch, enIso as en } from './sketch';
 import { EV_EXIT_N, evergreenIn, evergreenRiser } from './feeder';
 import { breaker, disconnect, gantry, kvClass, post, tower, transformer, wire } from './kit';
+import { cbKey, type BayBreaker } from './site';
 
 /**
  * The Substation level: the Evergreen 60/12 kV substation as a yard, in metres.
@@ -65,6 +66,8 @@ export class SubstationLevel implements Level {
   private feederFlows: number[] = [];
   private busSegs: number[] = [];
   private bankGlyphs: [number, number] = [0, 0];
+  /** The 60 kV circuits' breakers as drawn (each opens into a level of its own). */
+  readonly bayBreakers: Array<BayBreaker & { branch: number }> = [];
   /** The bank as drawn here: hidden while its own level (the cut-open tank) is open. */
   private bankDraw = { lines: [0, 0] as [number, number], faces: [0, 0] as [number, number] };
   private snapshot: Snapshot | null = null;
@@ -131,7 +134,10 @@ export class SubstationLevel implements Level {
       // inside the fence
       sk.stagger = 0.08;
       const D3 = disconnect(sk, 31.5, 29.1, pn, k);
+      const l0 = sk.lines.count;
+      const f0 = sk.faces.vertexCount;
       const B = breaker(sk, 27, 24.2, pn, k);
+      this.bayBreakers.push({ branch: x.branch, e0: 27, e1: 24.2, ns: pn, k, busEnd: 1, lines: [l0, sk.lines.count - l0], faces: [f0, sk.faces.vertexCount - f0] });
       const D1 = disconnect(sk, 22.1, 19.7, pn, k);
       for (let p = 0; p < 3; p++) {
         segs.push(wire(sk, gat[p]!, D3[p]![0], wp), wire(sk, D3[p]![1], B[p]![0], wp), wire(sk, B[p]![1], D1[p]![0], wp), wire(sk, D1[p]![1], [tubes[p]!, k.busH, pn[p]!], wp));
@@ -279,6 +285,12 @@ export class SubstationLevel implements Level {
 
   /** The bank's own level draws it (cut open) while it is open. */
   yieldTo(key: string, m: number): void {
+    const cb = this.bayBreakers.find((b) => key === cbKey('EVERGREEN', this.grid.branches[b.branch]!.id));
+    if (cb) {
+      for (let i = cb.lines[0]; i < cb.lines[0] + cb.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      this.sk.faces.setHidden(cb.faces[0], cb.faces[1], m > 0, 0.08);
+      return;
+    }
     if (key !== XF_BANK_KEY) return;
     const hide = m > 0;
     const d = this.bankDraw;

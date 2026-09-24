@@ -189,3 +189,11 @@ Current phase: **all nine phases done** — see the known weaknesses in each pha
   - **The inspector explains it in four steps** with live numbers, and each part picked says what it is for.
   - **A transformer math panel** (currents from S = V·I*, their ratio against the turns ratio, the loss as P_H + P_L and as 3I²R). It is in the arithmetic-consistency test for every transmission bank and for Evergreen.
   - **Honesty, glossary and key:** a new "transformer" section in the honesty panel; glossary terms core, winding, turn, flux, turns ratio, conservator, radiator, tertiary and eddy current; key rows for the cutaway.
+  - **A Breaker level at every circuit's bay,** its nearest pole cut open: fixed contact and arcing pin, moving contact and nozzle, puffer, operating rod. The current transformers and operating mechanism were added to the kit for every yard.
+    - "Open the breaker" plays the real sequence, slowed by a stated factor: main contacts part, then the arcing contacts; the arc burns, gas is blown through the nozzle, and the arc goes out at each phase's current zero.
+    - Then the network is solved without the circuit. Closing plays the reverse.
+    - A chart shows all three phase currents through the opening, with a cursor that follows it.
+  - **A breaker math panel:** current, peak, current angle, and each phase's clearing time from the current zeros. It is in the arithmetic-consistency test for every line end.
+  - **Fix: the state map's land surface could blank a deep view.** It is no longer drawn once the map has receded.
+  - **Guided route:** two new stops, "Inside a transformer" and "A breaker opens".
+  - Critique: `docs/critique/components.md`.

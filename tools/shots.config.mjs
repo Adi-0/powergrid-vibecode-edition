@@ -683,6 +683,92 @@ export default [
     probe: both(provenance, mathShown, mathArithmetic),
   },
   {
+    name: 'cb-unfold',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 600,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['site']));
+      await page.waitForFunction(() => window.__app.level === 'site' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        a.inspector.hide();
+        const keys = a.keysFor('breaker');
+        a.holdBand(keys[keys.length - 1], 0.5);
+      });
+      await page.waitForTimeout(800);
+    },
+    probe: provenance,
+  },
+  {
+    name: 'cb',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['breaker']));
+      await page.waitForFunction(() => window.__app.level === 'breaker' && !window.__app.transitioning, null, { timeout: 60000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'cb-opening',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 0,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['breaker']));
+      await page.waitForFunction(() => window.__app.level === 'breaker' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => {
+        const a = window.__app;
+        const l = a.top;
+        a.operateBreaker(l, a.levelPortal.get(l).sel.index, 'open');
+      });
+      // the contacts have parted and the arcs burn (about 28 ms into the sequence, shown slowed)
+      await page.waitForFunction(() => (window.__app.top.sequenceMs ?? 0) > 27.5, null, { timeout: 30000 });
+    },
+    probe: provenance,
+  },
+  {
+    name: 'cb-math',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1000,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['breaker']));
+      await page.waitForFunction(() => window.__app.level === 'breaker' && !window.__app.transitioning, null, { timeout: 60000 });
+      await page.evaluate(() => window.__app.inspector.toggleWorking(true));
+    },
+    probe: both(provenance, mathShown, mathArithmetic),
+  },
+  {
+    name: 'cb60',
+    url: '',
+    width: 1440,
+    height: 900,
+    timeout: 150000,
+    settle: 1200,
+    before: async (page) => {
+      await waitSnap(page);
+      await page.evaluate(() => window.__app.navigate(['breaker60']));
+      await page.waitForFunction(() => window.__app.level === 'breaker' && !window.__app.transitioning, null, { timeout: 90000 });
+      await waitSolved(page);
+    },
+    probe: provenance,
+  },
+  {
     name: 'region-bay-fold',
     url: '',
     width: 1440,

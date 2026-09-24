@@ -50,6 +50,13 @@ Format: one `## view-id — Title` section per view or topic. Each item is a bul
 - **Simplified:** The oil carries the loss along one idealised loop (up the ducts, over the top, down the radiators, back along the bottom); no temperature is computed. **Full treatment:** A thermal model of top-oil and hot-spot temperatures (the IEEE C57.91 loading guide), fans and pumps staging in, and the insulation's loss of life.
 - **Simplified:** At Evergreen the three phases are close to balanced but not exactly (the feeder model is unbalanced); the currents shown come from the three-phase power, the balanced equivalent. **Full treatment:** Each phase's current from the unbalanced solution.
 
+## breaker — Inside a circuit breaker
+
+- **Simplified:** The timings (contacts moving, parting, fully open; the shortest arc that can be put out; closing) are typical of a three-cycle high-voltage SF₆ breaker, not this breaker's test record; the drawing's proportions and its contact stroke are schematic. **Full treatment:** The manufacturer's travel curve and timing, and the design's real dimensions.
+- **Simplified:** Each phase is drawn clearing at its own current zero, as if the other two were unaffected; the arc's own voltage and the recovery voltage across the gap after each zero are not modelled. **Full treatment:** An electromagnetic transient study: the arc as a nonlinear resistance, the first pole to clear, the recovery voltage and its rate of rise, and whether the gap withstands it.
+- **Simplified:** Opening this breaker takes the whole circuit out of service: the model has no state in which a line is open at one end and energized from the other. **Full treatment:** A node–breaker model, in which one end can open while the line stays charged from the far end.
+- **Simplified:** The chart's trip is drawn arriving as the reference voltage crosses zero, rising; a real trip can arrive at any point on the wave, which moves every clearing time by up to half a cycle. **Full treatment:** The instant the relay's decision arrives, from the protection's own timing.
+
 ## substation — The Evergreen substation
 
 - **Simplified:** The transmission model carries everything on the Evergreen 60 kV bus as one load; the substation drawn here is one part of it, and the rest goes on at 60 kV to substations not drawn. **Full treatment:** Every 60 kV line and distribution substation in the area modelled.

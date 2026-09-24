@@ -99,29 +99,120 @@ export function disconnect(sk: Sketch, eA: number, eB: number, ns: number[], k: 
 }
 
 /**
- * A dead-tank circuit breaker per phase: a horizontal tank on two legs, its two
- * bushings rising in a V to the terminals. `e0`, `e1`: the terminals along east.
+ * A dead-tank circuit breaker: per phase a horizontal tank of SF6 gas on two legs, its
+ * two bushings rising in a V to the terminals, each bushing standing on the pod of its
+ * current transformers; at the high-east end of each tank the crank that works its
+ * contacts, all three linked by a gang shaft under the tanks to the operating
+ * mechanism's cabinet beyond the last phase. `e0`, `e1`: the terminals along east.
+ * `cut`: the index (in `ns`) of a pole drawn with its tank cut open toward the viewer.
  */
-export function breaker(sk: Sketch, e0: number, e1: number, ns: number[], k: KvClass): Array<[P3, P3]> {
+export function breaker(sk: Sketch, e0: number, e1: number, ns: number[], k: KvClass, cut = -1): Array<[P3, P3]> {
+  const g = breakerGeom(e0, e1, k);
   const { f, hT } = k;
+  const { lo, hi, r, hTank, t0, t1 } = g;
   const out: Array<[P3, P3]> = [];
+  ns.forEach((n, i) => {
+    for (const e of [t0 + 0.3 * f, t1 - 0.3 * f]) sk.seg(sk.plan(e, 0, n), sk.plan(e, hTank - r, n), thin);
+    if (i === cut) sk.cylinder(t0, t1, hTank, n, r, { width: PEN.outline, color: INK }, { cut: [-Math.PI / 2 - 0.55, 0.75], inner: r * 0.93, capped: true });
+    else sk.cylinder(t0, t1, hTank, n, r, { width: PEN.outline, color: INK });
+    const ends: Array<[readonly [number, number], P3]> = [
+      [g.base0, [lo, hT, n]],
+      [g.base1, [hi, hT, n]],
+    ];
+    for (const [base, top] of ends) {
+      const b: P3 = [base[0], base[1], n];
+      const d = [top[0] - b[0], top[1] - b[1], top[2] - b[2]];
+      const L = Math.hypot(d[0]!, d[1]!, d[2]!);
+      const podEnd: P3 = [b[0] + (d[0]! / L) * g.pod, b[1] + (d[1]! / L) * g.pod, b[2] + (d[2]! / L) * g.pod];
+      acyl(sk, b, podEnd, g.podR, fine);
+      insulator(sk, podEnd, top, 0.24 * f);
+    }
+    // the crank at the tank's end, its link down to the gang shaft
+    sk.box(g.crankE, hTank - 0.18 * f, n, 0.22 * f, 0.36 * f, 0.22 * f, { width: PEN.fine, color: INK });
+    sk.seg(sk.plan(g.crankE, g.shaftH, n), sk.plan(g.crankE, hTank - 0.18 * f, n), thin);
+    out.push([
+      [e0, hT, n],
+      [e1, hT, n],
+    ]);
+  });
+  // the gang shaft, and the operating mechanism's cabinet beyond the last phase
+  const nm = Math.max(...ns) + g.cabN;
+  sk.seg(sk.plan(g.crankE, g.shaftH, Math.min(...ns)), sk.plan(g.crankE, g.shaftH, nm), { width: PEN.medium, color: INK });
+  sk.box(g.crankE, 0, nm + g.cab.sn / 2, g.cab.se, g.cab.sh, g.cab.sn, { width: PEN.fine, color: INK });
+  return out;
+}
+
+/** A breaker's dimensions along its axis (east), for the kit and for the level that opens one. */
+export function breakerGeom(e0: number, e1: number, k: KvClass) {
+  const { f } = k;
   const lo = Math.min(e0, e1);
   const hi = Math.max(e0, e1);
   const r = 0.42 * f;
   const hTank = 1.3 * f + r;
   const t0 = lo + 0.55 * f;
   const t1 = hi - 0.55 * f;
-  for (const n of ns) {
-    for (const e of [t0 + 0.3 * f, t1 - 0.3 * f]) sk.seg(sk.plan(e, 0, n), sk.plan(e, hTank - r, n), thin);
-    sk.cylinder(t0, t1, hTank, n, r, { width: PEN.outline, color: INK });
-    insulator(sk, [t0 + 0.35 * f, hTank + r * 0.8, n], [lo, hT, n], 0.24 * f);
-    insulator(sk, [t1 - 0.35 * f, hTank + r * 0.8, n], [hi, hT, n], 0.24 * f);
-    out.push([
-      [e0, hT, n],
-      [e1, hT, n],
-    ]);
+  return {
+    lo,
+    hi,
+    r,
+    hTank,
+    t0,
+    t1,
+    /** Where each bushing leaves the tank (east, height). */
+    base0: [t0 + 0.35 * f, hTank + 0.8 * r] as const,
+    base1: [t1 - 0.35 * f, hTank + 0.8 * r] as const,
+    /** The current transformers' pod: length along the bushing, radius. */
+    pod: 0.5 * f,
+    podR: 0.2 * f,
+    crankE: t1 + 0.12 * f,
+    shaftH: hTank - r - 0.35 * f,
+    /** The mechanism cabinet: how far beyond the last phase, and its size. */
+    cabN: 0.45 * k.sp + 0.3 * f,
+    cab: { se: 0.9 * f, sh: 1.6 * f, sn: 0.6 * f },
+  };
+}
+
+/**
+ * A cylinder along any axis, from plan point `a` to `b`: end circles, the two
+ * silhouettes the camera sees, faces for hidden-line removal.
+ */
+export function acyl(sk: Sketch, a: P3, b: P3, r: number, s: { width: number; color: string } = fine, N = 20): void {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const L = Math.hypot(d[0]!, d[1]!, d[2]!) || 1;
+  const dz = d.map((x) => x / L) as [number, number, number];
+  const helper: [number, number, number] = Math.abs(dz[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const cross = (p: number[], q: number[]): [number, number, number] => [p[1]! * q[2]! - p[2]! * q[1]!, p[2]! * q[0]! - p[0]! * q[2]!, p[0]! * q[1]! - p[1]! * q[0]!];
+  let u = cross(dz, helper);
+  const ul = Math.hypot(...u);
+  u = u.map((x) => x / ul) as [number, number, number];
+  const w = cross(dz, u);
+  const ring = (p: P3, t: number): Vec3 => sk.plan(p[0] + r * (Math.cos(t) * u[0] + Math.sin(t) * w[0]), p[1] + r * (Math.cos(t) * u[1] + Math.sin(t) * w[1]), p[2] + r * (Math.cos(t) * u[2] + Math.sin(t) * w[2]));
+  const fs = { collapse: sk.anchor, stagger: sk.stagger };
+  for (let i = 0; i < N; i++) {
+    const t0 = (2 * Math.PI * i) / N;
+    const t1 = (2 * Math.PI * (i + 1)) / N;
+    sk.faces.quad(ring(a, t0), ring(b, t0), ring(b, t1), ring(a, t1), fs);
+    sk.faces.tri(sk.plan(...a), ring(a, t0), ring(a, t1), fs);
+    sk.faces.tri(sk.plan(...b), ring(b, t0), ring(b, t1), fs);
+    sk.seg(ring(a, t0), ring(a, t1), s);
+    sk.seg(ring(b, t0), ring(b, t1), s);
   }
-  return out;
+  const [ax, ay] = projectToView(...sk.plan(...a));
+  const [bx, by] = projectToView(...sk.plan(...b));
+  const l = Math.hypot(bx - ax, by - ay);
+  if (l < 1e-6) return;
+  let tMin = 0;
+  let tMax = 0;
+  let dMin = Infinity;
+  let dMax = -Infinity;
+  for (let i = 0; i < 180; i++) {
+    const t = (2 * Math.PI * i) / 180;
+    const [px, py] = projectToView(...ring(a, t));
+    const dd = ((px - ax) * -(by - ay) + (py - ay) * (bx - ax)) / l;
+    if (dd < dMin) (dMin = dd), (tMin = t);
+    if (dd > dMax) (dMax = dd), (tMax = t);
+  }
+  for (const t of [tMin, tMax]) sk.seg(ring(a, t), ring(b, t), s);
 }
 
 /**

@@ -428,6 +428,11 @@ export class SystemLevel implements Level {
   setMapShown(v: number): void {
     this.mapLines.opacity = v;
     this.faces.opacity = v;
+    // the land's surface too: once gone it is not drawn at all. Seen from a frame a
+    // thousand times finer (a yard, a piece of equipment), its one rectangle is
+    // millions of units across and its depth, clipped at that size, can land in front
+    // of the drawing and cover it.
+    for (const r of this.surfaces) for (const m of r.meshes) m.visible = v > 0;
   }
 
   /** A site's own level unfolding in its place: its symbol gives way (0 … 1). */

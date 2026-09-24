@@ -174,6 +174,16 @@ function transformerRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(18, [{ pts: [[6, 16], [20, 4], [48, 4]], w: 0.6, color: INK_35 }, { pts: [[6, 16], [34, 16], [48, 4]], w: 0.6, color: INK_35 }]), 'Cut away: the half toward you, in light outline'));
 }
 
+/** The Breaker level: a breaker's pole cut open. */
+function breakerRows(g: HTMLElement): void {
+  g.appendChild(row(drawSample(18, [{ pts: [[6, 9], [14, 5], [20, 13], [27, 5], [34, 13], [40, 5], [48, 9]], w: 2.2 }]), 'An [[arc]], while the contacts part: the current going on across the gap'));
+  g.appendChild(row(drawSample(14, [{ pts: [[8, 7], [44, 7]], w: 1.4 }, { pts: [[14, 3], [8, 7], [14, 11]], w: 1.4 }]), 'Gas blown through the nozzle across the arc'));
+  g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 2.6, color: INK_60 }]), 'Insulating operating rod'));
+  const t = document.createElement('span');
+  t.append(rich('The opening plays in its real order, '), el(qty(COMPONENTS.slowdown, '', data('components.slowdown'), { digits: 0 })), document.createTextNode(' times slower'));
+  g.appendChild(row(drawSample(18, [{ pts: [[4, 9], [16, 3], [28, 15], [40, 3], [50, 9]], w: 1 }]), t));
+}
+
 /** The Feeder level: poles, devices, pole-top transformers, homes. */
 function feederRows(g: HTMLElement): void {
   g.appendChild(row(drawSample(14, [{ pts: [[4, 7], [50, 7]], w: 1.8 }]), 'Three-phase trunk; thinner: a single-phase lateral'));
@@ -307,6 +317,8 @@ export class Legend {
       machineRows(g2);
     } else if (s.level === 'transformer') {
       transformerRows(g2);
+    } else if (s.level === 'breaker') {
+      breakerRows(g2);
     } else {
     g2.appendChild(row(symbolSample(substationSymbol(7), 1.4), '[[substation]]'));
     const s500 = symbolSample(substationSymbol(9), 2);
@@ -335,7 +347,9 @@ export class Legend {
           ? `Chevrons show where power goes, whatever its form — fuel, heat, steam, shaft work, electricity; size and speed ∝ ${fs.unit} (`
           : s.level === 'transformer'
             ? `Chevrons carry heat: the windings’ [[losses]], taken by the oil to the radiators; size and speed ∝ ${fs.unit} (`
-            : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
+            : s.level === 'breaker'
+              ? `Chevrons: [[real-power|real power]] through the pole cut open, one phase of the three; size and speed ∝ ${fs.unit} (`
+              : `Chevrons point the way [[real-power|real power]] flows; size and speed ∝ ${fs.unit} (`,
       ),
     );
     fn.append(el(qty(fs.perPx, fs.unit, data(`style.flowScale.${s.level}.perPx`), { digits: fs.perPx < 10 ? 1 : 0 })), document.createTextNode(' per px on this sheet).'));

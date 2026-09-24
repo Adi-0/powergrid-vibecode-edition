@@ -13,6 +13,8 @@ import { breaker, disconnect, gantry, insulator, kvClass, post, tower, transform
 
 /** The portal key of a transformer bank's own level (by its branch id). */
 export const xfKey = (branchId: string): string => `xf:${branchId}`;
+/** The portal key of a circuit's breaker at a site (by the site and the branch id). */
+export const cbKey = (siteId: string, branchId: string): string => `cb:${siteId}:${branchId}`;
 
 /**
  * The Site level: the inside of any substation or plant switchyard on the System
@@ -58,6 +60,19 @@ interface BayDraw {
   path: P3[];
   segs: number[];
   reach: number;
+  /** The bay's breaker as drawn: where it stands, and its strokes. */
+  cb: BayBreaker;
+}
+
+/** A bay's breaker: its place (for the level that opens it) and its strokes here (hidden while that level is open). */
+export interface BayBreaker {
+  e0: number;
+  e1: number;
+  ns: number[];
+  k: KvClass;
+  busEnd: 0 | 1;
+  lines: [number, number];
+  faces: [number, number];
 }
 
 interface Corridor {
@@ -89,6 +104,8 @@ export class SiteLevel implements Level {
   private banks: Array<{ k: number; segs: number[]; flows: number[] }> = [];
   private busSegs: Array<{ bus: GridBus; segs: number[]; at: Vec3 }> = [];
   private corridors = new Map<string, Corridor>();
+  /** The circuits' bay breakers as drawn (each opens into a level of its own). */
+  readonly bayBreakers: Array<BayBreaker & { branch: number }> = [];
   /** The transformer banks as drawn: where each tank stands, and its strokes (hidden while its own level is open). */
   readonly bankBodies: Array<{ branch: number; body: XfBody; lines: [number, number]; faces: [number, number]; hvKV: number; lvKV: number }> = [];
   /** Moss Landing Unit 1's footprint here: hidden while its own level is open. */
@@ -274,7 +291,10 @@ export class SiteLevel implements Level {
     sk.stagger = 0.12;
     sk.anchor = P(0, k.busH, n);
     const D1 = disconnect(sk, s * d.d1a, s * d.d1b, ns, k);
+    const l0 = sk.lines.count;
+    const f0 = sk.faces.vertexCount;
     const B = breaker(sk, s * d.b0, s * d.b1, ns, k);
+    const cb = { e0: s * d.b0, e1: s * d.b1, ns, k, busEnd: 0 as const, lines: [l0, sk.lines.count - l0] as [number, number], faces: [f0, sk.faces.vertexCount - f0] as [number, number] };
     const second = opts.second ?? true;
     const D3 = second ? disconnect(sk, s * d.d3a, s * d.d3b, ns, k) : null;
     let G: P3[] | null = null;
@@ -303,7 +323,7 @@ export class SiteLevel implements Level {
       ends.push(chain[chain.length - 1]!);
       if (p === 1) path.push(...chain);
     }
-    return { ends, path, segs, reach: G ? d.ge : D3 ? d.d3b : d.b1 };
+    return { ends, path, segs, reach: G ? d.ge : D3 ? d.d3b : d.b1, cb };
   }
 
   /** One bay on a section's bus, and what it serves. */
@@ -313,6 +333,7 @@ export class SiteLevel implements Level {
     const flowsOn = (path: P3[]) => path.slice(1).map((q, i) => sk.flowSeg(P(...path[i]!), P(...q)));
     if (it.kind === 'line') {
       const core = this.bayCore(sec, s, n, { gantry: true });
+      this.bayBreakers.push({ ...core.cb, branch: it.exit.branch });
       const line = { k: it.exit.branch, segs: core.segs, outer: new Set<number>(), flows: flowsOn(core.path), out: (it.br.from === sec.bus ? 1 : -1) as 1 | -1, mark: P(...core.ends[1]!) };
       this.lines.push(line);
       sk.target({ kind: 'branch', index: it.exit.branch }, core.path.map((q) => P(...q)));
@@ -589,6 +610,12 @@ export class SiteLevel implements Level {
   }
 
   yieldTo(key: string, m: number): void {
+    const cb = this.bayBreakers.find((b) => key === cbKey(this.siteId, this.grid.branches[b.branch]!.id));
+    if (cb) {
+      for (let i = cb.lines[0]; i < cb.lines[0] + cb.lines[1]; i++) this.sk.lines.setDim(i, m > 0 ? 1 : 0);
+      this.sk.faces.setHidden(cb.faces[0], cb.faces[1], m > 0, 0.12);
+      return;
+    }
     const bank = this.bankBodies.find((b) => key === xfKey(this.grid.branches[b.branch]!.id));
     if (bank) {
       // the bank's own level draws it, cut open

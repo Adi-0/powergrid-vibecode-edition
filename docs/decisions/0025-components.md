@@ -72,6 +72,55 @@ the inside of a piece of equipment, working, driven by the solved state.
   and the section. Evergreen's bank now has its phases along its long side. The tap
   changer's motor drive is a cabinet on the low-voltage side.
 
+- *A Breaker level at every circuit's bay* (in every yard, and the three 60 kV circuits
+  into Evergreen). It opens in place like the transformer. The pole nearest the viewer
+  has its tank cut open; the other two stand whole. Along the axis:
+  - the conductor down from the first bushing to the fixed contact: fingers round an
+    arcing pin;
+  - the moving contact, a nozzle round its mouth, and the puffer cylinder behind it,
+    all drawn on a group of their own that slides along the axis;
+  - the insulating operating rod out to the crank at the tank's end.
+
+  Outside: each bushing stands on the pod of its current transformers (what protection
+  measures), and a gang shaft runs from the cranks to the operating mechanism's cabinet.
+  These were added to the kit, so every yard shows them too.
+- *Opening is the perturbation, played in its real order.* "Open the breaker" runs the
+  sequence 120 times slower (stated in the key):
+  1. the trip releases the spring;
+  2. the main contacts part, then the arcing contacts, and an arc strikes across the
+     widening gap;
+  3. the gas blast shows in the nozzle;
+  4. the arc goes out at the phase's current zero, and the contacts run on to fully open.
+
+  The timings are typical values for the three-cycle class (data, marked as estimates).
+  When the contacts are home, the network is solved again without the circuit: the
+  sequence is a depiction of real timings, and the consequence is the real re-solve.
+  Closing plays the reverse, then restores the circuit. A sequence left behind (the
+  reader zooms away, or the guided route moves on) is dropped, not acted on. With
+  reduced motion the re-solve happens at once.
+- *The chart shows what the drawing cannot.* It plots all three phase currents, at the
+  solved magnitude and angle, through the opening, with the trip, the contacts parting,
+  the arcs (shaded), and each phase clearing at its own first zero after the shortest
+  arc the gas can put out. A cursor follows the playing sequence.
+- *The working (`breakerPanel`).* The steps are:
+  - |V|, |S|, and I = |S| / (√3 |V|);
+  - I_peak = √2 I;
+  - phase a's current angle θ_I = θ_V − atan(Q/P), taking half a turn when P is negative;
+  - the half cycle 1/(2f);
+  - each phase's clearing time (n·180° − θ)/(360° f);
+  - the rated interrupting time.
+
+  Every line's breaker at both ends is in the arithmetic-consistency test.
+- *Honesty:* a "breaker" section covers:
+  - typical timings and schematic proportions;
+  - each pole clearing as if the others were unaffected, with no arc voltage or
+    recovery voltage modelled;
+  - opening one end takes the whole circuit out (no node–breaker model);
+  - the trip drawn at a chosen point on the wave.
+- *A precision fix found on the way.* The state map's land surface is one rectangle as
+  big as the state. From a frame a thousand times finer, its clipped depth could land in
+  front of everything and blank the view. It is no longer drawn once the map has receded.
+
 **Rejected.**
 - *A lid that folds away as the zoom proceeds.* The renderer unfolds shapes out of a
   point; it cannot fold a panel about an edge. A wall that shrinks to a point reads as a
@@ -80,3 +129,7 @@ the inside of a piece of equipment, working, driven by the solved state.
   one more layer on a busy section; the inspector says it in words for now.
 - *A separate "exploded" diagram beside the drawing.* The picture teaches first, in
   place.
+- *Animating the breaker's opening at real speed.* Fifty milliseconds is invisible;
+  slowed, with the factor stated, the order of events is the lesson.
+- *All three poles cut open.* One pole shows the mechanism; the chart carries the three
+  phases, which is where they differ.

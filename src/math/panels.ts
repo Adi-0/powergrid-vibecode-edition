@@ -13,6 +13,8 @@ import { busFaultLevel, type FaultStudy } from '../model/faultStudy';
 import { C37_112, PROTECTION } from '../data/dist/protection';
 import type { FeederEvent } from '../app/inspect-fault';
 import type { XfmrPlate, XfmrState } from '../model/xfmrState';
+import { interruption, type BreakerState } from '../model/breakerState';
+import { COMPONENTS } from '../data/components';
 
 /**
  * Math panels for what can be selected: the working behind the numbers the inspector
@@ -785,6 +787,73 @@ export function transformerPanel(
   return {
     title: 'Through the transformer',
     intro: 'Complex power S = V·I* (the current conjugated), three-phase. The currents follow from the power and voltage at each terminal; the loss is found twice, as the energy balance and as the heat in the resistance.',
+    steps,
+  };
+}
+
+/**
+ * A circuit breaker's working: the current through each pole from the power and
+ * voltage at its bus (S = V·I*, three-phase), its peak, its angle (where its zeros
+ * fall), and when each phase can clear — its first current zero after the contacts
+ * have parted and the arc has burned long enough to be put out.
+ */
+export function breakerPanel(st: BreakerState | null, key: string, kvBase: number, kvProv: string): Panel | null {
+  if (!st || !st.closed || !st.energized || st.amps <= 0) return null;
+  const t = st.t;
+  const k = (x: string) => `derived:t${t}.${key}.${x}`;
+  const B = COMPONENTS.breaker;
+  const plan = interruption(st);
+  const three = num(3, 0, '', 'data:notation.three');
+  const kilo = num(1000, 0, '', 'data:notation.kilo');
+  const f = num(COMPONENTS.fHz, 0, 'Hz', 'data:components.fHz', 'f');
+  const phiSolver = (Math.atan(st.q / st.p) * 180) / Math.PI;
+  const flip = st.p < 0 ? (st.q >= 0 ? -180 : 180) : 0;
+  const steps: Step[] = [
+    { label: 'Bus voltage', general: '|V| = V_{pu} × V_{base}', sym: '|V|', expr: mul(num(st.vpu, 6, 'pu', st.prov.v, 'V_{pu}'), num(kvBase, 0, 'kV', kvProv, 'V_{base}')), unit: 'kV', digits: 3, prov: k('V'), solver: st.vkV },
+    { label: 'Apparent power through it, three-phase', general: '|S| = √(P^2 + Q^2)', sym: '|S|', expr: sqrt(add(sq(num(st.p, 4, 'MW', st.prov.p, 'P')), sq(num(st.q, 4, 'MVAr', st.prov.q, 'Q')))), unit: 'MVA', digits: 4, prov: k('S'), solver: Math.hypot(st.p, st.q) },
+    { label: 'Current in each pole (RMS)', general: 'I = |S| / (√3 |V|)', sym: 'I', expr: mul(div(ref(1), par(mul(sqrt(three), ref(0)))), kilo), unit: 'A', digits: 2, prov: k('I'), solver: st.amps },
+    { label: 'The height of each phase’s current wave', general: 'I_{peak} = √2 I', sym: 'I_{peak}', expr: mul(sqrt(num(2, 0, '', 'data:notation.two')), ref(2)), unit: 'A', digits: 1, prov: k('Ipeak'), solver: Math.SQRT2 * st.amps },
+    {
+      label: st.p < 0 ? 'Phase a’s current angle: behind the voltage by the angle of S (P is negative: add or take half a turn)' : 'Phase a’s current angle: behind the voltage by the angle of S',
+      general: 'θ_I = θ_V − atan(Q/P)',
+      sym: 'θ_I',
+      expr: flip ? add(sub(num(st.vDeg, 4, '°', st.prov.va, 'θ_V'), atan(div(num(st.q, 4, 'MVAr', st.prov.q, 'Q'), num(st.p, 4, 'MW', st.prov.p, 'P')))), num(flip, 0, '°', 'data:notation.halfTurn')) : sub(num(st.vDeg, 4, '°', st.prov.va, 'θ_V'), atan(div(num(st.q, 4, 'MVAr', st.prov.q, 'Q'), num(st.p, 4, 'MW', st.prov.p, 'P')))),
+      unit: '°',
+      digits: 3,
+      prov: k('thetaI'),
+      solver: st.vDeg - phiSolver + flip,
+    },
+    { label: 'A current zero comes every half cycle', general: 'T/2 = 1 / (2f)', sym: 'T/2', expr: mul(div(num(1, 0, '', 'data:notation.one'), par(mul(num(2, 0, '', 'data:notation.two'), f))), kilo), unit: 'ms', digits: 3, prov: k('halfCycle'), solver: 1000 / (2 * COMPONENTS.fHz) },
+  ];
+  // each phase: i = √2 I sin(ωt + θ) is zero where ωt + θ = n·180°; the first n after the shortest arc
+  const w = (2 * Math.PI * COMPONENTS.fHz) / 1000;
+  plan.thetaDeg.forEach((th, p) => {
+    const nZero = Math.round((w * plan.clearMs[p]! + (th * Math.PI) / 180) / Math.PI);
+    const theta = p === 0 ? ref(4) : sub(ref(4), num(120 * p, 0, '°', 'data:notation.phaseShift'));
+    steps.push({
+      label: `Phase ${'abc'[p]} clears: its first current zero after the contacts part (${'abc'[p] === 'a' ? 'the arc must burn a few milliseconds first' : 'a third of a cycle apart'})`,
+      general: `t_${'abc'[p]} = (n·180° − θ_${'abc'[p]}) / (360° f)`,
+      sym: `t_${'abc'[p]}`,
+      expr: mul(div(par(sub(mul(num(nZero, 0, '', k(`n.${'abc'[p]}`)), num(180, 0, '°', 'data:notation.halfTurn')), p === 0 ? theta : par(theta))), par(mul(num(360, 0, '°', 'data:notation.turn'), f))), kilo),
+      unit: 'ms',
+      digits: 2,
+      prov: k(`clear.${'abc'[p]}`),
+      solver: plan.clearMs[p]!,
+    });
+  });
+  steps.push({
+    label: 'Its rated interrupting time: the last phase must be out by then',
+    general: 'N_{cycles} × 1/f',
+    sym: 't_{rated}',
+    expr: mul(div(num(B.ratedCycles, 0, 'cycles', 'data:components.breaker.ratedCycles', 'N_{cycles}'), f), kilo),
+    unit: 'ms',
+    digits: 1,
+    prov: k('rated'),
+    solver: (B.ratedCycles * 1000) / COMPONENTS.fHz,
+  });
+  return {
+    title: 'Opening the circuit',
+    intro: 'Complex power S = V·I* (the current conjugated), three-phase. Times from the trip command; the trip is drawn arriving as the reference voltage crosses zero, rising, and the contacts part at a typical time for the breaker’s class.',
     steps,
   };
 }

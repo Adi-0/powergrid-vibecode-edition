@@ -20,6 +20,8 @@ import { makeFeeder, type Feeder } from '../model/feeder';
 import { RegionLevel } from '../levels/region';
 import { BANK, BANK_DRIVE, SubstationLevel, XF_BANK_KEY } from '../levels/substation';
 import { TransformerLevel } from '../levels/transformer';
+import { BreakerLevel } from '../levels/breaker';
+import { breakerState } from '../model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../model/xfmrState';
 import { enIso } from '../levels/sketch';
 import { voltageClassFor } from '../render/style';
@@ -27,7 +29,7 @@ import { FeederLevel } from '../levels/feeder';
 import { ServiceLevel } from '../levels/service';
 import { PlantLevel } from '../levels/plant';
 import { MachineLevel } from '../levels/machine';
-import { SiteLevel, xfKey } from '../levels/site';
+import { SiteLevel, cbKey, xfKey, type BayBreaker } from '../levels/site';
 import { smoothstep } from '../levels/exits';
 import { equipView, machineView, plantView } from './inspect-plant';
 import { tripResponse, type TripResponse } from '../model/frequency';
@@ -48,8 +50,8 @@ import { GlossaryPanel } from '../ui/glossaryPanel';
 import { Tour } from './tour';
 import type { Action, Section } from '../ui/inspector';
 import type { Panel } from '../math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel } from '../math/panels';
-import { transformerLevelView, transformerPartView } from './inspect-parts';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel } from '../math/panels';
+import { breakerLevelView, breakerPartView, transformerLevelView, transformerPartView } from './inspect-parts';
 import { EVERGREEN } from '../data/dist/evergreen';
 
 /**
@@ -71,7 +73,7 @@ interface Portal {
 }
 
 /** Named places in the tree, for the guided route and the harness. */
-export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank';
+export type Place = 'system' | 'region' | 'site' | 'feeder' | 'substation' | 'service' | 'plant' | 'machine' | 'transformer' | 'bank' | 'breaker' | 'breaker60';
 
 /** A level unfolding inside the one on the sheet: how far (m), between its two zooms. */
 interface Band {
@@ -348,6 +350,37 @@ export class App {
     if (shown) this.setTime((this.t + 1) % 96);
     this.playTimer = window.setTimeout(() => this.playStep(), shown ? 220 : 40);
   }
+
+  /**
+   * Open or close a breaker from inside it: the sequence plays in its real order,
+   * slowed (skipped when the reader prefers reduced motion), then the network is solved
+   * again with the circuit out or back.
+   */
+  operateBreaker(level: BreakerLevel, k: number, kind: 'open' | 'close'): void {
+    const then = () => (kind === 'open' ? this.trip(k) : this.restore(k));
+    if (this.reducedMotion) {
+      then();
+      return;
+    }
+    level.play(kind, () => {
+      this.breakerTick = false;
+      // only if the reader is still there: a sequence left behind is dropped, not acted on
+      if (this.top === level) then();
+    });
+    this.breakerTick = true;
+    this.inspect();
+  }
+
+  /** For the guided route: open the breaker on the sheet, as its button would. */
+  openTopBreaker(): void {
+    const l = this.top;
+    const p = this.levelPortal.get(l);
+    if (l instanceof BreakerLevel && p?.sel.kind === 'branch' && l.state?.closed) this.operateBreaker(l, p.sel.index, 'open');
+  }
+
+  /** A breaker's sequence is playing: the inspector's chart follows it. */
+  private breakerTick = false;
+  private breakerTickAt = 0;
 
   trip(k: number): void {
     this.outages.add(k);
@@ -1195,7 +1228,8 @@ export class App {
       }
     } else if (l instanceof SiteLevel) {
       if (l.unit1At) ps.push({ key: 'plant:ML1', anchor: l.unit1At, ratio: 1, sel: { kind: 'plant', id: 'ML1' }, label: 'st:plant:ML1', make: () => new PlantLevel(this.grid) });
-      // each transformer bank opens where it stands, in the yard's own frame
+      // each circuit's breaker, and each transformer bank, opens where it stands, in the yard's own frame
+      for (const b of l.bayBreakers) ps.push(this.breakerPortal(l.siteId, b, l.sk.plan));
       for (const b of l.bankBodies) {
         const key = xfKey(this.grid.branches[b.branch]!.id);
         ps.push({
@@ -1207,6 +1241,7 @@ export class App {
         });
       }
     } else if (l instanceof SubstationLevel) {
+      for (const b of l.bayBreakers) ps.push(this.breakerPortal('EVERGREEN', b, enIso));
       const body = { e: BANK.e, n: BANK.n, se: BANK.se, sh: BANK.sh, sn: BANK.sn, f: BANK.f, hvSide: 1 as const, alongN: false };
       ps.push({
         key: XF_BANK_KEY,
@@ -1226,6 +1261,23 @@ export class App {
     }
     this.portalLists.set(l, ps);
     return ps;
+  }
+
+  /** A circuit's breaker at a site: its own level, opened where it stands. */
+  private breakerPortal(siteId: string, b: BayBreaker & { branch: number }, plan: (e: number, h: number, n: number) => Vec3): Portal {
+    const br = this.grid.branches[b.branch]!;
+    const key = cbKey(siteId, br.id);
+    const site = this.grid.sites.find((x) => x.id === siteId)!;
+    const bus = br.from.site.id === siteId ? br.from : br.to;
+    const lo = Math.min(b.e0, b.e1);
+    const hi = Math.max(b.e0, b.e1);
+    return {
+      key,
+      anchor: plan((lo + hi) / 2, 0, b.ns[1] ?? b.ns[0]!),
+      ratio: 1,
+      sel: { kind: 'branch', index: b.branch },
+      make: () => new BreakerLevel(b, plan, `${site.name} breaker on ${br.name}`, (s) => breakerState(this.grid, s, b.branch, siteId), [voltageClassFor(bus.kv)], key),
+    };
   }
 
   private levelPortal = new Map<Level, Portal>();
@@ -1492,12 +1544,16 @@ export class App {
     if (l instanceof FeederLevel || l instanceof SubstationLevel || l instanceof ServiceLevel) return sel.kind === 'dist' || sel.kind === 'branch';
     if (l instanceof PlantLevel || l instanceof MachineLevel) return sel.kind === 'equip';
     if (l instanceof TransformerLevel) return sel.kind === 'part' && sel.id === l.plate.key;
+    if (l instanceof BreakerLevel) return sel.kind === 'part' && sel.id === l.key;
     return false;
   }
 
   /** The sheet has a new level on it: its crumbs, key, labels and balance. */
   private afterLevelChange(): void {
     this.applyMatrices();
+    // a breaker's sequence stops with the reader's leaving it
+    for (const l of this.kids.values()) if (l instanceof BreakerLevel && l !== this.top) l.cancel();
+    if (!(this.top instanceof BreakerLevel)) this.breakerTick = false;
     if (this.selection && !this.selectionFits(this.top, this.selection)) this.selection = null;
     this.focusSites = this.system.highlight(this.top === this.system ? this.selection : null);
     if (this.top !== this.system) this.top.highlight(this.selection);
@@ -1811,6 +1867,14 @@ export class App {
         return ['site:TESLA', xfKey('TESLA 500/230 #1')];
       case 'bank':
         return ['site:EVERGREEN', 'substation', XF_BANK_KEY];
+      case 'breaker': {
+        const br = this.grid.branches.find((b) => b.kind === 'line' && b.kv === 500 && (b.from.site.id === 'TESLA' || b.to.site.id === 'TESLA'))!;
+        return ['site:TESLA', cbKey('TESLA', br.id)];
+      }
+      case 'breaker60': {
+        const br = this.grid.branches.find((b) => b.kind === 'line' && (b.from.id === 'EVERGREEN-60' || b.to.id === 'EVERGREEN-60'))!;
+        return ['site:EVERGREEN', 'substation', cbKey('EVERGREEN', br.id)];
+      }
       default:
         return [];
     }
@@ -2105,6 +2169,23 @@ export class App {
         return show('Generator', v, act);
       }
     }
+    if (top instanceof BreakerLevel) {
+      const st = top.stateFor(s);
+      const up = this.levelPortal.get(top)!;
+      const k = up.sel.kind === 'branch' ? up.sel.index : -1;
+      const br = this.grid.branches[k]!;
+      const bus = br.from.site.id === up.key.split(':')[1] ? br.from : br.to;
+      const head = { name: dataText(top.name, data(`network.line.${br.id}.name`)), kv: bus.kv, kvProv: data(`network.bus.${bus.id}.baseKV`) };
+      const acts: Action[] = [];
+      if (!top.busy && st)
+        acts.push(
+          st.closed
+            ? { label: 'Open the breaker', title: 'Trip it and watch, slowed down: the contacts part, the arc burns, each phase goes out at its current zero; then the network is solved without the circuit', run: () => this.operateBreaker(top, k, 'open') }
+            : { label: 'Close the breaker', title: 'The closing spring drives the contacts home; then the network is solved with the circuit back', run: () => this.operateBreaker(top, k, 'close') },
+        );
+      if (sel?.kind === 'part') return show('Selected part', breakerPartView(head, st, top.key, sel.what), acts);
+      return show('Circuit breaker', breakerLevelView(head, st, top.key, top.sequenceMs), acts);
+    }
     if (top instanceof TransformerLevel) {
       const st = top.stateFor(s);
       const up = this.levelPortal.get(top);
@@ -2181,7 +2262,14 @@ export class App {
     const top = this.top;
     const out: Array<Panel | null> = [];
     if (this.tripEvent && (top instanceof PlantLevel || sel?.kind === 'site')) out.push(frequencyPanel(this.tripEvent));
-    if (top instanceof TransformerLevel) {
+    if (top instanceof BreakerLevel) {
+      const up = this.levelPortal.get(top)!;
+      if (up.sel.kind === 'branch') {
+        const br = this.grid.branches[up.sel.index]!;
+        const bus = br.from.site.id === up.key.split(':')[1] ? br.from : br.to;
+        out.push(breakerPanel(top.stateFor(s), top.key, bus.kv, `data:network.bus.${bus.id}.baseKV`));
+      }
+    } else if (top instanceof TransformerLevel) {
       const up = this.levelPortal.get(top);
       const st = top.stateFor(s);
       if (up?.sel.kind === 'branch') {
@@ -2322,6 +2410,10 @@ export class App {
     this.advanceFlight(performance.now());
     this.advanceAnim(performance.now());
     this.tickFault(performance.now());
+    if (this.breakerTick && performance.now() - this.breakerTickAt > 150) {
+      this.breakerTickAt = performance.now();
+      this.inspect();
+    }
     this.cam.update();
     if (!this.lens) {
       // what unfolds, whether the sheet changes hands, and where every drawn level sits

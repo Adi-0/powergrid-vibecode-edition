@@ -15,5 +15,25 @@ export const COMPONENTS = {
   slowdown: 120,
   /** Drawn turns in a transformer's highest-voltage winding (the others in proportion). */
   drawnTurns: 32,
+  /**
+   * A high-voltage SF6 breaker opening and closing, ms from the command: typical
+   * values for a breaker of the three-cycle interrupting class (estimates, not one
+   * manufacturer's figures).
+   */
+  breaker: {
+    /** Trip coil and latch: until the contacts start to move. */
+    moveMs: 12,
+    /** Until the arcing contacts part (the arc strikes). */
+    partMs: 25,
+    /** Until the contacts are fully open. */
+    fullMs: 45,
+    /** The shortest arc the gas blast can put out at a current zero. */
+    minArcMs: 5,
+    /** Closing: the contacts start to move, and are home. */
+    closeMoveMs: 30,
+    closeHomeMs: 65,
+    /** Rated interrupting time, cycles. */
+    ratedCycles: 3,
+  },
   src: 'estimate' as SourceId,
 };

@@ -7,7 +7,8 @@ import { makeFeeder, type Feeder } from '../src/model/feeder';
 import { feederSnap } from '../src/model/feederSnapshot';
 import { numberText } from '../src/ui/quantity';
 import { parseDisplayed, type Expr, type Panel } from '../src/math/expr';
-import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel } from '../src/math/panels';
+import { branchPanel, busFaultPanel, busPanel, feederFaultPanel, feederPanel, frequencyPanel, machinePanel, meterPanel, outletPanel, plantPanel, regionPanel, substationPanel, transformerPanel, breakerPanel } from '../src/math/panels';
+import { breakerState } from '../src/model/breakerState';
 import { evergreenPlate, evergreenXfmrState, gridPlate, gridXfmrState } from '../src/model/xfmrState';
 import { S_BASE } from '../src/model/grid';
 import { EVERGREEN } from '../src/data/dist/evergreen';
@@ -169,6 +170,19 @@ describe('math panels', () => {
         if (p) (check(p, br.id), n++);
       });
       expect(n).toBeGreaterThan(30);
+    });
+
+    it(`every line's breaker at both ends, opened, at interval ${t}`, () => {
+      const s = snapshot(g, day.points[t]!);
+      let n = 0;
+      g.branches.forEach((br, k) => {
+        if (br.kind !== 'line') return;
+        for (const site of [br.from, br.to]) {
+          const p = breakerPanel(breakerState(g, s, k, site.site.id), `cb:${site.site.id}:${br.id}`, site.kv, `data:network.bus.${site.id}.baseKV`);
+          if (p) (check(p, `${br.id} at ${site.site.id}`), n++);
+        }
+      });
+      expect(n).toBeGreaterThan(150);
     });
   }
 });
